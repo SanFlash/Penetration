@@ -1,10 +1,4 @@
-"""Safe website compatibility checks using Playwright.
-
-This module is intentionally non-destructive. It navigates only to URLs
-already discovered on an explicitly in-scope target and records browser
-console errors, failed requests, basic accessibility signals, viewport
-overflow, page timing, and screenshots.
-"""
+"""Safe browser compatibility checks with optional live telemetry."""
 import json
 import os
 from urllib.parse import urlparse
@@ -87,19 +81,33 @@ def _page_findings(url, browser_name, viewport_name, data):
     return findings
 
 
-def run_compatibility(target: str, urls: list[str], max_pages: int = 12, headed: bool = False, slow_mo: int = 0) -> dict:
+def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
+                      headed: bool = False, slow_mo: int = 0, telemetry=None) -> dict:
     assert_in_scope(target)
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
     urls = list(dict.fromkeys(urls))[:max_pages]
     results, findings, unavailable = [], [], []
+    total = max(1, len(urls) * len(BROWSERS) * len(VIEWPORTS))
+    completed = 0
+
+    def emit(**payload):
+        if telemetry:
+            telemetry(**payload)
+
+    emit(stage="BROWSER ENGINE INITIALIZATION", detail="Preparing Playwright browser matrix.", progress=0,
+         log={"time": "00:00", "level": "ok", "message": "Compatibility engine initialized."})
 
     with sync_playwright() as pw:
         for browser_name in BROWSERS:
+            emit(browser=browser_name.upper(), stage=f"{browser_name.upper()} ENGINE",
+                 detail=f"Launching {browser_name}.")
             try:
                 browser_type = getattr(pw, browser_name)
                 browser = browser_type.launch(headless=not headed, slow_mo=slow_mo)
             except Exception as exc:
                 unavailable.append({"browser": browser_name, "reason": str(exc)})
+                emit(stage=f"{browser_name.upper()} UNAVAILABLE", detail=str(exc),
+                     log={"time": "", "level": "warn", "message": f"{browser_name} unavailable: {exc}"})
                 continue
 
             for viewport_name, viewport in VIEWPORTS.items():
@@ -110,7 +118,9 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12, headed:
                     console_errors, request_failures = [], []
                     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
                     page.on("requestfailed", lambda req: request_failures.append(f"{req.method} {req.url}: {req.failure}"))
-                    print(f"[BROWSER] {browser_name:8} | [VIEWPORT] {viewport_name:14} | {url}", flush=True)
+                    emit(browser=browser_name.upper(), viewport=viewport_name,
+                         stage="NAVIGATING", detail=url,
+                         log={"time": "", "level": "", "message": f"[{browser_name}/{viewport_name}] {url}"})
                     try:
                         response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
                         try:
@@ -144,7 +154,16 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12, headed:
                         }
                         results.append(data)
                         findings.extend(_page_findings(url, browser_name, viewport_name, data))
+                        completed += 1
+                        progress = round(completed / total * 100, 1)
+                        emit(browser=browser_name.upper(), viewport=viewport_name, pages_tested=len({r["url"] for r in results}),
+                             checks=completed, findings=len(findings), errors=sum(len(r["console_errors"])+len(r["request_failures"]) for r in results),
+                             progress=progress, stage="CHECK COMPLETE", detail=f"HTTP {data['status']} • {data['load_ms']} ms",
+                             matrix_item={"browser": browser_name, "viewport": viewport_name, "url": url, "status": data["status"]},
+                             log={"time": "", "level": "ok" if data["status"] and data["status"] < 400 else "warn",
+                                  "message": f"Completed {browser_name}/{viewport_name} -> {data['status']}"})
                     except Exception as exc:
+                        completed += 1
                         findings.append({
                             "id": f"COMP-PAGE-{abs(hash((browser_name, viewport_name, url))) % 100000:05d}",
                             "title": "Page compatibility check failed", "severity": "Medium", "confidence": "High",
@@ -154,14 +173,20 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12, headed:
                             "impact": "The affected browser/viewport combination requires manual investigation.",
                             "remediation": "Reproduce the failure in the specified browser and viewport, then inspect page errors and network requests.",
                         })
+                        emit(checks=completed, findings=len(findings), errors=len(findings), progress=round(completed/total*100,1),
+                             stage="CHECK FAILED", detail=str(exc),
+                             log={"time":"", "level":"err", "message":f"Failed {browser_name}/{viewport_name}: {exc}"})
                     finally:
                         page.close()
                 context.close()
             browser.close()
 
     result = {"target": target, "browsers": list(BROWSERS), "viewports": VIEWPORTS,
-              "urls_tested": urls, "results": results, "browser_unavailable": unavailable, "findings": findings,
-              "headed": headed, "slow_mo_ms": slow_mo}
+              "urls_tested": urls, "results": results, "browser_unavailable": unavailable,
+              "findings": findings, "headed": headed, "slow_mo_ms": slow_mo}
     with open(os.path.join(EVIDENCE_DIR, "compatibility.json"), "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
+    emit(status="COMPLETE", stage="COMPATIBILITY COMPLETE", detail="Browser matrix finished.", progress=100,
+         checks=completed, findings=len(findings), finished_at=True,
+         log={"time":"", "level":"ok", "message":"Compatibility matrix completed."})
     return result
