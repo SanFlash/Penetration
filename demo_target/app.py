@@ -18,14 +18,21 @@ training manual):
      GET /api/orders-secure/<id>                      (DOES check ownership)
      — included so the scanner's output can be verified for false positives.
 
-Run with:  python3 demo_target/app.py
+Run with:  python demo_target/app.py (Windows) or python3 demo_target/app.py (Linux/macOS)
 Listens on 127.0.0.1:5000 ONLY.
 """
 import sqlite3
+from pathlib import Path
 from flask import Flask, request, g, make_response, jsonify
 
 app = Flask(__name__)
-DB_PATH = "/tmp/demo_target.db"
+
+# Keep runtime data inside the demo target so the lab works consistently on
+# Windows, Linux, and macOS. The directory is created automatically.
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_DIR / "demo_target.db"
 
 
 def get_db():
