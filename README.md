@@ -377,73 +377,152 @@ This project is designed around:
 8. reproducible findings
 9. human validation before treating a detection signal as a confirmed vulnerability
 
-## Authorized AM Webtech compatibility mode
+## Latest AM Webtech compatibility workflow
 
-The repository now supports a dedicated compatibility profile for the explicitly allowlisted AM Webtech domain.
+The framework now supports a dedicated authorized compatibility profile for amwebtech.com, including visible Playwright browser testing.
 
-Run:
+### Update your local copy
+
+    cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
+    git pull origin main
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -r requirements.txt
+    python -m playwright install chromium firefox webkit
+
+Verify the CLI:
+
+    python main.py --help
+
+### Run AM Webtech compatibility testing
+
+Headless:
 
     python main.py --target https://amwebtech.com --profile compatibility
 
-Or simply:
+Visible browser windows:
 
-    python main.py --target https://amwebtech.com
+    python main.py --target https://amwebtech.com --profile compatibility --headed
 
-`auto` selects the compatibility profile for `amwebtech.com` and `www.amwebtech.com`.
+Recommended visual run:
 
-### What compatibility mode checks
+    python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
+
+Use 500-1000 ms if you want to watch the actions more slowly. The accepted range is 0-5000 ms.
+
+### Visual browser matrix
+
+- Chromium
+- Firefox
+- WebKit (Safari-compatible engine)
+
+Viewport matrix:
+
+- 375x812 — mobile small
+- 390x844 — mobile large
+- 768x1024 — tablet
+- 1366x768 — laptop
+- 1440x900 — desktop
+- 1920x1080 — large desktop
+
+With headed mode, Playwright opens the browser windows while each page/viewport combination is tested. The terminal also prints progress such as:
+
+    [BROWSER] chromium | [VIEWPORT] mobile-small | https://amwebtech.com/
+
+### Current automated checks
 
 - scope-limited crawling
-- page discovery and form inventory
-- Chromium compatibility
-- Firefox compatibility
-- WebKit/Safari-compatible browser behavior
-- mobile, tablet, laptop, desktop and large-desktop viewports
+- page and form discovery
 - browser console errors
 - failed browser network requests
 - horizontal overflow
-- missing image alternative text
+- missing image alt attributes
 - potentially unlabeled form controls
 - page title presence
 - navigation timing observations
 - full-page screenshots
 - passive security-header checks
 - JSON evidence
-- responsive HTML reporting
+- HTML reporting
 
-Default viewports: `375x812`, `390x844`, `768x1024`, `1366x768`, `1440x900`, `1920x1080`.
+### Evidence and reports
 
-Browser matrix: `Chromium`, `Firefox`, `WebKit`.
+Evidence is written under:
 
-### Evidence
+    evidence/
 
-Compatibility evidence is stored under `evidence/`, including `evidence/compatibility.json` and browser/viewport screenshots.
+Important files include:
 
-Do not commit generated evidence from a real engagement if it contains confidential information.
+    evidence/compatibility.json
+    evidence/chromium_*.png
+    evidence/firefox_*.png
+    evidence/webkit_*.png
 
-### Live-site assessment boundary
+Reports are written under:
 
-Compatibility mode is deliberately different from the local vulnerable-lab profile. It does not automatically execute the local demo's hard-coded SQLi, XSS, or IDOR probes against a live site. Those scanners depend on application-specific routes and test accounts and must be mapped to the authorized application's actual endpoints before use.
+    reports/findings.json
+    reports/report.html
 
-This prevents a generic scanner from making incorrect assumptions about a production application while still providing broad browser, responsive, functional, and passive security coverage.
+Open the HTML report:
 
-### Installing all Playwright browser engines
+    Start-Process .\reports\report.html
 
-    python -m playwright install chromium firefox webkit
+Read compatibility JSON:
 
-Then run:
+    Get-Content .\evidence\compatibility.json
 
-    python main.py --target https://amwebtech.com --profile compatibility
+### Local vulnerable lab
 
-If a browser engine is unavailable, the report records it rather than silently claiming that browser coverage was completed.
+Start the local lab in one terminal:
 
-### Recommended assessment workflow
+    python demo_target/app.py
 
-1. Run compatibility profile.
-2. Review screenshots and `compatibility.json`.
-3. Fix or validate UI and browser issues.
-4. Re-run compatibility profile.
-5. Map real application forms/API/auth flows.
-6. Add authorized, application-specific security tests.
-7. Perform manual validation.
-8. Generate the final assessment report.
+Then run in another:
+
+    python main.py --target http://127.0.0.1:5000 --profile lab
+
+### Safety boundary for the live site
+
+The AM Webtech compatibility profile is deliberately different from the local vulnerable-lab profile. It does not blindly execute the lab's hard-coded SQLi, XSS, or IDOR routes against a production application. Those tests must first be mapped to real, authorized application endpoints and test accounts.
+
+Automated findings are signals that should be manually validated before being treated as confirmed defects or vulnerabilities.
+
+### Real-device limitation
+
+WebKit provides Safari-engine coverage but is not a physical iPhone/iPad. Chromium mobile viewports are not equivalent to every physical Android device. A future real-device phase should cover iOS Safari, Android Chrome, touch behavior, orientation, mobile keyboards, and real network conditions.
+
+### Recommended next workflow
+
+1. Pull the latest repository.
+2. Install all Playwright browser engines.
+3. Run the headed AM Webtech assessment with slow motion.
+4. Review screenshots and compatibility.json.
+5. Open reports/report.html.
+6. Group findings by browser, viewport, page, and severity.
+7. Fix and re-run the affected workflows.
+8. Add application-specific functional/API/authentication tests.
+9. Perform manual validation.
+10. Generate the final assessment report.
+
+### Framework tests
+
+    python tests/test_scope.py
+
+If pytest is installed:
+
+    python -m pytest tests/ -v
+
+### Git commands
+
+Check status:
+
+    git status
+
+Review recent commits:
+
+    git log --oneline -10
+
+Update:
+
+    git pull origin main
+
+Do not commit real engagement screenshots, request logs, or reports if they contain confidential information.
