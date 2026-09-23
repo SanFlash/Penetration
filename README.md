@@ -526,3 +526,173 @@ Update:
     git pull origin main
 
 Do not commit real engagement screenshots, request logs, or reports if they contain confidential information.
+
+
+## Professional visual assessment console
+
+The compatibility profile now includes a local visual monitoring console. The Playwright assessment can remain headless while the dashboard runs visibly in your normal browser.
+
+When a compatibility assessment starts, the framework opens:
+
+    http://127.0.0.1:8765/
+
+The dashboard shows:
+
+- animated assessment visualization
+- current assessment stage
+- target and profile
+- active browser engine
+- active viewport
+- progress percentage
+- pages and browser checks
+- finding/error counters
+- live console telemetry
+- browser/viewport matrix
+- assessment completion status
+
+### Recommended headless + visual dashboard command
+
+    python main.py --target https://amwebtech.com --profile compatibility
+
+The Playwright engines remain headless, while the Sentinel dashboard opens in your normal browser.
+
+### Headed Playwright + dashboard
+
+If you also want the actual Playwright browser windows visible:
+
+    python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
+
+This gives you both:
+
+    Sentinel dashboard
+          +
+    visible Playwright browser windows
+
+### Disable the dashboard
+
+For CI/server environments:
+
+    python main.py --target https://amwebtech.com --profile compatibility --no-dashboard
+
+### Console loader
+
+The terminal now displays a continuously updating loader while the assessment is running:
+
+    [/] [chromium/mobile-small] https://amwebtech.com/
+    [-] [chromium/tablet] https://amwebtech.com/
+    [\] Scanning security headers
+    [|] Building interactive analytics report
+
+The dashboard receives the same telemetry.
+
+## Interactive assessment report
+
+reports/report.html has been upgraded from a basic findings page to an interactive assessment report.
+
+It now contains:
+
+### Overview
+
+- severity distribution
+- total findings
+- category count
+- high-confidence count
+- browser-check count
+- category distribution bars
+
+### Findings explorer
+
+- live search
+- severity filter
+- category filter
+- expandable evidence
+- impact
+- remediation
+- CWE
+- OWASP mapping
+- URL
+- confidence
+- finding IDs
+
+### Coverage
+
+The report can display the browser/viewport matrix with:
+
+- browser engine
+- viewport
+- HTTP status
+- load timing
+- console error count
+- network failure count
+- horizontal overflow
+
+### Evidence
+
+The report includes execution metadata and the compatibility evidence directory.
+
+Open the report after an assessment:
+
+    Start-Process .\reports\report.html
+
+## Updated architecture
+
+    CLI
+      |
+      +--> Scope enforcement
+      |
+      +--> Reconnaissance
+      |
+      +--> Live Dashboard ----> http://127.0.0.1:8765
+      |
+      +--> Playwright matrix
+      |       +-- Chromium
+      |       +-- Firefox
+      |       +-- WebKit
+      |       +-- 6 responsive viewports
+      |
+      +--> Passive security checks
+      |
+      +--> Evidence collection
+      |
+      +--> Interactive JSON/HTML report
+
+## Latest recommended workflow
+
+    cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
+    git pull origin main
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -r requirements.txt
+    python -m playwright install chromium firefox webkit
+
+Then:
+
+    python main.py --target https://amwebtech.com --profile compatibility
+
+For the most visual development run:
+
+    python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
+
+Then open:
+
+    Start-Process .\reports\report.html
+
+## Industry-oriented roadmap
+
+The framework is being evolved toward a reusable assessment platform with:
+
+- explicit target profiles
+- scope enforcement
+- browser/device compatibility
+- responsive QA
+- accessibility signals
+- performance observations
+- passive security analysis
+- application-specific security modules
+- evidence preservation
+- interactive reporting
+- CI-friendly execution
+- real-device integrations
+- baseline/visual regression
+- API and authentication workflow testing
+
+Automated findings remain observations until they are validated in the authorized environment.
