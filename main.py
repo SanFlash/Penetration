@@ -22,7 +22,7 @@ def banner(text):
     print("=" * 70)
 
 
-def run_compatibility_profile(target: str):
+def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 0):
     banner("STEP 1 — Scope-limited website reconnaissance")
     crawler = SafeCrawler(target, max_pages=config.COMPATIBILITY_MAX_PAGES)
     recon = crawler.crawl()
@@ -30,7 +30,11 @@ def run_compatibility_profile(target: str):
     print(f"Discovered {len(urls)} pages and {len(recon['forms'])} forms.")
 
     banner("STEP 2 — Cross-browser / responsive compatibility")
-    result = run_compatibility(target, urls, max_pages=config.COMPATIBILITY_MAX_PAGES)
+    print(f"[VISUAL] {'HEADED browser windows enabled' if headed else 'headless mode'}")
+    if slow_mo:
+        print(f"[VISUAL] Playwright slow-motion: {slow_mo} ms")
+    result = run_compatibility(target, urls, max_pages=config.COMPATIBILITY_MAX_PAGES,
+                               headed=headed, slow_mo=slow_mo)
 
     print(f"URLs tested: {len(result['urls_tested'])}")
     print(f"Browser engines available: {sorted({r['browser'] for r in result['results']})}")
@@ -70,7 +74,6 @@ def run_compatibility_profile(target: str):
 def run_lab_full_profile(target: str):
     all_findings = []
     start = time.time()
-
     banner("STEP 1 — Reconnaissance (scope-limited crawler)")
     crawler = SafeCrawler(target)
     recon_result = crawler.crawl()
@@ -85,18 +88,11 @@ def run_lab_full_profile(target: str):
     for c in pw_result["cookies"]:
         print(f"  cookie '{c['name']}': httpOnly={c['httpOnly']} secure={c['secure']}")
         if not c["httpOnly"]:
-            all_findings.append({
-                "id": f"COOKIE-{c['name']}",
-                "title": f"Session cookie '{c['name']}' missing HttpOnly flag",
-                "severity": "Medium",
-                "confidence": "High",
-                "category": "Session Management",
-                "url": target,
-                "detail": "A cookie without HttpOnly is readable by JavaScript.",
-                "evidence": f"cookie={c['name']} httpOnly=False",
-                "impact": "Can increase the impact of XSS.",
-                "remediation": "Set HttpOnly on session cookies.",
-            })
+            all_findings.append({"id": f"COOKIE-{c['name']}", "title": f"Session cookie '{c['name']}' missing HttpOnly flag",
+                                 "severity": "Medium", "confidence": "High", "category": "Session Management",
+                                 "url": target, "detail": "A cookie without HttpOnly is readable by JavaScript.",
+                                 "evidence": f"cookie={c['name']} httpOnly=False", "impact": "Can increase the impact of XSS.",
+                                 "remediation": "Set HttpOnly on session cookies."})
 
     banner("STEP 3 — Security header scan")
     header_result = header_scanner.scan(target + "/")
@@ -139,13 +135,15 @@ def run_lab_full_profile(target: str):
 def main():
     parser = argparse.ArgumentParser(description="Authorized web assessment framework")
     parser.add_argument("--target", default=config.DEFAULT_TARGET, help="Base URL of an IN-SCOPE target")
-    parser.add_argument(
-        "--profile",
-        choices=("auto", "lab", "compatibility"),
-        default="auto",
-        help="auto selects compatibility for AM Webtech and lab for localhost",
-    )
+    parser.add_argument("--profile", choices=("auto", "lab", "compatibility"), default="auto",
+                        help="auto selects compatibility for AM Webtech and lab for localhost")
+    parser.add_argument("--headed", action="store_true",
+                        help="show Playwright browser windows during compatibility testing")
+    parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
+                        help="delay each Playwright action by MS milliseconds (e.g. 500)")
     args = parser.parse_args()
+    if args.slow_mo < 0 or args.slow_mo > 5000:
+        parser.error("--slow-mo must be between 0 and 5000 milliseconds")
     target = args.target.rstrip("/")
 
     banner("STEP 0 — Scope check")
@@ -157,15 +155,15 @@ def main():
     print(f"[OK] '{target}' is in config.ALLOWED_HOSTS — proceeding.")
 
     try:
-        is_amwebtech = target.lower().split("://", 1)[-1].split("/", 1)[0].split(":")[0] in {
-            "amwebtech.com", "www.amwebtech.com"
-        }
+        is_amwebtech = target.lower().split("://", 1)[-1].split("/", 1)[0].split(":")[0] in {"amwebtech.com", "www.amwebtech.com"}
         profile = "compatibility" if args.profile == "auto" and is_amwebtech else args.profile
         if profile == "auto":
             profile = "lab"
         print(f"[PROFILE] {profile}")
         if profile == "compatibility":
-            return run_compatibility_profile(target)
+            return run_compatibility_profile(target, headed=args.headed, slow_mo=args.slow_mo)
+        if args.headed or args.slow_mo:
+            print("[NOTE] --headed/--slow-mo are currently used by the compatibility profile only.")
         return run_lab_full_profile(target)
     except TargetConnectionError as exc:
         print("\n[ERROR] Target is unreachable.")
