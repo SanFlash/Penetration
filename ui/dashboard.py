@@ -1,5 +1,6 @@
 """Local live dashboard for safe assessment progress."""
 import json
+import logging
 import threading
 import time
 import webbrowser
@@ -73,6 +74,8 @@ class DashboardState:
             return json.loads(json.dumps(self.data))
 
 def start_dashboard(state: DashboardState, open_browser=True):
+    # Keep the assessment console clean: browser polling is telemetry, not noise.
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
     app=Flask("assessment_dashboard")
     @app.get("/")
     def index():
