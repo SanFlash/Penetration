@@ -1,0 +1,13 @@
+{
+  "api_endpoints": [
+    "http://127.0.0.1:5000/products?name=Widget"
+  ],
+  "cookies": [
+    {
+      "name": "session_user",
+      "httpOnly": true,
+      "secure": false
+    }
+  ],
+  "total_requests_observed": 3
+}

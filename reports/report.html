@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pentest Report — http://127.0.0.1:5000</title>
+<style>
+body { font-family: -apple-system, Segoe UI, sans-serif; margin: 40px; color: #0B2545; }
+h1 { color: #0B2545; }
+table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+th, td { border: 1px solid #D5DEE8; padding: 10px; text-align: left; vertical-align: top; }
+th { background: #0B2545; color: white; }
+tr:nth-child(even) { background: #F5F8FC; }
+code { font-size: 0.85em; }
+</style></head>
+<body>
+<h1>Web Application Penetration Test Report</h1>
+<p><b>Target:</b> http://127.0.0.1:5000<br>
+<b>Generated:</b> 2026-09-23T12:41:43.505522+00:00<br>
+<b>Total findings:</b> 4</p>
+<div><div style="display:inline-block;margin-right:16px;"><b style="color:#8A1E1E">Critical</b>: 1</div><div style="display:inline-block;margin-right:16px;"><b style="color:#B8501E">High</b>: 2</div><div style="display:inline-block;margin-right:16px;"><b style="color:#B7891E">Medium</b>: 1</div></div>
+<table>
+<tr><th>Severity</th><th>ID</th><th>Title</th><th>URL</th><th>Detail</th></tr>
+
+        <tr>
+          <td><span style="background:#8A1E1E;color:white;padding:2px 8px;
+              border-radius:4px;font-weight:bold;">Critical</span></td>
+          <td>SQLI-ERR-3442</td>
+          <td>Possible SQL injection (error-based) in parameter 'name'</td>
+          <td><code>http://127.0.0.1:5000/products?name=test'</code></td>
+          <td>A single quote caused a server error or an error-shaped response, suggesting the input reached the SQL layer unsanitized. Manually verify with Repeater before reporting.</td>
+        </tr>
+        <tr>
+          <td><span style="background:#B8501E;color:white;padding:2px 8px;
+              border-radius:4px;font-weight:bold;">High</span></td>
+          <td>XSS-b6a81143</td>
+          <td>Reflected XSS in parameter 'q'</td>
+          <td><code>http://127.0.0.1:5000/search?q=<xss-probe-b6a81143></code></td>
+          <td>Marker '<xss-probe-b6a81143>' was reflected in the response body without HTML encoding. Any injected content here, not just this benign marker, would execute in the victim's browser.</td>
+        </tr>
+        <tr>
+          <td><span style="background:#B8501E;color:white;padding:2px 8px;
+              border-radius:4px;font-weight:bold;">High</span></td>
+          <td>IDOR-1</td>
+          <td>Broken Object-Level Authorization at /api/orders/{id}</td>
+          <td><code>http://127.0.0.1:5000/api/orders/1</code></td>
+          <td>Requesting object id=1 (not owned by the authenticated user) returned 200 with body: {"id":1,"item":"Blue Widget x2","owner":"alice","total":19.98}
+. Expected 403/404. Compare against the owned-object request to http://127.0.0.1:5000/api/orders/2, which correctly returned 200.</td>
+        </tr>
+        <tr>
+          <td><span style="background:#B7891E;color:white;padding:2px 8px;
+              border-radius:4px;font-weight:bold;">Medium</span></td>
+          <td>HDR-1629</td>
+          <td>Missing security headers</td>
+          <td><code>http://127.0.0.1:5000/</code></td>
+          <td>Missing: Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, Permissions-Policy</td>
+        </tr>
+</table>
+</body></html>

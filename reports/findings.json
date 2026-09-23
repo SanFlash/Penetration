@@ -1,0 +1,42 @@
+{
+  "target": "http://127.0.0.1:5000",
+  "generated_at": "2026-09-23T12:41:43.505522+00:00",
+  "total_findings": 4,
+  "severity_summary": {
+    "Critical": 1,
+    "High": 2,
+    "Medium": 1,
+    "Low": 0,
+    "Info": 0
+  },
+  "findings": [
+    {
+      "id": "SQLI-ERR-3442",
+      "title": "Possible SQL injection (error-based) in parameter 'name'",
+      "severity": "Critical",
+      "url": "http://127.0.0.1:5000/products?name=test'",
+      "detail": "A single quote caused a server error or an error-shaped response, suggesting the input reached the SQL layer unsanitized. Manually verify with Repeater before reporting."
+    },
+    {
+      "id": "XSS-b6a81143",
+      "title": "Reflected XSS in parameter 'q'",
+      "severity": "High",
+      "url": "http://127.0.0.1:5000/search?q=<xss-probe-b6a81143>",
+      "detail": "Marker '<xss-probe-b6a81143>' was reflected in the response body without HTML encoding. Any injected content here, not just this benign marker, would execute in the victim's browser."
+    },
+    {
+      "id": "IDOR-1",
+      "title": "Broken Object-Level Authorization at /api/orders/{id}",
+      "severity": "High",
+      "url": "http://127.0.0.1:5000/api/orders/1",
+      "detail": "Requesting object id=1 (not owned by the authenticated user) returned 200 with body: {\"id\":1,\"item\":\"Blue Widget x2\",\"owner\":\"alice\",\"total\":19.98}\n. Expected 403/404. Compare against the owned-object request to http://127.0.0.1:5000/api/orders/2, which correctly returned 200."
+    },
+    {
+      "id": "HDR-1629",
+      "title": "Missing security headers",
+      "severity": "Medium",
+      "url": "http://127.0.0.1:5000/",
+      "detail": "Missing: Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, Permissions-Policy"
+    }
+  ]
+}
