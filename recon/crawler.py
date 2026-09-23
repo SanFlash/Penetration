@@ -12,7 +12,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
-from utils.http_client import get
+from utils.http_client import get, TargetConnectionError
 from utils.scope import is_in_scope, host_of
 
 
@@ -33,7 +33,19 @@ class SafeCrawler:
                 continue
             self.visited.add(url)
 
-            resp = get(url, tag="crawl")
+            try:
+                resp = get(url, tag="crawl")
+            except TargetConnectionError as exc:
+                # One broken/stale internal URL must not abort the full assessment.
+                # If the starting target itself is unreachable, fail fast.
+                if url == self.start_url:
+                    raise
+                self.pages.append({
+                    "url": url,
+                    "status": None,
+                    "error": str(exc),
+                })
+                continue
             self.pages.append({"url": url, "status": resp.status_code})
 
             if "text/html" not in resp.headers.get("Content-Type", ""):
@@ -58,7 +70,7 @@ class SafeCrawler:
                 })
 
             for a in soup.find_all("a", href=True):
-                next_url = urljoin(url, a["href"])
+                next_url = urljoin(url, a["href"]).split("#", 1)[0]
                 if is_in_scope(next_url) and next_url not in self.visited:
                     queue.append(next_url)
 
