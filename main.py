@@ -109,10 +109,23 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
         loader.set("Scanning security headers")
         state.update(stage="SECURITY HEADERS", detail="Running passive response-header checks.")
         header_findings = []
-        for index, url in enumerate(urls[:config.COMPATIBILITY_MAX_PAGES], 1):
-            header_result = header_scanner.scan(url)
-            header_findings.extend(header_result["findings"])
-            state.update(detail=f"Header scan {index}/{len(urls[:config.COMPATIBILITY_MAX_PAGES])}")
+        header_urls = urls[:config.COMPATIBILITY_MAX_PAGES]
+        for index, url in enumerate(header_urls, 1):
+            try:
+                header_result = header_scanner.scan(url)
+                header_findings.extend(header_result["findings"])
+                state.update(
+                    detail=f"Header scan {index}/{len(header_urls)}",
+                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                         "message": f"Header scan complete: {url}"}
+                )
+            except TargetConnectionError as exc:
+                state.update(
+                    detail=f"Header scan skipped: {url}",
+                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "warn",
+                         "message": f"Header scan skipped for unreachable page: {url}"}
+                )
+                print(f"  [WARN] Header scan skipped: {exc.url}")
         print(f"Header findings: {len(header_findings)}")
 
         all_findings = result["findings"] + header_findings
