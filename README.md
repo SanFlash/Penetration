@@ -80,12 +80,16 @@ webpentest-framework/
 │   └── idor_probe.py
 ├── reports/
 │   └── report_generator.py
+├── ui/
+│   ├── __init__.py
+│   └── dashboard.py
 ├── utils/
 │   ├── scope.py
 │   └── http_client.py
 ├── evidence/
 └── tests/
-    └── test_scope.py
+    ├── test_scope.py
+    └── test_report_generator.py
 ~~~
 
 ## Quickstart — Windows
