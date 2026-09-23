@@ -17,7 +17,7 @@ The framework enforces this itself, in code, not just in this README:
 - `config.py` defines `ALLOWED_HOSTS` — an explicit allowlist.
 - `utils/scope.py` checks every single outgoing request against that list and
   raises `OutOfScopeError` if the host isn't on it.
-- Try it yourself: `python3 main.py --target https://amwebtech.com` — the run
+- Try it yourself: `python main.py --target https://amwebtech.com` — the run
   stops at Step 0 with `[BLOCKED] Refusing to send a request to 'amwebtech.com'...`
   before a single byte is sent.
 
@@ -94,15 +94,21 @@ by reproducible evidence, not just a printed claim.
 
 ```bash
 # 1. Install dependencies
-pip install -r requirements.txt
-playwright install chromium
+python -m pip install -r requirements.txt
+python -m playwright install chromium
 
 # 2. Start the local demo target (leave this running in one terminal)
-python3 demo_target/app.py
+# Windows:
+python demo_target/app.py
+# Linux/macOS:
+# python3 demo_target/app.py
 #   -> Serving on http://127.0.0.1:5000 (localhost only)
 
 # 3. In another terminal, run the full framework against it
-python3 main.py --target http://127.0.0.1:5000
+# Windows:
+python main.py --target http://127.0.0.1:5000
+# Linux/macOS:
+# python3 main.py --target http://127.0.0.1:5000
 
 # 4. Open the report
 #    reports/report.html   (open in any browser)
@@ -153,7 +159,7 @@ authorization to test it. See the top of config.py before editing that list.
 
 Or run the unit tests directly:
 ```bash
-python3 tests/test_scope.py
+python tests/test_scope.py
 # PASS: test_allowed_host_passes
 # PASS: test_random_external_host_is_blocked
 # PASS: test_assert_in_scope_raises_for_out_of_scope_host
@@ -207,5 +213,5 @@ and proven to run.
 - **New recon source**: same pattern — always route through `utils/scope.py` before
   touching the network.
 - **CI**: `tests/test_scope.py` is plain-Python-runnable and also pytest-compatible
-  (`python3 -m pytest tests/ -v`), so it's a one-line addition to any CI pipeline as a
+  (`python -m pytest tests/ -v`), so it's a one-line addition to any CI pipeline as a
   guardrail against someone accidentally loosening the scope check in a future PR.
