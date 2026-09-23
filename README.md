@@ -140,6 +140,14 @@ In another terminal:
 python3 main.py --target http://127.0.0.1:5000
 ~~~
 
+## Improved live-site resilience
+
+A broken or intermittently unreachable internal URL no longer aborts the entire authorized assessment. The crawler records the affected URL as unavailable and continues discovering/testing other in-scope pages. The compatibility browser matrix also records page-level failures as findings instead of terminating the run, and the passive header stage skips an unreachable page while continuing with the remaining URLs.
+
+Only the initial target is fail-fast: if https://amwebtech.com/ itself cannot be reached, the framework stops and reports the connectivity problem rather than pretending the assessment started.
+
+The dashboard's Flask polling requests are also kept out of the terminal output so the console remains focused on assessment telemetry.
+
 ## Improved failure handling
 
 If the target is not running, the framework now exits cleanly instead of printing a long requests/urllib3 traceback:
