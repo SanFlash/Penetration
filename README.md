@@ -376,3 +376,74 @@ This project is designed around:
 7. control tests
 8. reproducible findings
 9. human validation before treating a detection signal as a confirmed vulnerability
+
+## Authorized AM Webtech compatibility mode
+
+The repository now supports a dedicated compatibility profile for the explicitly allowlisted AM Webtech domain.
+
+Run:
+
+    python main.py --target https://amwebtech.com --profile compatibility
+
+Or simply:
+
+    python main.py --target https://amwebtech.com
+
+`auto` selects the compatibility profile for `amwebtech.com` and `www.amwebtech.com`.
+
+### What compatibility mode checks
+
+- scope-limited crawling
+- page discovery and form inventory
+- Chromium compatibility
+- Firefox compatibility
+- WebKit/Safari-compatible browser behavior
+- mobile, tablet, laptop, desktop and large-desktop viewports
+- browser console errors
+- failed browser network requests
+- horizontal overflow
+- missing image alternative text
+- potentially unlabeled form controls
+- page title presence
+- navigation timing observations
+- full-page screenshots
+- passive security-header checks
+- JSON evidence
+- responsive HTML reporting
+
+Default viewports: `375x812`, `390x844`, `768x1024`, `1366x768`, `1440x900`, `1920x1080`.
+
+Browser matrix: `Chromium`, `Firefox`, `WebKit`.
+
+### Evidence
+
+Compatibility evidence is stored under `evidence/`, including `evidence/compatibility.json` and browser/viewport screenshots.
+
+Do not commit generated evidence from a real engagement if it contains confidential information.
+
+### Live-site assessment boundary
+
+Compatibility mode is deliberately different from the local vulnerable-lab profile. It does not automatically execute the local demo's hard-coded SQLi, XSS, or IDOR probes against a live site. Those scanners depend on application-specific routes and test accounts and must be mapped to the authorized application's actual endpoints before use.
+
+This prevents a generic scanner from making incorrect assumptions about a production application while still providing broad browser, responsive, functional, and passive security coverage.
+
+### Installing all Playwright browser engines
+
+    python -m playwright install chromium firefox webkit
+
+Then run:
+
+    python main.py --target https://amwebtech.com --profile compatibility
+
+If a browser engine is unavailable, the report records it rather than silently claiming that browser coverage was completed.
+
+### Recommended assessment workflow
+
+1. Run compatibility profile.
+2. Review screenshots and `compatibility.json`.
+3. Fix or validate UI and browser issues.
+4. Re-run compatibility profile.
+5. Map real application forms/API/auth flows.
+6. Add authorized, application-specific security tests.
+7. Perform manual validation.
+8. Generate the final assessment report.
