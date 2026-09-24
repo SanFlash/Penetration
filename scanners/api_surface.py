@@ -116,7 +116,7 @@ class ApiSurfaceEngine:
                     raw = tag.get("href") or tag.get("src")
                     if not raw:
                         continue
-                    if re.search(r"(openapi|swagger|api-docs)(?:\\.|/|$)", raw, re.I):
+                    if re.search(r"(openapi|swagger|api-docs)(?:\.|/|$)", raw, re.I):
                         candidates.append(urljoin(self.target + "/", raw))
         except requests.RequestException:
             pass
