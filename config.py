@@ -23,6 +23,7 @@ DEMO_PASSWORD = "bob_pw"
 # Runtime controls.
 COMPATIBILITY_MAX_PAGES = 12
 ACTIVE_SECURITY_MAX_URLS = 12
+PENTEST_TARGET_ORIGIN = "https://amwebtech.com"
 
 # The professional pentest profile intentionally uses Chromium only.
 # Six responsive sizes provide mobile/tablet/desktop coverage without
