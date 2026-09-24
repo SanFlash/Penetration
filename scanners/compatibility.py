@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from config import EVIDENCE_DIR
-from utils.scope import assert_in_scope
+from utils.scope import assert_in_scope, assert_same_target
 
 VIEWPORTS = {
     "mobile-small": {"width": 375, "height": 812},
@@ -17,6 +17,12 @@ VIEWPORTS = {
     "large-desktop": {"width": 1920, "height": 1080},
 }
 BROWSERS = ("chromium",)
+
+
+def _same_target(target: str, url: str) -> bool:
+    target_parts = urlparse(target)
+    url_parts = urlparse(url)
+    return (target_parts.scheme.lower(), target_parts.netloc.lower()) == (url_parts.scheme.lower(), url_parts.netloc.lower())
 
 
 def _safe_filename(url: str) -> str:
@@ -114,7 +120,8 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                       headed: bool = False, slow_mo: int = 0, telemetry=None) -> dict:
     assert_in_scope(target)
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
-    urls = list(dict.fromkeys(urls))[:max_pages]
+    assert_same_target(target, target)
+    urls = [u for u in list(dict.fromkeys(urls)) if _same_target(target, u)][:max_pages]
     results, findings, unavailable = [], [], []
     total = max(1, len(urls) * len(BROWSERS) * len(VIEWPORTS))
     completed = 0
@@ -141,7 +148,7 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
             for viewport_name, viewport in VIEWPORTS.items():
                 context = browser.new_context(viewport=viewport)
                 for url in urls:
-                    assert_in_scope(url)
+                    assert_same_target(target, url)
                     page = context.new_page()
                     console_errors, request_failures = [], []
                     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
