@@ -64,7 +64,7 @@ cd Penetration
 Existing checkout:
 
 ```powershell
-cd "D:\\ApplyAI\\webpentest-framework\\webpentest-framework"
+cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
 git fetch origin
 git reset --hard origin/main
 git status
