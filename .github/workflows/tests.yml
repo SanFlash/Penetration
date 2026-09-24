@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "feat/security-phase-3"]
 
 jobs:
   test:
@@ -25,7 +25,7 @@ jobs:
 
       - name: Compile
         run: |
-          python -m py_compile main.py security.py scanners/compatibility.py scanners/active_security.py scanners/browser_evidence.py scanners/deep_security.py reports/report_generator.py utils/scope.py
+          python -m py_compile main.py security.py scanners/compatibility.py scanners/active_security.py scanners/browser_evidence.py scanners/deep_security.py scanners/api_surface.py reports/report_generator.py utils/scope.py
 
       - name: Test
         run: python -m pytest tests/ -v
