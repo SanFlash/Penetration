@@ -1,770 +1,371 @@
-# Web Pentest Framework (Python + Playwright)
+# Sentinel Web Pentest Framework
 
-A safe-lab-first, scope-limited web-application penetration-testing framework for learning and authorized assessments. It combines HTTP reconnaissance, authenticated Playwright reconnaissance, read-only security probes, evidence collection, and JSON/HTML reporting.
+A Python + Playwright web-application assessment framework for **owned or explicitly authorized targets**. It combines scope enforcement, reconnaissance, Chrome-only responsive evidence, passive security checks, bounded active checks, evidence capture, a local visual console, and interactive reporting.
 
-## Authorization and scope
+> **Authorization:** Only test systems you own or have explicit written permission to assess. The configured AM Webtech target is enabled because the project owner has stated that it is authorized for assessment.
 
-Use this framework only against systems you own or have explicit written authorization to test.
+## What the professional profile does
 
-The default configuration targets only the intentionally vulnerable local Flask lab shipped in this repository.
+For `https://amwebtech.com`, the recommended profile is:
 
-- config.py defines ALLOWED_HOSTS.
-- utils/scope.py fails closed when a URL is outside the allowlist.
-- There is no --force scope-bypass option.
-- The framework does not automatically enumerate arbitrary external targets.
-- Probes are designed to be non-destructive.
-- Keep the demo target bound to localhost.
+```text
+Scope
+  ↓
+Reconnaissance
+  ↓
+Chrome-only responsive evidence
+  ├─ 375×812
+  ├─ 390×844
+  ├─ 768×1024
+  ├─ 1366×768
+  ├─ 1440×900
+  └─ 1920×1080
+  ↓
+Passive security headers
+  ↓
+Bounded active security checks
+  ├─ CORS policy/reflection
+  ├─ advertised HTTP methods
+  ├─ inert reflected-input canaries
+  ├─ CSRF posture inspection
+  ├─ verbose error disclosure
+  └─ HTTPS mixed-content references
+  ↓
+Evidence + findings
+  ↓
+Interactive JSON/HTML report
+```
 
-## Current capabilities
+The browser phase intentionally uses **Chromium only** to reduce runtime. It does not install or launch Firefox/WebKit for the professional profile.
 
-~~~text
-Authorized target
-      |
-      v
-Scope check --------> BLOCK if not explicitly allowed
-      |
-      v
-HTTP crawler
-      |
-      +-- pages
-      +-- forms
-      |
-      v
-Authenticated Playwright recon
-      |
-      +-- network requests
-      +-- API-shaped endpoints
-      +-- cookie flags
-      +-- screenshots
-      |
-      v
-Read-only scanners
-      +-- security headers
-      +-- reflected XSS marker
-      +-- SQLi detection signals
-      +-- IDOR/BOLA authorization comparison
-      |
-      v
-Evidence + structured findings
-      |
-      v
-JSON + HTML assessment report
-~~~
+## Important scope of automation
 
-### Scanners
+This framework is an automated assessment layer, not a guarantee of complete penetration-test coverage. OWASP WSTG currently describes active testing across information gathering, configuration/deployment, identity, authentication, authorization, session management, injection, error handling, weak cryptography, business logic, client-side and API testing. OWASP also notes that automated tools provide breadth while application-specific and business-logic testing requires manual/semi-automated work.
 
-- Security headers — checks CSP, HSTS, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.
-- Reflected XSS — uses a unique inert marker rather than a script with side effects.
-- SQL injection — uses non-destructive quote and true/false probes. Error and response-shape differences are reported as signals requiring validation, not automatically treated as proof.
-- IDOR/BOLA — compares an authenticated user's owned object with a non-owned object and includes a secure control endpoint in the local lab.
-- Playwright recon — observes browser-generated network requests and captures screenshots.
+- OWASP WSTG: https://wstg.owasp.org/latest/
+- OWASP project page: https://owasp.org/projects/web-security-testing-guide
+- ZAP Automation Framework: https://www.zaproxy.org/docs/automate/automation-framework/
 
-## Project structure
+Use this project to automate repeatable coverage and evidence, then add authorized test accounts, API specifications, role matrices, workflow definitions, and manual validation for deeper application-specific testing.
 
-~~~text
-webpentest-framework/
-├── main.py
-├── config.py
-├── requirements.txt
-├── demo_target/
-│   └── app.py
-├── recon/
-│   ├── crawler.py
-│   └── playwright_recon.py
-├── auth/
-│   └── session.py
-├── scanners/
-│   ├── headers.py
-│   ├── xss_probe.py
-│   ├── sqli_probe.py
-│   └── idor_probe.py
-├── reports/
-│   └── report_generator.py
-├── ui/
-│   ├── __init__.py
-│   └── dashboard.py
-├── utils/
-│   ├── scope.py
-│   └── http_client.py
-├── evidence/
-└── tests/
-    ├── test_scope.py
-    └── test_report_generator.py
-~~~
+## Windows setup
 
-## Quickstart — Windows
-
-PowerShell window 1:
-
-~~~powershell
+```powershell
 cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m playwright install chromium
-python demo_target/app.py
-~~~
+```
 
-Leave the demo target running.
+Only Chromium is required for the professional UI/responsive phase.
 
-PowerShell window 2:
+Verify:
 
-~~~powershell
-cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
-.\.venv\Scripts\Activate.ps1
-python main.py --target http://127.0.0.1:5000
-~~~
+```powershell
+python main.py --help
+python -m py_compile main.py scanners\compatibility.py scanners\active_security.py
+```
 
-Open the generated report:
+The CLI should show:
 
-~~~powershell
-Start-Process .\reports\report.html
-~~~
+```text
+--profile {auto,lab,compatibility,pentest}
+```
 
-Inspect machine-readable findings:
+## Commands for AM Webtech
 
-~~~powershell
-Get-Content .\reports\findings.json
-~~~
+### 1. Recommended full authorized assessment
 
-## Linux/macOS
+```powershell
+python main.py --target https://amwebtech.com --profile pentest
+```
 
-~~~bash
-python3 -m pip install -r requirements.txt
-python3 -m playwright install chromium
-python3 demo_target/app.py
-~~~
+This runs the complete bounded automated flow.
 
-In another terminal:
+### 2. Full assessment with visible Chrome
 
-~~~bash
-python3 main.py --target http://127.0.0.1:5000
-~~~
+```powershell
+python main.py --target https://amwebtech.com --profile pentest --headed
+```
 
-## Improved live-site resilience
+### 3. Slow visible run for training/debugging
 
-A broken or intermittently unreachable internal URL no longer aborts the entire authorized assessment. The crawler records the affected URL as unavailable and continues discovering/testing other in-scope pages. The compatibility browser matrix also records page-level failures as findings instead of terminating the run, and the passive header stage skips an unreachable page while continuing with the remaining URLs.
+```powershell
+python main.py --target https://amwebtech.com --profile pentest --headed --slow-mo 250
+```
 
-Only the initial target is fail-fast: if https://amwebtech.com/ itself cannot be reached, the framework stops and reports the connectivity problem rather than pretending the assessment started.
+`--slow-mo` accepts 0–5000 ms.
 
-The dashboard's Flask polling requests are also kept out of the terminal output so the console remains focused on assessment telemetry.
+### 4. Disable the visual dashboard
 
-## Improved failure handling
+```powershell
+python main.py --target https://amwebtech.com --profile pentest --no-dashboard
+```
 
-If the target is not running, the framework now exits cleanly instead of printing a long requests/urllib3 traceback:
+### 5. Automatic profile selection
 
-~~~text
-[ERROR] Target is unreachable.
-  Target: http://127.0.0.1:5000
-  Check that the authorized target is running and the host/port is correct.
-  Local lab: python demo_target/app.py
-~~~
+```powershell
+python main.py --target https://amwebtech.com
+```
 
-The scope check still runs before any network request.
+The `auto` profile selects `pentest` for AM Webtech.
 
-## Evidence collection
+### 6. UI/responsive-only assessment
 
-HTTP evidence is written to:
+```powershell
+python main.py --target https://amwebtech.com --profile compatibility
+```
 
-~~~text
-evidence/raw_requests.jsonl
-~~~
+Visible Chrome:
 
-Each entry includes:
+```powershell
+python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
+```
 
-- timestamp
-- scanner tag
-- method
-- URL
-- status code
-- response headers
-- bounded response-body snippet
-- elapsed time
-- non-sensitive request headers
+## What the Chrome phase checks
 
-Authorization and Cookie request headers are excluded from the evidence log to reduce accidental credential/session exposure.
+Each discovered page is tested at six responsive viewport sizes:
 
-Playwright recon also writes:
+| Viewport | Purpose |
+|---|---|
+| 375×812 | small mobile |
+| 390×844 | large mobile |
+| 768×1024 | tablet |
+| 1366×768 | laptop |
+| 1440×900 | desktop |
+| 1920×1080 | large desktop |
 
-~~~text
-evidence/playwright_recon.json
-evidence/after_login.png
-evidence/products_page.png
-~~~
+Checks include:
 
-Do not commit generated evidence or reports containing sensitive engagement data.
-
-## Structured findings
-
-Every finding now has a predictable reporting schema. Detectors can provide:
-
-~~~text
-id
-title
-severity
-confidence
-category
-CWE
-OWASP mapping
-method
-parameter
-URL
-evidence
-detail
-impact
-remediation
-references
-~~~
-
-The report generator fills safe defaults when a detector does not provide every field.
-
-### SQLi confidence
-
-The SQLi detector deliberately distinguishes detection signals from confirmation:
-
-~~~text
-quote causes server/error signal
-        +
-true/false response difference
-        |
-        v
-possible SQL injection
-        |
-        v
-manual validation in the authorized environment
-~~~
-
-A response-length difference alone is not sufficient proof of SQL injection.
-
-## Reports
-
-Each completed run produces:
-
-~~~text
-reports/findings.json
-reports/report.html
-~~~
-
-The HTML report now contains:
-
-- severity summary
-- finding ID
-- URL
-- confidence
-- category
-- CWE / OWASP mapping
-- parameter
-- evidence
-- impact
-- remediation
-- references
-- responsive layout
-- HTML escaping for finding content
-
-## Tests
-
-Run the scope tests:
-
-~~~powershell
-python tests/test_scope.py
-~~~
-
-If pytest is installed:
-
-~~~powershell
-python -m pytest tests/ -v
-~~~
-
-The tests verify that:
-
-- configured local targets are allowed
-- arbitrary external hosts are rejected
-- assert_in_scope() raises for out-of-scope URLs
-- configured hosts pass the enforcement check
-
-## Local lab vulnerabilities
-
-The shipped lab intentionally contains examples for learning:
-
-- reflected XSS
-- error-based SQL injection signal
-- IDOR/BOLA
-- missing security headers
-- a secure authorization control endpoint for comparison
-
-The lab is intentionally vulnerable and must not be exposed publicly.
-
-## Example successful run
-
-A successful local run should progress through:
-
-~~~text
-STEP 0 — Scope check
-[OK]
-
-STEP 1 — Reconnaissance
-Discovered pages and forms
-
-STEP 2 — Authenticated recon
-Observed network requests
-
-STEP 3 — Security header scan
-Headers present / missing
-
-STEP 4 — Reflected XSS probe
-Marker reflected unescaped: True
-
-STEP 5 — SQL injection probe
-Error-based signal: True
-Boolean-based signal: False
-
-STEP 6 — IDOR probe
-Other user's object: 200
-Vulnerable: True
-
-STEP 6b — Secure control
-Other user's object: 403
-Vulnerable: False
-
-STEP 7 — Report generation
-Findings JSON: reports\findings.json
-Findings HTML: reports\report.html
-~~~
-
-The exact finding count and severity summary can change as scanners and the target change.
-
-## Pull the latest version
-
-After changes are committed to GitHub:
-
-~~~powershell
-cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
-git pull origin main
-~~~
-
-Then:
-
-~~~powershell
-.\.venv\Scripts\Activate.ps1
-python main.py --target http://127.0.0.1:5000
-~~~
-
-## Extending the framework
-
-### Add a scanner
-
-1. Create a module under scanners/.
-2. Keep probes non-destructive.
-3. Use the central HTTP client for HTTP requests.
-4. Check scope before any direct browser navigation or session request.
-5. Return a findings list.
-6. Include confidence and reproducible evidence.
-7. Add tests for both positive and negative/control cases.
-8. Update the report schema only when the new data is genuinely useful.
-
-### Recommended future phases
-
-- authenticated request evidence for IDOR/session probes
-- scanner plugin registry
-- deterministic finding IDs
-- per-request correlation IDs
-- SARIF export
-- JUnit/CI output
-- more negative/control tests
-- configurable scan profiles
-- better crawl deduplication and form discovery
-- authorization-aware API inventory
-- report attachments and evidence indexing
-
-## Safety principles
-
-This project is designed around:
-
-1. explicit authorization
-2. fail-closed scope enforcement
-3. rate limiting
-4. bounded timeouts
-5. non-destructive detection
-6. evidence minimization
-7. control tests
-8. reproducible findings
-9. human validation before treating a detection signal as a confirmed vulnerability
-
-## Latest AM Webtech compatibility workflow
-
-The framework now supports a dedicated authorized compatibility profile for amwebtech.com, including visible Playwright browser testing.
-
-### Update your local copy
-
-    cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
-    git pull origin main
-    .\.venv\Scripts\Activate.ps1
-    python -m pip install -r requirements.txt
-    python -m playwright install chromium firefox webkit
-
-Verify the CLI:
-
-    python main.py --help
-
-### Run AM Webtech compatibility testing
-
-Headless:
-
-    python main.py --target https://amwebtech.com --profile compatibility
-
-Visible browser windows:
-
-    python main.py --target https://amwebtech.com --profile compatibility --headed
-
-Recommended visual run:
-
-    python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
-
-Use 500-1000 ms if you want to watch the actions more slowly. The accepted range is 0-5000 ms.
-
-### Visual browser matrix
-
-- Chromium
-- Firefox
-- WebKit (Safari-compatible engine)
-
-Viewport matrix:
-
-- 375x812 — mobile small
-- 390x844 — mobile large
-- 768x1024 — tablet
-- 1366x768 — laptop
-- 1440x900 — desktop
-- 1920x1080 — large desktop
-
-With headed mode, Playwright opens the browser windows while each page/viewport combination is tested. The terminal also prints progress such as:
-
-    [BROWSER] chromium | [VIEWPORT] mobile-small | https://amwebtech.com/
-
-### Current automated checks
-
-- scope-limited crawling
-- page and form discovery
+- HTTP/navigation status
 - browser console errors
-- failed browser network requests
+- failed browser requests
 - horizontal overflow
-- missing image alt attributes
-- potentially unlabeled form controls
-- page title presence
-- navigation timing observations
+- missing image `alt` attributes
+- potentially unlabeled controls
+- document title
+- navigation timing
 - full-page screenshots
-- passive security-header checks
-- JSON evidence
-- HTML reporting
-
-### Evidence and reports
-
-Evidence is written under:
-
-    evidence/
-
-Important files include:
-
-    evidence/compatibility.json
-    evidence/chromium_*.png
-    evidence/firefox_*.png
-    evidence/webkit_*.png
-
-Reports are written under:
-
-    reports/findings.json
-    reports/report.html
-
-Open the HTML report:
-
-    Start-Process .\reports\report.html
-
-Read compatibility JSON:
-
-    Get-Content .\evidence\compatibility.json
-
-### Local vulnerable lab
-
-Start the local lab in one terminal:
-
-    python demo_target/app.py
-
-Then run in another:
-
-    python main.py --target http://127.0.0.1:5000 --profile lab
-
-### Safety boundary for the live site
-
-The AM Webtech compatibility profile is deliberately different from the local vulnerable-lab profile. It does not blindly execute the lab's hard-coded SQLi, XSS, or IDOR routes against a production application. Those tests must first be mapped to real, authorized application endpoints and test accounts.
-
-Automated findings are signals that should be manually validated before being treated as confirmed defects or vulnerabilities.
-
-### Real-device limitation
-
-WebKit provides Safari-engine coverage but is not a physical iPhone/iPad. Chromium mobile viewports are not equivalent to every physical Android device. A future real-device phase should cover iOS Safari, Android Chrome, touch behavior, orientation, mobile keyboards, and real network conditions.
-
-### Recommended next workflow
-
-1. Pull the latest repository.
-2. Install all Playwright browser engines.
-3. Run the headed AM Webtech assessment with slow motion.
-4. Review screenshots and compatibility.json.
-5. Open reports/report.html.
-6. Group findings by browser, viewport, page, and severity.
-7. Fix and re-run the affected workflows.
-8. Add application-specific functional/API/authentication tests.
-9. Perform manual validation.
-10. Generate the final assessment report.
-
-### Framework tests
-
-    python tests/test_scope.py
-
-If pytest is installed:
-
-    python -m pytest tests/ -v
-
-### Git commands
-
-Check status:
-
-    git status
-
-Review recent commits:
-
-    git log --oneline -10
-
-Update:
-
-    git pull origin main
-
-Do not commit real engagement screenshots, request logs, or reports if they contain confidential information.
-
-
-## Professional visual assessment console
-
-The compatibility profile now includes a local visual monitoring console. The Playwright assessment can remain headless while the dashboard runs visibly in your normal browser.
-
-When a compatibility assessment starts, the framework opens:
-
-    http://127.0.0.1:8765/
-
-The dashboard shows:
-
-- animated assessment visualization
-- current assessment stage
-- target and profile
-- active browser engine
-- active viewport
-- progress percentage
-- pages and browser checks
-- finding/error counters
-- live console telemetry
-- browser/viewport matrix
-- assessment completion status
-
-### Recommended headless + visual dashboard command
-
-    python main.py --target https://amwebtech.com --profile compatibility
-
-The Playwright engines remain headless, while the Sentinel dashboard opens in your normal browser.
-
-### Headed Playwright + dashboard
-
-If you also want the actual Playwright browser windows visible:
-
-    python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
-
-This gives you both:
-
-    Sentinel dashboard
-          +
-    visible Playwright browser windows
-
-### Disable the dashboard
-
-For CI/server environments:
-
-    python main.py --target https://amwebtech.com --profile compatibility --no-dashboard
-
-### Console loader
-
-The terminal now displays a continuously updating loader while the assessment is running:
-
-    [/] [chromium/mobile-small] https://amwebtech.com/
-    [-] [chromium/tablet] https://amwebtech.com/
-    [\] Scanning security headers
-    [|] Building interactive analytics report
-
-The dashboard receives the same telemetry.
-
-## Interactive assessment report
-
-reports/report.html has been upgraded from a basic findings page to an interactive assessment report.
-
-It now contains:
-
-### Overview
-
-- severity distribution
-- total findings
-- category count
-- high-confidence count
-- browser-check count
-- category distribution bars
-
-### Findings explorer
-
-- live search
-- severity filter
-- category filter
-- expandable evidence
-- impact
-- remediation
-- CWE
-- OWASP mapping
-- URL
-- confidence
-- finding IDs
-
-### Coverage
-
-The report can display the browser/viewport matrix with:
-
-- browser engine
-- viewport
-- HTTP status
-- load timing
-- console error count
-- network failure count
-- horizontal overflow
-
-### Evidence
-
-The report includes execution metadata and the compatibility evidence directory.
-
-Open the report after an assessment:
-
-    Start-Process .\reports\report.html
-
-## Updated architecture
-
-    CLI
-      |
-      +--> Scope enforcement
-      |
-      +--> Reconnaissance
-      |
-      +--> Live Dashboard ----> http://127.0.0.1:8765
-      |
-      +--> Playwright matrix
-      |       +-- Chromium
-      |       +-- Firefox
-      |       +-- WebKit
-      |       +-- 6 responsive viewports
-      |
-      +--> Passive security checks
-      |
-      +--> Evidence collection
-      |
-      +--> Interactive JSON/HTML report
-
-## Latest recommended workflow
-
-    cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
-    git pull origin main
-    .\.venv\Scripts\Activate.ps1
-    python -m pip install -r requirements.txt
-    python -m playwright install chromium firefox webkit
-
-Then:
-
-    python main.py --target https://amwebtech.com --profile compatibility
-
-For the most visual development run:
-
-    python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
-
-Then open:
-
-    Start-Process .\reports\report.html
-
-## Professional pentest profile
-
-The default profile for the authorized AM Webtech target is now `pentest`. It combines:
-
-- scope-limited reconnaissance
-- **Chrome/Chromium-only** responsive UI testing across six viewports to reduce runtime
-- marked screenshots for detected UI, console, network and accessibility errors
-- passive security-header analysis
-- bounded active security controls
-- CORS origin reflection testing
-- HTTP method exposure checks
-- reflected inert-canary testing on discovered query parameters
-- state-changing form CSRF posture inspection without submitting forms
-- verbose error disclosure checks using a single random non-existent path
-- HTTPS mixed-content detection
-- structured JSON evidence and interactive HTML reporting
-
-The active checks are intentionally bounded and non-destructive. They are designed for authorized assessments and do not perform credential brute force, destructive actions, malware delivery, data deletion, or denial-of-service activity.
-
-The methodology is aligned to the categories described by the OWASP Web Security Testing Guide, which covers information gathering, configuration/deployment, identity, authentication, authorization, session management, injection, error handling, cryptography, business logic, client-side and API testing. urlOWASP Web Security Testing Guidehttps://wstg.owasp.org/latest/
-
-### Run the professional assessment
-
-Recommended fast run:
-
-    python main.py --target https://amwebtech.com --profile pentest
-
-Visible Chrome + animated dashboard:
-
-    python main.py --target https://amwebtech.com --profile pentest --headed --slow-mo 250
-
-The browser matrix intentionally uses Chromium only:
-
-    375x812
-    390x844
-    768x1024
-    1366x768
-    1440x900
-    1920x1080
-
-This reduces runtime while retaining mobile/tablet/desktop responsive coverage.
 
 ### Marked visual evidence
 
-When a Chrome check detects one or more of the following, the page is annotated before the screenshot is captured:
+When a UI/browser issue is detected, Sentinel injects a non-destructive visual banner before taking the screenshot.
 
-- browser console errors
-- failed network requests
-- horizontal overflow
-- missing image alt attributes
-- potentially unlabeled controls
+Examples:
 
-Screenshots are saved under `evidence/chromium_*.png` and linked from the corresponding report findings.
+```text
+SENTINEL // EVIDENCE MARKER
+CONSOLE ERRORS: 2
+NETWORK FAILURES: 1
+HORIZONTAL OVERFLOW: 1280px > 375px
+MISSING ALT: 4
+UNLABELED CONTROLS: 3
+```
 
-### Security coverage boundary
+The marker is included only in the captured evidence screenshot; it is not sent as a request to the application.
 
-No automated scanner can provide complete penetration-test coverage. OWASP explicitly describes active testing across multiple domains and notes that logical vulnerabilities such as broken access control require manual, application-specific testing. ZAP's documentation makes the same distinction between automated active scanning and manual testing. citeturn1search0turn2search5
+Evidence is stored as:
 
-For industry-grade engagements, use this framework as the repeatable automated layer and add authorized test accounts, API specifications, business-workflow definitions, role matrices, and manual validation for authentication bypass, authorization/IDOR, business logic, session lifecycle, and other application-specific controls.
+```text
+evidence/chromium_<viewport>_<page>.png
+evidence/compatibility.json
+```
 
-## Industry-oriented roadmap
+Findings that originate from the browser checks retain the associated screenshot path.
 
-The framework is being evolved toward a reusable assessment platform with:
+## Active security layer
 
-- explicit target profiles
-- scope enforcement
-- browser/device compatibility
-- responsive QA
-- accessibility signals
-- performance observations
-- passive security analysis
-- application-specific security modules
-- evidence preservation
-- interactive reporting
-- CI-friendly execution
-- real-device integrations
-- baseline/visual regression
-- API and authentication workflow testing
+The professional profile uses bounded, non-destructive active checks.
 
-Automated findings remain observations until they are validated in the authorized environment.
+### CORS
+
+Sends a deliberately invalid Origin and inspects whether the response reflects it, including credentialed CORS behavior.
+
+### HTTP method exposure
+
+Inspects advertised methods and reports potentially unnecessary state-changing/diagnostic methods.
+
+### Reflected input
+
+For already-discovered query parameters, replaces one parameter value with an inert unique canary and checks whether it is reflected. Reflection alone is **not** reported as proof of XSS.
+
+### CSRF posture
+
+Reviews discovered state-changing forms without submitting them. A missing conventional token is an observation requiring application-specific validation.
+
+### Error disclosure
+
+Requests one random non-existent path and looks for common verbose-error signatures.
+
+### Mixed content
+
+On HTTPS pages, checks for direct HTTP resource references.
+
+The active layer does **not**:
+
+- brute-force credentials
+- perform credential stuffing
+- upload malware
+- delete application data
+- intentionally cause denial of service
+- bypass the framework's scope control
+- submit discovered state-changing forms merely to prove a finding
+
+## Evidence and reports
+
+Generated runtime files:
+
+```text
+evidence/
+  raw_requests.jsonl
+  compatibility.json
+  active_security.json
+  chromium_*.png
+
+reports/
+  findings.json
+  report.html
+```
+
+Open the report:
+
+```powershell
+Start-Process .\reports\report.html
+```
+
+Inspect active-security evidence:
+
+```powershell
+Get-Content .\evidence\active_security.json
+```
+
+Inspect Chrome evidence:
+
+```powershell
+Get-Content .\evidence\compatibility.json
+```
+
+Do not commit real engagement screenshots, cookies, tokens, authorization headers, or sensitive request/response data.
+
+## Local vulnerable lab
+
+The repository includes a deliberately vulnerable Flask lab for learning.
+
+Terminal 1:
+
+```powershell
+python demo_target\app.py
+```
+
+Terminal 2:
+
+```powershell
+python main.py --target http://127.0.0.1:5000 --profile lab
+```
+
+The lab contains controlled examples for reflected XSS, SQL injection signals, IDOR/BOLA, and security-header weaknesses.
+
+## Project structure
+
+```text
+Penetration/
+├── main.py
+├── config.py
+├── requirements.txt
+├── demo_target/
+├── recon/
+├── auth/
+├── scanners/
+│   ├── headers.py
+│   ├── xss_probe.py
+│   ├── sqli_probe.py
+│   ├── idor_probe.py
+│   ├── compatibility.py
+│   └── active_security.py
+├── reports/
+├── ui/
+├── utils/
+├── evidence/
+└── tests/
+```
+
+## Testing the framework
+
+Before a live assessment:
+
+```powershell
+python -m py_compile main.py scanners\compatibility.py scanners\active_security.py reports\report_generator.py
+python -m pytest tests\ -v
+```
+
+The framework should pass syntax checks before any live target is contacted.
+
+## Operational workflow
+
+Recommended workflow for AM Webtech:
+
+1. Pull the current repository.
+2. Activate the virtual environment.
+3. Install requirements.
+4. Install Chromium.
+5. Run `py_compile`.
+6. Run the pentest profile.
+7. Monitor the local Sentinel dashboard.
+8. Review marked screenshots.
+9. Review `active_security.json`.
+10. Review `reports/report.html`.
+11. Manually validate significant findings.
+12. Retest after remediation.
+13. Keep engagement evidence separate from source control.
+
+## Future industry-oriented modules
+
+The architecture is intended to grow toward:
+
+- authenticated test-account workflows
+- role/authorization matrices
+- API/OpenAPI discovery
+- session lifecycle testing
+- controlled IDOR/BOLA workflows
+- application-specific business-logic tests
+- CSP and client-side security analysis
+- source-map and exposed-artifact detection
+- controlled directory/configuration exposure checks
+- SARIF/JUnit output
+- CI/CD integration
+- optional ZAP integration
+- evidence hashing and correlation IDs
+- manual-test checklist generation
+
+An optional ZAP active-scan integration should remain explicitly opt-in because ZAP documents that active scanning attacks the application and should only be used with permission.
+
+## Git update commands
+
+```powershell
+git status
+git fetch origin
+git pull --rebase origin main
+git log -1 --oneline
+```
+
+If generated `evidence/` or `reports/` files are modified locally, stash those artifacts before updating the framework:
+
+```powershell
+git stash push -m "local pentest evidence before framework update" -- evidence reports
+git pull --rebase origin main
+```
+
+## Safety model
+
+The framework follows these principles:
+
+1. explicit authorization
+2. fail-closed scope enforcement
+3. bounded request volume
+4. bounded timeouts
+5. non-destructive active checks
+6. minimized evidence
+7. reproducible findings
+8. manual validation of important signals
+
+OWASP describes the WSTG as a methodology rather than an exhaustive checklist, and recommends balancing automated breadth with manual and application-specific depth.
