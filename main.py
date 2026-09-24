@@ -301,7 +301,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         security_evidence = capture_security_evidence(
             target,
-            active_result["findings"],
+            active_result["findings"] + deep_result["findings"] + api_result.get("findings", []),
             headed=headed,
             slow_mo=slow_mo,
             max_items=30,
@@ -310,7 +310,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
 
         all_findings = ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", [])
 
-        banner("STEP 6 — Interactive pentest report")
+        banner("STEP 7 — Interactive pentest report")
         loader.set("Building interactive pentest report")
         state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
         elapsed = round(time.time() - start, 1)
