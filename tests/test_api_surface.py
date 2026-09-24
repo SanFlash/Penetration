@@ -1,4 +1,4 @@
-import json
+import json as jsonlib
 
 from scanners.api_surface import ApiSurfaceEngine
 
@@ -36,7 +36,7 @@ def test_openapi_parser_inventory():
             return payload
 
         status_code = 200
-        content = json.dumps(payload).encode()
+        content = jsonlib.dumps(payload).encode()
 
     engine.parse_spec("https://example.com/openapi.json", Response())
 
