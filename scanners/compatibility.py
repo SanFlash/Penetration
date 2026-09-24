@@ -1,4 +1,4 @@
-"""Safe browser compatibility checks with optional live telemetry."""
+"""Chrome-only responsive/UI evidence with marked screenshots and telemetry."""
 import json
 import os
 from urllib.parse import urlparse
@@ -16,7 +16,7 @@ VIEWPORTS = {
     "desktop": {"width": 1440, "height": 900},
     "large-desktop": {"width": 1920, "height": 1080},
 }
-BROWSERS = ("chromium", "firefox", "webkit")
+BROWSERS = ("chromium",)
 
 
 def _safe_filename(url: str) -> str:
@@ -28,12 +28,13 @@ def _safe_filename(url: str) -> str:
 def _page_findings(url, browser_name, viewport_name, data):
     findings = []
     prefix = f"{browser_name}/{viewport_name}"
+    screenshot = data.get("screenshot")
     for error in data["console_errors"]:
         findings.append({
             "id": f"COMP-CONSOLE-{abs(hash((url, prefix, error))) % 100000:05d}",
             "title": "Browser console error", "severity": "Low", "confidence": "High",
             "category": "Compatibility", "method": "GET", "url": url,
-            "evidence": f"{prefix}: {error}",
+            "evidence": f"{prefix}: {error}", "screenshot": screenshot,
             "detail": "The page emitted a browser console error during automated navigation.",
             "impact": "Console errors can indicate broken JavaScript, failed integrations, or client-side functionality that may not work correctly for users.",
             "remediation": "Inspect the originating JavaScript error and fix the failing client-side code or dependency.",
@@ -43,7 +44,7 @@ def _page_findings(url, browser_name, viewport_name, data):
             "id": f"COMP-NET-{abs(hash((url, prefix, failure))) % 100000:05d}",
             "title": "Failed browser network request", "severity": "Medium", "confidence": "High",
             "category": "Compatibility", "method": "GET", "url": url,
-            "evidence": f"{prefix}: {failure}",
+            "evidence": f"{prefix}: {failure}", "screenshot": screenshot,
             "detail": "A browser resource request failed while loading the page.",
             "impact": "Failed assets or API requests can produce broken UI, missing content, or incomplete user workflows.",
             "remediation": "Inspect the failed resource, HTTP status, CORS policy, DNS/TLS configuration, and deployment path.",
@@ -54,6 +55,7 @@ def _page_findings(url, browser_name, viewport_name, data):
             "title": "Horizontal overflow at responsive viewport", "severity": "Medium", "confidence": "High",
             "category": "Responsive UI", "method": "GET", "url": url,
             "evidence": f"{prefix}: document scrollWidth={data['scroll_width']} viewportWidth={data['viewport_width']}",
+            "screenshot": screenshot,
             "detail": "The document is wider than the viewport and may require horizontal scrolling.",
             "impact": "Horizontal overflow can hide content or make mobile and narrow-screen interfaces difficult to use.",
             "remediation": "Inspect fixed widths, oversized media, long unbroken content, positioned elements, and container overflow rules.",
@@ -64,6 +66,7 @@ def _page_findings(url, browser_name, viewport_name, data):
             "title": "Images missing alternative text", "severity": "Low", "confidence": "High",
             "category": "Accessibility", "cwe": "CWE-116", "url": url,
             "evidence": f"{data['missing_alt_count']} image element(s) without an alt attribute.",
+            "screenshot": screenshot,
             "detail": "Images without appropriate alternative text can be inaccessible to screen-reader users.",
             "impact": "Important visual information may not be available to users relying on assistive technology.",
             "remediation": "Provide meaningful alt text for informative images and an empty alt attribute for purely decorative images.",
@@ -74,11 +77,37 @@ def _page_findings(url, browser_name, viewport_name, data):
             "title": "Potentially unlabeled form controls", "severity": "Low", "confidence": "Medium",
             "category": "Accessibility", "url": url,
             "evidence": f"{data['unlabeled_controls']} form control(s) could not be associated with a label.",
+            "screenshot": screenshot,
             "detail": "Automated markup inspection found controls without an obvious associated label.",
             "impact": "Users of assistive technology may have difficulty identifying the purpose of controls.",
             "remediation": "Associate each control with a visible label or an appropriate accessible name.",
         })
     return findings
+
+
+def _mark_evidence(page, issues):
+    """Add a non-destructive visual evidence marker before the final screenshot."""
+    if not issues:
+        return
+    labels = " | ".join(issues[:6])
+    page.evaluate(
+        """(label) => {
+            const old = document.getElementById('__sentinel_evidence_marker');
+            if (old) old.remove();
+            const box = document.createElement('div');
+            box.id = '__sentinel_evidence_marker';
+            box.textContent = 'SENTINEL // EVIDENCE MARKER — ' + label;
+            Object.assign(box.style, {
+                position:'fixed', top:'12px', left:'12px', zIndex:'2147483647',
+                maxWidth:'calc(100vw - 24px)', padding:'10px 14px',
+                background:'#8b0000', color:'#fff', border:'2px solid #ff4040',
+                borderRadius:'6px', font:'700 13px/1.3 monospace',
+                boxShadow:'0 4px 18px rgba(0,0,0,.45)'
+            });
+            document.documentElement.appendChild(box);
+        }""",
+        labels,
+    )
 
 
 def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
@@ -94,20 +123,19 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
         if telemetry:
             telemetry(**payload)
 
-    emit(stage="BROWSER ENGINE INITIALIZATION", detail="Preparing Playwright browser matrix.", progress=0,
-         log={"time": "00:00", "level": "ok", "message": "Compatibility engine initialized."})
+    emit(stage="BROWSER ENGINE INITIALIZATION", detail="Preparing Chrome/Chromium browser matrix.", progress=0,
+         log={"time": "00:00", "level": "ok", "message": "Chrome-only compatibility engine initialized."})
 
     with sync_playwright() as pw:
         for browser_name in BROWSERS:
-            emit(browser=browser_name.upper(), stage=f"{browser_name.upper()} ENGINE",
-                 detail=f"Launching {browser_name}.")
+            emit(browser="CHROME", stage="CHROME ENGINE",
+                 detail="Launching Chromium.")
             try:
-                browser_type = getattr(pw, browser_name)
-                browser = browser_type.launch(headless=not headed, slow_mo=slow_mo)
+                browser = pw.chromium.launch(headless=not headed, slow_mo=slow_mo)
             except Exception as exc:
                 unavailable.append({"browser": browser_name, "reason": str(exc)})
-                emit(stage=f"{browser_name.upper()} UNAVAILABLE", detail=str(exc),
-                     log={"time": "", "level": "warn", "message": f"{browser_name} unavailable: {exc}"})
+                emit(stage="CHROME UNAVAILABLE", detail=str(exc),
+                     log={"time": "", "level": "warn", "message": f"Chrome/Chromium unavailable: {exc}"})
                 continue
 
             for viewport_name, viewport in VIEWPORTS.items():
@@ -118,9 +146,9 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                     console_errors, request_failures = [], []
                     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
                     page.on("requestfailed", lambda req: request_failures.append(f"{req.method} {req.url}: {req.failure}"))
-                    emit(browser=browser_name.upper(), viewport=viewport_name,
+                    emit(browser="CHROME", viewport=viewport_name,
                          stage="NAVIGATING", detail=url,
-                         log={"time": "", "level": "", "message": f"[{browser_name}/{viewport_name}] {url}"})
+                         log={"time": "", "level": "", "message": f"[CHROME/{viewport_name}] {url}"})
                     try:
                         response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
                         try:
@@ -140,53 +168,79 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                             titlePresent: !!document.title.trim(),
                             loadTiming: performance.getEntriesByType('navigation')[0]?.duration || 0
                         })""")
-                        filename = os.path.join(EVIDENCE_DIR, f"{browser_name}_{viewport_name}_{_safe_filename(url)}.png")
+
+                        issues = []
+                        if console_errors:
+                            issues.append(f"CONSOLE ERRORS: {len(console_errors)}")
+                        if request_failures:
+                            issues.append(f"NETWORK FAILURES: {len(request_failures)}")
+                        overflow = metrics["scrollWidth"] > metrics["viewportWidth"] + 2
+                        if overflow:
+                            issues.append(f"HORIZONTAL OVERFLOW: {metrics['scrollWidth']}px > {metrics['viewportWidth']}px")
+                        if metrics["missingAltCount"]:
+                            issues.append(f"MISSING ALT: {metrics['missingAltCount']}")
+                        if metrics["unlabeledControls"]:
+                            issues.append(f"UNLABELED CONTROLS: {metrics['unlabeledControls']}")
+
+                        evidence_marked = bool(issues)
+                        if evidence_marked:
+                            _mark_evidence(page, issues)
+
+                        filename = os.path.join(
+                            EVIDENCE_DIR,
+                            f"chromium_{viewport_name}_{_safe_filename(url)}.png"
+                        )
                         page.screenshot(path=filename, full_page=True)
                         data = {
-                            "browser": browser_name, "viewport": viewport_name, "url": url,
+                            "browser": "chromium", "viewport": viewport_name, "url": url,
                             "status": response.status if response else None,
                             "console_errors": console_errors[:20], "request_failures": request_failures[:20],
-                            "horizontal_overflow": metrics["scrollWidth"] > metrics["viewportWidth"] + 2,
+                            "horizontal_overflow": overflow,
                             "scroll_width": metrics["scrollWidth"], "viewport_width": metrics["viewportWidth"],
                             "missing_alt_count": metrics["missingAltCount"], "unlabeled_controls": metrics["unlabeledControls"],
                             "title_present": metrics["titlePresent"], "load_ms": round(metrics["loadTiming"], 1),
-                            "screenshot": filename, "headed": headed, "slow_mo_ms": slow_mo,
+                            "screenshot": filename, "evidence_marked": evidence_marked,
+                            "issues_marked": issues, "headed": headed, "slow_mo_ms": slow_mo,
                         }
                         results.append(data)
-                        findings.extend(_page_findings(url, browser_name, viewport_name, data))
+                        findings.extend(_page_findings(url, "chromium", viewport_name, data))
                         completed += 1
                         progress = round(completed / total * 100, 1)
-                        emit(browser=browser_name.upper(), viewport=viewport_name, pages_tested=len({r["url"] for r in results}),
-                             checks=completed, findings=len(findings), errors=sum(len(r["console_errors"])+len(r["request_failures"]) for r in results),
-                             progress=progress, stage="CHECK COMPLETE", detail=f"HTTP {data['status']} • {data['load_ms']} ms",
-                             matrix_item={"browser": browser_name, "viewport": viewport_name, "url": url, "status": data["status"]},
-                             log={"time": "", "level": "ok" if data["status"] and data["status"] < 400 else "warn",
-                                  "message": f"Completed {browser_name}/{viewport_name} -> {data['status']}"})
+                        emit(browser="CHROME", viewport=viewport_name, pages_tested=len({r["url"] for r in results}),
+                             checks=completed, findings=len(findings),
+                             errors=sum(len(r["console_errors"])+len(r["request_failures"]) for r in results),
+                             progress=progress, stage="CHECK COMPLETE",
+                             detail=f"HTTP {data['status']} • {data['load_ms']} ms",
+                             matrix_item={"browser":"chromium","viewport":viewport_name,"url":url,"status":data["status"]},
+                             log={"time":"","level":"ok" if data["status"] and data["status"] < 400 else "warn",
+                                  "message":f"Completed CHROME/{viewport_name} -> {data['status']}"})
                     except Exception as exc:
                         completed += 1
                         findings.append({
-                            "id": f"COMP-PAGE-{abs(hash((browser_name, viewport_name, url))) % 100000:05d}",
+                            "id": f"COMP-PAGE-{abs(hash(("chromium", viewport_name, url))) % 100000:05d}",
                             "title": "Page compatibility check failed", "severity": "Medium", "confidence": "High",
                             "category": "Compatibility", "url": url,
-                            "evidence": f"{browser_name}/{viewport_name}: {type(exc).__name__}: {exc}",
-                            "detail": "The automated browser could not complete navigation or inspection.",
-                            "impact": "The affected browser/viewport combination requires manual investigation.",
-                            "remediation": "Reproduce the failure in the specified browser and viewport, then inspect page errors and network requests.",
+                            "evidence": f"chromium/{viewport_name}: {type(exc).__name__}: {exc}",
+                            "detail": "The Chrome browser could not complete navigation or inspection.",
+                            "impact": "The affected viewport requires manual investigation.",
+                            "remediation": "Reproduce the failure in Chrome at the specified viewport and inspect page errors and network requests.",
                         })
-                        emit(checks=completed, findings=len(findings), errors=len(findings), progress=round(completed/total*100,1),
-                             stage="CHECK FAILED", detail=str(exc),
-                             log={"time":"", "level":"err", "message":f"Failed {browser_name}/{viewport_name}: {exc}"})
+                        emit(checks=completed, findings=len(findings), errors=len(findings),
+                             progress=round(completed/total*100,1), stage="CHECK FAILED", detail=str(exc),
+                             log={"time":"","level":"err","message":f"Failed CHROME/{viewport_name}: {exc}"})
                     finally:
                         page.close()
                 context.close()
             browser.close()
 
-    result = {"target": target, "browsers": list(BROWSERS), "viewports": VIEWPORTS,
-              "urls_tested": urls, "results": results, "browser_unavailable": unavailable,
-              "findings": findings, "headed": headed, "slow_mo_ms": slow_mo}
+    result = {
+        "target": target, "browsers": ["chromium"], "viewports": VIEWPORTS,
+        "urls_tested": urls, "results": results, "browser_unavailable": unavailable,
+        "findings": findings, "headed": headed, "slow_mo_ms": slow_mo,
+    }
     with open(os.path.join(EVIDENCE_DIR, "compatibility.json"), "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
-    emit(status="COMPLETE", stage="COMPATIBILITY COMPLETE", detail="Browser matrix finished.", progress=100,
-         checks=completed, findings=len(findings), finished_at=True,
-         log={"time":"", "level":"ok", "message":"Compatibility matrix completed."})
+    emit(status="COMPLETE", stage="COMPATIBILITY COMPLETE", detail="Chrome-only responsive matrix finished.",
+         progress=100, checks=completed, findings=len(findings), finished_at=True,
+         log={"time":"","level":"ok","message":"Chrome-only compatibility matrix completed."})
     return result
