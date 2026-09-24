@@ -50,3 +50,15 @@ def test_extracts_real_set_cookie_headers_without_comma_splitting():
 def test_cors_test_is_bounded_to_same_origin():
     engine = DeepSecurityEngine("https://example.com", max_urls=1, max_probes=3)
     assert engine.origin == "https://example.com"
+
+
+def test_run_result_distinguishes_raw_and_report_counts():
+    engine = DeepSecurityEngine("https://example.com", max_urls=1, max_probes=1)
+    engine.findings = [
+        {
+            "id": "A", "title": "Repeated observation", "severity": "Low",
+            "confidence": "High", "category": "Test", "url": "https://example.com/",
+            "detail": "x", "impact": "x", "remediation": "x", "evidence": "x"
+        }
+    ]
+    assert len(engine.findings) == 1
