@@ -302,7 +302,7 @@ Recorded observations include:
 - mutation vector
 - evidence URL
 
-OWASP describes fuzzing as repeated request generation followed by analysis of response status, timing and other characteristics, and notes that injection testing can have destructive consequences when state-changing database operations are reached. This implementation therefore remains GET-only and bounded. citeturn2search1turn1search1
+OWASP describes fuzzing as repeated request generation followed by analysis of response status, timing and other characteristics, and notes that injection testing can have destructive consequences when state-changing database operations are reached. This implementation therefore remains GET-only and bounded.
 
 ### Security screenshots
 
@@ -327,7 +327,7 @@ Each relevant finding in `reports/findings.json` contains a screenshot reference
 - **Evidence** — screenshot gallery plus security-capture log. Failure screenshots are explicitly marked.
 - **Execution** — raw run metadata for reproducibility.
 
-OWASP reporting guidance recommends that findings contain enough information to reproduce and remediate an issue and specifically calls for screenshots/test artifacts where useful. citeturn4search0
+OWASP reporting guidance recommends that findings contain enough information to reproduce and remediate an issue and specifically calls for screenshots/test artifacts where useful.
 
 ### Evidence troubleshooting
 
@@ -346,13 +346,13 @@ If a finding has no screenshot, it may be a passive/header observation or Chromi
 
 A browser screenshot proves what the automated browser observed at that point in time. It does not by itself prove exploitability. Reflection, HTTP 5xx responses, missing headers, and other automated signals should be manually validated before being treated as confirmed vulnerabilities.
 
-OWASP similarly recommends balancing automated breadth with manual/semi-automated validation and warns that the testing guide is not an exhaustive checklist. citeturn0search2turn4search5
+OWASP similarly recommends balancing automated breadth with manual/semi-automated validation and warns that the testing guide is not an exhaustive checklist.
 
 ### Destructive testing is intentionally excluded
 
 The framework does not automatically perform credential brute force, data deletion, malware upload, denial-of-service testing, or destructive PUT/DELETE/PATCH operations. If a later lab-only module is added for destructive validation, it should be explicitly opt-in and separately scoped.
 
-OWASP's HTTP-method guidance specifically cautions that destructive method testing can change server state and should be handled with extreme care. citeturn3search0
+OWASP's HTTP-method guidance specifically cautions that destructive method testing can change server state and should be handled with extreme care.
 
 ## Commands for AM Webtech
 
