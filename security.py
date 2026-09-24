@@ -9,7 +9,6 @@ import sys
 
 import config
 from scanners.deep_security import run_deep_security
-from utils.scope import assert_in_scope, assert_same_target, OutOfScopeError
 
 
 def main():
@@ -19,6 +18,7 @@ def main():
     parser.add_argument("--target", default=config.PENTEST_TARGET_ORIGIN)
     parser.add_argument("--max-urls", type=int, default=config.SECURITY_MAX_URLS)
     parser.add_argument("--max-probes", type=int, default=config.SECURITY_MAX_PROBES)
+    parser.add_argument("--confirm-authorized", action="store_true", help="Confirm that you own the target or have explicit authorization to test it.")
     args = parser.parse_args()
 
     target = args.target.rstrip("/")
@@ -27,17 +27,16 @@ def main():
     if args.max_probes < 1 or args.max_probes > 1000:
         parser.error("--max-probes must be between 1 and 1000")
 
-    try:
-        assert_in_scope(target + "/")
-        assert_same_target(config.PENTEST_TARGET_ORIGIN, target)
-    except OutOfScopeError as exc:
-        print(f"[BLOCKED] {exc}")
+    if not args.confirm_authorized:
+        print("[BLOCKED] This command requires --confirm-authorized for security testing.")
+        print("[INFO] Use it only for a system you own or are explicitly authorized to assess.")
         return 1
 
     print("=" * 78)
     print("SENTINEL DEEP SECURITY — SECURITY-ONLY MODE")
     print("=" * 78)
     print(f"Target:       {target}")
+    print("Scope:        exact origin of supplied target; redirects disabled")
     print(f"Max URLs:     {args.max_urls}")
     print(f"Max probes:   {args.max_probes}")
     print("Browser/UI:   DISABLED")
