@@ -688,6 +688,66 @@ Then open:
 
     Start-Process .\reports\report.html
 
+## Professional pentest profile
+
+The default profile for the authorized AM Webtech target is now `pentest`. It combines:
+
+- scope-limited reconnaissance
+- **Chrome/Chromium-only** responsive UI testing across six viewports to reduce runtime
+- marked screenshots for detected UI, console, network and accessibility errors
+- passive security-header analysis
+- bounded active security controls
+- CORS origin reflection testing
+- HTTP method exposure checks
+- reflected inert-canary testing on discovered query parameters
+- state-changing form CSRF posture inspection without submitting forms
+- verbose error disclosure checks using a single random non-existent path
+- HTTPS mixed-content detection
+- structured JSON evidence and interactive HTML reporting
+
+The active checks are intentionally bounded and non-destructive. They are designed for authorized assessments and do not perform credential brute force, destructive actions, malware delivery, data deletion, or denial-of-service activity.
+
+The methodology is aligned to the categories described by the OWASP Web Security Testing Guide, which covers information gathering, configuration/deployment, identity, authentication, authorization, session management, injection, error handling, cryptography, business logic, client-side and API testing. urlOWASP Web Security Testing Guidehttps://wstg.owasp.org/latest/
+
+### Run the professional assessment
+
+Recommended fast run:
+
+    python main.py --target https://amwebtech.com --profile pentest
+
+Visible Chrome + animated dashboard:
+
+    python main.py --target https://amwebtech.com --profile pentest --headed --slow-mo 250
+
+The browser matrix intentionally uses Chromium only:
+
+    375x812
+    390x844
+    768x1024
+    1366x768
+    1440x900
+    1920x1080
+
+This reduces runtime while retaining mobile/tablet/desktop responsive coverage.
+
+### Marked visual evidence
+
+When a Chrome check detects one or more of the following, the page is annotated before the screenshot is captured:
+
+- browser console errors
+- failed network requests
+- horizontal overflow
+- missing image alt attributes
+- potentially unlabeled controls
+
+Screenshots are saved under `evidence/chromium_*.png` and linked from the corresponding report findings.
+
+### Security coverage boundary
+
+No automated scanner can provide complete penetration-test coverage. OWASP explicitly describes active testing across multiple domains and notes that logical vulnerabilities such as broken access control require manual, application-specific testing. ZAP's documentation makes the same distinction between automated active scanning and manual testing. citeturn1search0turn2search5
+
+For industry-grade engagements, use this framework as the repeatable automated layer and add authorized test accounts, API specifications, business-workflow definitions, role matrices, and manual validation for authentication bypass, authorization/IDOR, business logic, session lifecycle, and other application-specific controls.
+
 ## Industry-oriented roadmap
 
 The framework is being evolved toward a reusable assessment platform with:
