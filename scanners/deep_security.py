@@ -25,7 +25,6 @@ import requests
 import config
 from bs4 import BeautifulSoup
 from reports.report_generator import generate
-from scanners import headers as header_scanner
 
 
 UA = "Sentinel-DeepSecurity/1.0 (authorized security assessment)"
@@ -527,8 +526,8 @@ class DeepSecurityEngine:
             for src in re.findall(r"""<script[^>]+src=[\"']([^\"']+)[\"']""", text, re.I):
                 js = urljoin(url, src)
                 try:
-                    assert_same_target(self.target, js)
-                    js_urls.add(js)
+                    if self._same_origin(js):
+                        js_urls.add(js)
                 except Exception:
                     pass
 
@@ -683,6 +682,11 @@ class DeepSecurityEngine:
             "json_path": report["json_path"],
             "total_findings": report["report"]["total_findings"],
         }
+        # Keep persisted scanner counts authoritative even if report presentation
+        # deduplicates repeated observations into fewer report rows.
+        result["summary"]["report_findings"] = report["report"]["total_findings"]
+        with open(os.path.join(config.EVIDENCE_DIR, "deep_security.json"), "w", encoding="utf-8") as handle:
+            json.dump(result, handle, indent=2, ensure_ascii=False)
         return result
 
 
