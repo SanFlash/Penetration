@@ -50,6 +50,172 @@ Use this project to automate repeatable coverage and evidence, then add authoriz
 
 ## Windows setup
 
+Use this exact sequence on Windows. Validate the framework before contacting the live target.
+
+### 0. Clone or update
+
+Fresh checkout:
+
+```powershell
+git clone https://github.com/SanFlash/Penetration.git
+cd Penetration
+```
+
+Existing checkout:
+
+```powershell
+cd "D:\\ApplyAI\\webpentest-framework\\webpentest-framework"
+git fetch origin
+git reset --hard origin/main
+git status
+git log -1 --oneline
+```
+
+Keep any local evidence outside Git or stash it before a reset. Do not commit real engagement screenshots, cookies, tokens, or authorization headers.
+
+### 1. Create and activate Python 3.11
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python --version
+python -m pip --version
+```
+
+Expected Python: 3.11.x.
+
+### 2. Install dependencies
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### 3. Install Chromium only
+
+The professional browser/UI/responsive engine uses Chromium only. Firefox and WebKit are not launched by the professional profile.
+
+```powershell
+python -m playwright install chromium
+```
+
+### 4. Verify before the target
+
+```powershell
+python main.py --help
+python -m py_compile main.py scanners\compatibility.py scanners\active_security.py reports\report_generator.py utils\scope.py
+```
+
+### 5. Run all framework tests
+
+```powershell
+python -m pytest tests\ -v
+```
+
+Do not start the live assessment until the test suite passes.
+
+### 6. Run Chrome-only UI testing first
+
+Headless:
+
+```powershell
+python main.py --target https://amwebtech.com --profile compatibility
+```
+
+Visible Chrome for debugging:
+
+```powershell
+python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
+```
+
+The UI phase tests six viewports and writes JSON plus screenshots. A detected UI/browser issue gets a marked screenshot.
+
+### 7. Review failure evidence
+
+```powershell
+Get-Content .\evidence\compatibility.json
+Get-ChildItem .\evidence\chromium_*.png | Select-Object Name,Length,LastWriteTime
+explorer .\evidence
+```
+
+Failure screenshots use `chromium_failure_<viewport>_<page>.png`. Normal marked UI evidence uses `chromium_<viewport>_<page>.png`.
+
+### 8. Run the complete authorized assessment
+
+Headless:
+
+```powershell
+python main.py --target https://amwebtech.com --profile pentest
+```
+
+Visible Chrome:
+
+```powershell
+python main.py --target https://amwebtech.com --profile pentest --headed
+```
+
+Training/debug run:
+
+```powershell
+python main.py --target https://amwebtech.com --profile pentest --headed --slow-mo 250
+```
+
+The pentest profile is fail-closed to the exact configured AM Webtech origin.
+
+### 9. Review the final report
+
+```powershell
+Get-Content .\evidence\compatibility.json
+Get-Content .\evidence\active_security.json
+Start-Process .\reports\report.html
+```
+
+The report includes the findings explorer, severity/category summaries, Chrome viewport coverage, execution metadata, and links to marked screenshots.
+
+### 10. Update the framework safely
+
+```powershell
+git status
+git stash push -m "local pentest evidence before framework update" -- evidence reports
+git fetch origin
+git reset --hard origin/main
+python -m pytest tests\ -v
+```
+
+After an update, repeat steps 4 through 9.
+
+## Troubleshooting
+
+### pytest is missing
+
+```powershell
+python -m pip install -r requirements.txt
+python -m pytest tests\ -v
+```
+
+### Chromium cannot launch
+
+```powershell
+python -m playwright install chromium
+```
+
+### Old code is still running
+
+```powershell
+git fetch origin
+git reset --hard origin/main
+git log -1 --oneline
+```
+
+### A Chrome failure has no screenshot
+
+The compatibility engine attempts a marked failure screenshot inside the exception handler. If Playwright cannot render any page surface at all, the finding records the screenshot failure reason in `compatibility.json`.
+
+### Scope error
+
+Use exactly `https://amwebtech.com` for the professional pentest profile. Do not disable scope enforcement.
+
+
 ```powershell
 cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
 .\.venv\Scripts\Activate.ps1
