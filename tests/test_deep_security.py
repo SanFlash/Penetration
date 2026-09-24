@@ -62,3 +62,19 @@ def test_run_result_distinguishes_raw_and_report_counts():
         }
     ]
     assert len(engine.findings) == 1
+
+def test_report_aggregation_is_separate_from_raw_engine_observations():
+    engine = DeepSecurityEngine("https://example.com", max_urls=1, max_probes=1)
+    engine.findings = [
+        {
+            "id": "DS-HEAD-001", "title": "Missing security response headers",
+            "severity": "Low", "confidence": "High", "category": "Security Headers",
+            "url": "https://example.com/", "evidence": "Missing: Content-Security-Policy",
+        },
+        {
+            "id": "DS-HEAD-002", "title": "Missing security response headers",
+            "severity": "Low", "confidence": "High", "category": "Security Headers",
+            "url": "https://example.com/about", "evidence": "Missing: Content-Security-Policy",
+        },
+    ]
+    assert len(engine.findings) == 2
