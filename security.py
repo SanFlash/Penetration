@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Dedicated security-only command for authorized deep web assessment.
+"""Dedicated security-only command for authorized deep web assessment."""
 
-Example:
-    python security.py --target https://amwebtech.com
-"""
 import argparse
 import sys
 
 import config
+from scanners.api_surface import run_api_surface
 from scanners.deep_security import run_deep_security
 
 
@@ -18,7 +16,16 @@ def main():
     parser.add_argument("--target", default=config.PENTEST_TARGET_ORIGIN)
     parser.add_argument("--max-urls", type=int, default=config.SECURITY_MAX_URLS)
     parser.add_argument("--max-probes", type=int, default=config.SECURITY_MAX_PROBES)
-    parser.add_argument("--confirm-authorized", action="store_true", help="Confirm that you own the target or have explicit authorization to test it.")
+    parser.add_argument(
+        "--api-surface",
+        action="store_true",
+        help="Run passive OpenAPI/Swagger attack-surface inventory after the deep scan.",
+    )
+    parser.add_argument(
+        "--confirm-authorized",
+        action="store_true",
+        help="Confirm that you own the target or have explicit authorization to test it.",
+    )
     args = parser.parse_args()
 
     target = args.target.rstrip("/")
@@ -39,6 +46,7 @@ def main():
     print("Scope:        exact origin of supplied target; redirects disabled")
     print(f"Max URLs:     {args.max_urls}")
     print(f"Max probes:   {args.max_probes}")
+    print(f"API surface:  {'ENABLED' if args.api_surface else 'DISABLED'}")
     print("Browser/UI:   DISABLED")
     print("Writes:       DISABLED")
     print("DoS/bruteforce: DISABLED")
@@ -50,6 +58,12 @@ def main():
             max_urls=args.max_urls,
             max_probes=args.max_probes,
         )
+        if args.api_surface:
+            print("\n[API] Discovering OpenAPI/Swagger surface...")
+            result["api_surface"] = run_api_surface(
+                target,
+                max_probes=min(args.max_probes, 100),
+            )
     except KeyboardInterrupt:
         print("\n[STOPPED] Assessment interrupted.")
         return 130
@@ -62,7 +76,14 @@ def main():
     print("=" * 78)
     print(f"URLs tested:  {len(result['urls_tested'])}")
     print(f"HTTP probes:  {result['probe_count']}")
-    print(f"Findings:     {len(result['findings'])}")
+    print(f"Raw findings: {result['summary']['findings']}")
+    print(f"Report rows:  {result['summary'].get('report_findings', result['summary']['findings'])}")
+    if args.api_surface:
+        api_result = result["api_surface"]
+        print(f"API specs:    {api_result['summary']['specs']}")
+        print(f"API endpoints:{api_result['summary']['endpoints']}")
+        print(f"API findings: {api_result['summary']['findings']}")
+        print("API evidence: evidence/api_surface.json")
     print(f"Evidence:     {config.EVIDENCE_DIR}/deep_security.json")
     print(f"Report:       {result['report']['html_path']}")
     print("=" * 78)
