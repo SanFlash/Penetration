@@ -2,7 +2,6 @@ import pytest
 
 import config
 from scanners.deep_security import DeepSecurityEngine
-from utils.scope import OutOfScopeError
 
 
 def test_deep_engine_locks_to_exact_configured_origin():
@@ -10,15 +9,13 @@ def test_deep_engine_locks_to_exact_configured_origin():
     assert engine.target == config.PENTEST_TARGET_ORIGIN
 
 
-def test_deep_engine_rejects_other_origin():
-    with pytest.raises(OutOfScopeError):
-        DeepSecurityEngine("https://www.amwebtech.com", max_urls=1, max_probes=1)
+def test_deep_engine_accepts_another_explicitly_selected_https_origin():
+    engine = DeepSecurityEngine("https://example.com", max_urls=1, max_probes=1)
+    assert engine.origin == "https://example.com"
 
-
-def test_deep_engine_rejects_non_allowlisted_host():
-    with pytest.raises(OutOfScopeError):
-        DeepSecurityEngine("https://example.com", max_urls=1, max_probes=1)
-
+def test_deep_engine_accepts_custom_port_and_locks_origin():
+    engine = DeepSecurityEngine("https://staging.example.com:8443", max_urls=1, max_probes=1)
+    assert engine.origin == "https://staging.example.com:8443"
 
 def test_fingerprint_is_stable_and_minimal():
     import requests
