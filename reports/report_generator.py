@@ -114,6 +114,9 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             if item.get("screenshot"):
                 first["screenshots"].append(item["screenshot"])
             first["viewports"] = []
+            first_evidence = str(item.get("evidence", ""))
+            if "/" in first_evidence and ":" in first_evidence:
+                first["viewports"].append(first_evidence.split(":", 1)[0])
             grouped[key] = first
         else:
             current = grouped[key]
