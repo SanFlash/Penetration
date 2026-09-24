@@ -25,6 +25,13 @@ COMPATIBILITY_MAX_PAGES = 12
 ACTIVE_SECURITY_MAX_URLS = 12
 PENTEST_TARGET_ORIGIN = "https://amwebtech.com"
 
+# Dedicated security-only engine. These are deliberately bounded so the
+# assessment can be aggressive in coverage without becoming destructive.
+SECURITY_MAX_URLS = 40
+SECURITY_MAX_PROBES = 180
+SECURITY_TIMEOUT = 10
+SECURITY_RATE_RPS = 2
+
 # The professional pentest profile intentionally uses Chromium only.
 # Six responsive sizes provide mobile/tablet/desktop coverage without
 # multiplying runtime across Firefox/WebKit.
