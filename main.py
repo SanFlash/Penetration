@@ -16,6 +16,7 @@ from scanners import xss_probe, sqli_probe, idor_probe
 from scanners.compatibility import run_compatibility
 from scanners.active_security import run_active_security
 from scanners.browser_evidence import capture_security_evidence
+from scanners.deep_security import run_deep_security
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
@@ -324,6 +325,37 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         loader.stop()
 
 
+def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None):
+    """Run security-only testing with no UI/compatibility/browser phase."""
+    assert_in_scope(target)
+    assert_same_target(config.PENTEST_TARGET_ORIGIN, target)
+
+    banner("SECURITY-ONLY MODE — DEEP AUTHORIZED ASSESSMENT")
+    print("[MODE] UI/compatibility testing: DISABLED")
+    print("[MODE] Browser/Playwright: DISABLED")
+    print("[MODE] Security engine: ENABLED")
+    print("[MODE] Scope: exact origin only")
+    print("[MODE] State-changing requests: DISABLED")
+    print("[MODE] Credential attacks / DoS / destructive writes: DISABLED")
+    print("[MODE] GET / HEAD / OPTIONS / TRACE + controlled header/query probes")
+
+    result = run_deep_security(
+        target,
+        max_urls=max_urls or config.SECURITY_MAX_URLS,
+        max_probes=max_probes or config.SECURITY_MAX_PROBES,
+    )
+
+    banner("DEEP SECURITY ASSESSMENT COMPLETE")
+    print(f"URLs tested: {len(result['urls_tested'])}")
+    print(f"HTTP probes: {result['probe_count']}")
+    print(f"Findings: {len(result['findings'])}")
+    for sev, count in result["summary"]["by_severity"].items():
+        print(f"  {sev}: {count}")
+    print(f"Evidence: {config.EVIDENCE_DIR}/deep_security.json")
+    print(f"Report: {result['report']['html_path']}")
+    return 0
+
+
 def run_lab_full_profile(target: str):
     all_findings = []
     start = time.time()
@@ -397,9 +429,9 @@ def main():
     parser.add_argument("--target", default=config.DEFAULT_TARGET, help="Base URL of an IN-SCOPE target")
     parser.add_argument(
         "--profile",
-        choices=("auto", "lab", "compatibility", "pentest"),
+        choices=("auto", "lab", "compatibility", "pentest", "security"),
         default="auto",
-        help="auto selects pentest for AM Webtech and lab for localhost",
+        help="auto selects pentest for AM Webtech and lab for localhost; security runs security-only mode",
     )
     parser.add_argument("--headed", action="store_true", help="show Chrome/Chromium browser windows during UI testing")
     parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
@@ -441,6 +473,11 @@ def main():
                 target, headed=args.headed, slow_mo=args.slow_mo,
                 dashboard=not args.no_dashboard
             )
+
+        if profile == "security":
+            if args.headed or args.slow_mo or args.no_dashboard:
+                print("[NOTE] security-only mode ignores UI/dashboard flags.")
+            return run_security_profile(target)
 
         if args.headed or args.slow_mo or args.no_dashboard:
             print("[NOTE] visual/browser options are primarily used by compatibility and pentest profiles.")
