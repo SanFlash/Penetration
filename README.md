@@ -216,6 +216,144 @@ The compatibility engine attempts a marked failure screenshot inside the excepti
 Use exactly `https://amwebtech.com` for the professional pentest profile. Do not disable scope enforcement.
 
 
+## Enhanced evidence-first workflow
+
+The current framework revision extends the original scanner into an evidence-first assessment pipeline. The HTML report now consumes pentest coverage from `ui_responsive` as well as the older `compatibility` metadata shape, so the Coverage tab is populated during a pentest run.
+
+### Complete run order
+
+1. Sync the repository.
+2. Activate Python 3.11.
+3. Install dependencies.
+4. Install Chromium only.
+5. Run syntax validation.
+6. Run the complete pytest suite.
+7. Run Chrome-only compatibility testing first.
+8. Inspect `evidence/compatibility.json` and screenshots.
+9. Run the full pentest profile.
+10. Run bounded URL mutation checks.
+11. Capture Chrome security evidence for selected findings.
+12. Open `reports/report.html`.
+13. Review the Evidence gallery and Coverage matrix.
+14. Manually validate important findings.
+
+### Exact Windows command sequence
+
+```powershell
+cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
+git fetch origin
+git reset --hard origin/main
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+python -m py_compile main.py scanners\compatibility.py scanners\active_security.py scanners\browser_evidence.py reports\report_generator.py utils\scope.py
+python -m pytest tests\ -v
+```
+
+### Chrome UI phase
+
+```powershell
+python main.py --target https://amwebtech.com --profile compatibility --headed --slow-mo 300
+```
+
+Review:
+
+```powershell
+Get-Content .\evidence\compatibility.json
+Get-ChildItem .\evidence\chromium_*.png | Select-Object Name,Length,LastWriteTime
+```
+
+### Full advanced profile
+
+```powershell
+python main.py --target https://amwebtech.com --profile pentest --headed --slow-mo 250
+```
+
+The full profile now runs:
+
+- exact-origin scope enforcement
+- same-host reconnaissance
+- Chrome-only six-viewport testing
+- passive security-header checks
+- CORS checks
+- HTTP method exposure checks
+- inert reflected-input testing
+- bounded GET-only URL mutation
+- server/database error-signature detection
+- CSRF posture inspection without form submission
+- verbose error disclosure testing
+- mixed-content detection
+- Chrome security evidence capture
+- interactive JSON/HTML reporting
+
+### URL mutation mode
+
+The advanced URL layer is intentionally a controlled mutation engine rather than a destructive exploit engine. It mutates discovered query parameters using bounded harmless/syntax-oriented vectors and compares responses against the baseline.
+
+Recorded observations include:
+
+- baseline HTTP status
+- mutated HTTP status
+- response-length change
+- reflection of a unique marker
+- database/framework error signatures
+- exact mutated URL
+- parameter name
+- mutation vector
+- evidence URL
+
+OWASP describes fuzzing as repeated request generation followed by analysis of response status, timing and other characteristics, and notes that injection testing can have destructive consequences when state-changing database operations are reached. This implementation therefore remains GET-only and bounded. citeturn2search1turn1search1
+
+### Security screenshots
+
+Selected active findings are replayed in Chromium and receive visual evidence.
+
+Generated files:
+
+```text
+evidence/security_*.png
+evidence/security_failure_*.png
+evidence/security_browser_evidence.json
+reports/evidence_manifest.json
+```
+
+Each relevant finding in `reports/findings.json` contains a screenshot reference when capture succeeded.
+
+### Report tabs
+
+- **Overview** — severity, category and evidence-health metrics.
+- **Findings** — searchable technical findings with evidence, impact, remediation and screenshots.
+- **Coverage** — actual Chrome/viewport results, status, timing, console/network errors and screenshots.
+- **Evidence** — screenshot gallery plus security-capture log. Failure screenshots are explicitly marked.
+- **Execution** — raw run metadata for reproducibility.
+
+OWASP reporting guidance recommends that findings contain enough information to reproduce and remediate an issue and specifically calls for screenshots/test artifacts where useful. citeturn4search0
+
+### Evidence troubleshooting
+
+If the Evidence tab is empty, generate a fresh run. The report references files created by that run.
+
+```powershell
+Get-ChildItem .\evidence\*.png
+Get-Content .\evidence\security_browser_evidence.json
+Get-Content .\reports\evidence_manifest.json
+Start-Process .\reports\report.html
+```
+
+If a finding has no screenshot, it may be a passive/header observation or Chromium may have been unable to render the evidence URL. The report records that state instead of pretending evidence exists.
+
+### Important interpretation rule
+
+A browser screenshot proves what the automated browser observed at that point in time. It does not by itself prove exploitability. Reflection, HTTP 5xx responses, missing headers, and other automated signals should be manually validated before being treated as confirmed vulnerabilities.
+
+OWASP similarly recommends balancing automated breadth with manual/semi-automated validation and warns that the testing guide is not an exhaustive checklist. citeturn0search2turn4search5
+
+### Destructive testing is intentionally excluded
+
+The framework does not automatically perform credential brute force, data deletion, malware upload, denial-of-service testing, or destructive PUT/DELETE/PATCH operations. If a later lab-only module is added for destructive validation, it should be explicitly opt-in and separately scoped.
+
+OWASP's HTTP-method guidance specifically cautions that destructive method testing can change server state and should be handled with extreme care. citeturn3search0
+
 ## Commands for AM Webtech
 
 ### 1. Recommended full authorized assessment
