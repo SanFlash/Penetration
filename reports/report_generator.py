@@ -2,6 +2,7 @@
 import html
 import json
 import os
+import re
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -87,26 +88,84 @@ def _collect_gallery(evidence_dir: str, out_dir: str, findings: list[dict]) -> l
     return gallery
 
 
+def _is_security_finding(item: dict) -> bool:
+    category = str(item.get("category", "")).strip().lower()
+    return category not in {"compatibility", "responsive ui", "accessibility"} and not str(item.get("id", "")).startswith("COMP-")
+
+
+def _security_fingerprint(item: dict) -> tuple:
+    title = str(item.get("title", "")).strip().lower()
+    category = str(item.get("category", "")).strip().lower()
+    method = str(item.get("method", "GET")).upper()
+    parameter = str(item.get("parameter") or "").strip().lower()
+    evidence = str(item.get("evidence", ""))
+    discriminator = ""
+    if title == "missing security response headers":
+        match = re.search(r"missing:\s*(.+)", evidence, re.I)
+        discriminator = ",".join(sorted(x.strip().lower() for x in match.group(1).split(","))) if match else ""
+    elif "technology fingerprint disclosed" in title:
+        names = []
+        if re.search(r"\bServer=", evidence):
+            names.append("server")
+        if re.search(r"\bX-Powered-By=", evidence, re.I):
+            names.append("x-powered-by")
+        discriminator = ",".join(names)
+    elif "cookie" in title:
+        discriminator = str(item.get("cookie_name") or "").lower()
+    elif "host-header" in title or "url override" in title:
+        match = re.search(r"(?:header|via)\s*=\s*([^;]+)", evidence, re.I)
+        discriminator = match.group(1).strip().lower() if match else ""
+    elif "source map" in title or "javascript" in title or "api specification" in title:
+        discriminator = ""
+    else:
+        labels = re.findall(r"([A-Za-z][A-Za-z0-9_-]*)\s*=", evidence)
+        discriminator = ",".join(sorted(set(x.lower() for x in labels if x.lower() not in {
+            "http", "length", "status", "baseline", "mutated", "content_length"
+        })))
+    return (title, category, method, parameter, discriminator, item.get("severity", "Info"))
+
+
+def _merge_security_observations(grouped: dict, item: dict) -> None:
+    key = _security_fingerprint(item)
+    if key not in grouped:
+        first = dict(item)
+        first["occurrences"] = 1
+        first["affected_urls"] = [item.get("url")] if item.get("url") else []
+        first["observation_ids"] = [item.get("id")] if item.get("id") else []
+        first["screenshots"] = [item["screenshot"]] if item.get("screenshot") else []
+        grouped[key] = first
+        return
+    current = grouped[key]
+    current["occurrences"] = current.get("occurrences", 1) + 1
+    url = item.get("url")
+    if url and url not in current["affected_urls"]:
+        current["affected_urls"].append(url)
+    fid = item.get("id")
+    if fid and fid not in current["observation_ids"]:
+        current["observation_ids"].append(fid)
+    screenshot = item.get("screenshot")
+    if screenshot and screenshot not in current["screenshots"]:
+        current["screenshots"].append(screenshot)
+
+
 def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "reports", metadata: dict | None = None) -> dict:
     os.makedirs(out_dir, exist_ok=True)
+    raw_count = len(findings)
     normalized = [_normalize_finding(f) for f in findings]
 
-    # Collapse repeated viewport observations into one finding while preserving
-    # every screenshot/occurrence for evidence review.
+
     grouped = {}
+    security_grouped = {}
     for item in normalized:
+        if _is_security_finding(item):
+            _merge_security_observations(security_grouped, item)
+            continue
         fid = str(item.get("id", ""))
         base_url = str(item.get("url", "")).split("?", 1)[0] if fid.startswith("COMP-") else str(item.get("url", ""))
         evidence = str(item.get("evidence", ""))
         if fid.startswith("COMP-") and ": " in evidence:
             evidence = evidence.split(": ", 1)[1]
-        key = (
-            item.get("title"),
-            item.get("category"),
-            base_url,
-            item.get("parameter"),
-            evidence,
-        )
+        key = (item.get("title"), item.get("category"), base_url, item.get("parameter"), evidence)
         if key not in grouped:
             first = dict(item)
             first["occurrences"] = 1
@@ -129,10 +188,13 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
                 if current_viewport not in current["viewports"]:
                     current["viewports"].append(current_viewport)
 
-    normalized = list(grouped.values())
+    normalized = list(grouped.values()) + list(security_grouped.values())
     for item in normalized:
         if item.get("screenshots"):
             item["screenshot"] = item["screenshots"][0]
+        item["screenshots"] = list(dict.fromkeys(item.get("screenshots", [])))
+        item["affected_urls"] = list(dict.fromkeys(item.get("affected_urls", []) or ([item["url"]] if item.get("url") else [])))
+        item["observation_count"] = item.get("occurrences", 1)
         item["viewports"] = sorted(set(item.get("viewports", [])))
 
     findings_sorted = sorted(
@@ -169,6 +231,9 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "schema_version": "3.0",
         "target": target,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "raw_findings": raw_count,
+        "unique_findings": len(findings_sorted),
+        "total_observations": sum(int(f.get("observation_count", 1)) for f in findings_sorted),
         "total_findings": len(findings_sorted),
         "severity_summary": summary,
         "category_summary": dict(categories),
@@ -251,7 +316,7 @@ a{color:#8fc5ff}.shell{max-width:1500px;margin:auto;padding:22px}.hero{border:1p
 .nav{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.nav button{background:#08111d;color:#a9bdd1;border:1px solid var(--line);border-radius:9px;padding:9px 12px}.nav button.active{color:#06110d;background:var(--accent);border-color:var(--accent);font-weight:800}
 .panel{background:#09111ddd;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 14px 50px #0005;margin-bottom:14px}.section-title{font-size:12px;color:#9bb0c6;letter-spacing:.12em;text-transform:uppercase;margin:0 0 13px}
 .grid{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.riskgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.risk-card{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:13px;overflow:hidden}.risk-card span{position:absolute;left:0;top:0;width:4px;height:100%;background:var(--c)}.risk-card small{display:block;color:var(--muted)}.risk-card b{font-size:26px}
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.kpi{padding:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px}.kpi b{display:block;font-size:25px}.kpi span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.kpi{padding:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px}.kpi b{display:block;font-size:25px}.kpi span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
 .cat{padding:9px 0;border-bottom:1px solid #162438}.cat>div:first-child{display:flex;justify-content:space-between;gap:10px}.cat span{color:var(--muted)}.catbar{height:7px;background:#132033;border-radius:99px;overflow:hidden;margin-top:7px}.catbar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--accent))}
 .controls{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px}input,select{background:#07101b;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 10px;min-height:40px}input{flex:1;min-width:220px}
 .finding{border:1px solid var(--line);border-radius:13px;background:#08101b;padding:15px;margin:10px 0}.fh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.badge{border-radius:999px;padding:4px 8px;color:#06110d;font-weight:800;font-size:11px}.fid{color:var(--muted);font-family:Consolas,monospace;font-size:11px}.finding h3{margin:9px 0 4px;font-size:16px}.finding .url{color:#8aa1b8;word-break:break-all;font-size:12px}details{margin-top:10px}summary{cursor:pointer;color:#9fc1df}pre{background:#03070d;border:1px solid #142238;border-radius:9px;padding:11px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#bdd0e3}.empty{padding:35px;text-align:center;color:var(--muted)}
@@ -289,7 +354,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="panel"><div class="section-title">Severity distribution</div><div class="riskgrid">__CARDS__</div></div>
 <div class="grid">
 <div class="panel"><div class="section-title">Assessment metrics</div><div class="kpis">
-<div class="kpi"><b>__TOTAL__</b><span>Total findings</span></div>
+<div class="kpi"><b>__TOTAL__</b><span>Unique findings</span></div><div class="kpi"><b>__RAW__</b><span>Raw observations</span></div><div class="kpi"><b>__OBS__</b><span>Affected observations</span></div>
 <div class="kpi"><b>__CATEGORIES__</b><span>Categories</span></div>
 <div class="kpi"><b>__HIGHCONF__</b><span>High confidence</span></div>
 <div class="kpi"><b>__CHECKS__</b><span>Chrome checks</span></div>
@@ -350,7 +415,7 @@ function renderFindings(){
   const color=colors[f.severity]||colors.Info;
   const shots=f.screenshots_relative||[];
   const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return '<a href="'+esc(p)+'" target="_blank" rel="noopener"><img src="'+esc(p)+'" alt="Security evidence screenshot" style="width:100%;border:1px solid #263b55;border-radius:10px"></a>'}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
-  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+'</div><details open><summary>Evidence / impact / remediation</summary><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
+  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>Evidence / impact / remediation</summary><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
  }).join("");
 }
 ["search","sev"].forEach(function(id){document.getElementById(id).addEventListener("input",renderFindings)});
@@ -374,7 +439,9 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__SCHEMA__": html.escape(report["schema_version"]),
         "__PROFILE__": html.escape(str(report["metadata"].get("profile", "-"))),
         "__CARDS__": "".join(cards),
-        "__TOTAL__": str(report["total_findings"]),
+        "__TOTAL__": str(report["unique_findings"]),
+        "__RAW__": str(report["raw_findings"]),
+        "__OBS__": str(report["total_observations"]),
         "__CATEGORIES__": str(len(report["category_summary"])),
         "__HIGHCONF__": str(report["confidence_summary"].get("High", 0)),
         "__CHECKS__": str(browser["checks"]),

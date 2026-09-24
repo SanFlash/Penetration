@@ -474,6 +474,57 @@ The framework does not automatically perform credential brute force, data deleti
 
 OWASP's HTTP-method guidance specifically cautions that destructive method testing can change server state and should be handled with extreme care.
 
+
+## Industry-mode authorized pentesting
+
+The `pentest` profile is the full assessment path for an explicitly authorized web application. It accepts an arbitrary absolute HTTP(S) origin when `--confirm-authorized` is supplied; every HTTP and browser request remains locked to that exact scheme + host + port origin and redirects are not followed across origins.
+
+### Full deep assessment
+
+~~~powershell
+python main.py --target https://your-authorized-site.example --profile pentest --confirm-authorized
+~~~
+
+For a visible Chromium run:
+
+~~~powershell
+python main.py --target https://your-authorized-site.example --profile pentest --confirm-authorized --headed --slow-mo 250
+~~~
+
+Security-only mode remains available when browser/UI checks are not wanted:
+
+~~~powershell
+python security.py --target https://your-authorized-site.example --max-urls 60 --max-probes 500 --api-surface --confirm-authorized
+~~~
+
+The full pentest now combines:
+- same-origin reconnaissance and form/parameter discovery
+- Chromium responsive/browser evidence
+- passive response-header and cookie posture checks
+- bounded active CORS, HTTP-method, reflection, CSRF-posture and mixed-content checks
+- deep GET/OPTIONS/TRACE security testing with query mutations, routing-header checks, error disclosure, source-map/client-artifact review and sensitive-path exposure checks
+- passive OpenAPI/Swagger attack-surface inventory
+- screenshot evidence for selected findings
+- issue-level report aggregation so repeated URL observations are retained as evidence without inflating the unique finding count
+
+### Raw observations vs unique findings
+
+Sentinel preserves every scanner observation for forensic traceability, while the interactive report aggregates repeated security observations into issue-level findings. For example, the same missing-header condition observed on 40 pages is shown as one issue with its affected URLs and observation count, while the raw scanner count remains available.
+
+The report exposes:
+- `raw_findings`: scanner observations before report aggregation
+- `unique_findings`: issue-level report rows
+- `total_observations`: retained observation count represented by those rows
+- `affected_urls` and `observation_ids` on aggregated findings
+
+This prevents a broad scan from turning one control weakness into dozens of misleading vulnerability rows while preserving evidence for remediation and retesting.
+
+### Assessment boundary
+
+"Brutal" or "aggressive" means deeper coverage and more test cases, not destructive behavior. The automated engine deliberately does not brute-force credentials, submit arbitrary state-changing forms, upload/delete data, execute server commands, persist on the target, or intentionally cause denial of service. Those activities are not appropriate as a default production scanner.
+
+Automated results remain candidates for validation. OWASP's WSTG recommends automated tools for breadth and repeatability while balancing them with manual and application-specific testing; its reporting guidance recommends reproducible finding details and evidence.
+
 ## Commands for AM Webtech
 
 ### 1. Recommended full authorized assessment

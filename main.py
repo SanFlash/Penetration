@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from datetime import datetime
+from urllib.parse import urlparse
 
 import config
 from utils.scope import assert_in_scope, assert_same_target, OutOfScopeError
@@ -17,6 +18,7 @@ from scanners.compatibility import run_compatibility
 from scanners.active_security import run_active_security
 from scanners.browser_evidence import capture_security_evidence
 from scanners.deep_security import run_deep_security
+from scanners.api_surface import run_api_surface
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
@@ -182,9 +184,12 @@ def _is_exact_target_url(target: str, url: str) -> bool:
         return False
 
 
-def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True):
-    assert_in_scope(target)
-    assert_same_target(config.PENTEST_TARGET_ORIGIN, target)
+def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, authorized: bool = False):
+    parsed = urlparse(target)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Target must be an absolute http:// or https:// URL.")
+    if not authorized and target.rstrip("/") != config.PENTEST_TARGET_ORIGIN.rstrip("/"):
+        raise OutOfScopeError("Arbitrary pentest targets require --confirm-authorized.")
     state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
     loader = ConsoleLoader()
     loader.start("Initializing authorized pentest engine")
@@ -264,7 +269,31 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         print(f"Active checks: {len(active_result['checks'])}")
         print(f"Active findings: {len(active_result['findings'])}")
 
-        banner("STEP 5 — Chrome security evidence capture")
+        banner("STEP 5 — Deep security and API attack-surface assessment")
+        loader.set("Running deep non-destructive security assessment")
+        state.update(
+            stage="DEEP SECURITY TESTING",
+            detail="Running bounded same-origin reconnaissance, headers, methods, query mutations, routing and exposure checks.",
+        )
+        deep_result = run_deep_security(
+            target,
+            max_urls=config.SECURITY_MAX_URLS,
+            max_probes=config.SECURITY_MAX_PROBES,
+        )
+        all_findings.extend(deep_result["findings"])
+        print(f"Deep URLs tested: {len(deep_result['urls_tested'])}")
+        print(f"Deep HTTP probes: {deep_result['probe_count']}")
+        print(f"Deep raw findings: {len(deep_result['findings'])}")
+
+        api_result = run_api_surface(
+            target,
+            max_probes=min(config.SECURITY_MAX_PROBES, 100),
+        )
+        all_findings.extend(api_result.get("findings", []))
+        print(f"API specs discovered: {api_result['summary']['specs']}")
+        print(f"API endpoints inventoried: {api_result['summary']['endpoints']}")
+
+        banner("STEP 6 — Chrome security evidence capture")
         loader.set("Capturing Chrome evidence for security findings")
         state.update(
             stage="SECURITY EVIDENCE",
@@ -272,16 +301,16 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         security_evidence = capture_security_evidence(
             target,
-            active_result["findings"],
+            active_result["findings"] + deep_result["findings"] + api_result.get("findings", []),
             headed=headed,
             slow_mo=slow_mo,
             max_items=30,
         )
         print(f"Security evidence screenshots: {sum(1 for item in security_evidence if item.get('screenshot'))}")
 
-        all_findings = ui_result["findings"] + header_findings + active_result["findings"]
+        all_findings = ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", [])
 
-        banner("STEP 6 — Interactive pentest report")
+        banner("STEP 7 — Interactive pentest report")
         loader.set("Building interactive pentest report")
         state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
         elapsed = round(time.time() - start, 1)
@@ -297,6 +326,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             },
             "ui_responsive": ui_result,
             "active_security": active_result,
+            "deep_security": deep_result,
+            "api_surface": api_result,
             "security_evidence": security_evidence,
             "runtime_seconds": elapsed,
         }
@@ -428,7 +459,7 @@ def main():
         "--profile",
         choices=("auto", "lab", "compatibility", "pentest", "security"),
         default="auto",
-        help="auto selects pentest for AM Webtech and lab for localhost; security runs security-only mode",
+        help="auto selects pentest for AM Webtech or an explicitly authorized target; lab remains available for localhost",
     )
     parser.add_argument("--headed", action="store_true", help="show Chrome/Chromium browser windows during UI testing")
     parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
@@ -436,7 +467,7 @@ def main():
     parser.add_argument("--no-dashboard", action="store_true",
                         help="disable the local visual dashboard")
     parser.add_argument("--confirm-authorized", action="store_true",
-                        help="confirm authorization when using the arbitrary-target security profile")
+                        help="confirm that you own the target or have explicit authorization for arbitrary-target pentesting")
     args = parser.parse_args()
     if args.slow_mo < 0 or args.slow_mo > 5000:
         parser.error("--slow-mo must be between 0 and 5000 milliseconds")
@@ -446,7 +477,12 @@ def main():
     is_amwebtech = host in {"amwebtech.com", "www.amwebtech.com"}
 
     if args.profile == "auto":
-        profile = "pentest" if is_amwebtech else "lab"
+        if is_amwebtech:
+            profile = "pentest"
+        elif args.confirm_authorized:
+            profile = "pentest"
+        else:
+            profile = "lab"
     else:
         profile = args.profile
 
@@ -460,12 +496,19 @@ def main():
         print("[SCOPE] Security profile accepts an arbitrary absolute http(s) target.")
     else:
         banner("STEP 0 — Scope check")
-        try:
-            assert_in_scope(target + "/")
-        except OutOfScopeError as exc:
-            print(f"[BLOCKED] {exc}")
-            return 1
-        print(f"[OK] {target} is in config.ALLOWED_HOSTS — proceeding.")
+        if profile == "pentest":
+            if not args.confirm_authorized and not is_amwebtech:
+                print("[BLOCKED] Arbitrary pentest targets require --confirm-authorized.")
+                print("[INFO] Use only on a system you own or have explicit authorization to assess.")
+                return 1
+            print("[OK] Pentest target accepted; every request remains locked to the supplied origin.")
+        else:
+            try:
+                assert_in_scope(target + "/")
+            except OutOfScopeError as exc:
+                print(f"[BLOCKED] {exc}")
+                return 1
+            print(f"[OK] {target} is in config.ALLOWED_HOSTS — proceeding.")
 
     try:
 
@@ -478,7 +521,7 @@ def main():
         if profile == "pentest":
             return run_pentest_profile(
                 target, headed=args.headed, slow_mo=args.slow_mo,
-                dashboard=not args.no_dashboard
+                dashboard=not args.no_dashboard, authorized=args.confirm_authorized
             )
 
         if profile == "security":

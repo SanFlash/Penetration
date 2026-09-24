@@ -27,8 +27,8 @@ PENTEST_TARGET_ORIGIN = "https://amwebtech.com"
 
 # Dedicated security-only engine. These are deliberately bounded so the
 # assessment can be aggressive in coverage without becoming destructive.
-SECURITY_MAX_URLS = 40
-SECURITY_MAX_PROBES = 180
+SECURITY_MAX_URLS = 60
+SECURITY_MAX_PROBES = 500
 SECURITY_TIMEOUT = 10
 SECURITY_RATE_RPS = 2
 
