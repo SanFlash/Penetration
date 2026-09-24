@@ -772,3 +772,54 @@ The framework follows these principles:
 8. manual validation of important signals
 
 OWASP describes the WSTG as a methodology rather than an exhaustive checklist, and recommends balancing automated breadth with manual and application-specific depth.
+## Security Phase 4 — API attack-surface inventory
+
+Phase 4 adds a passive OpenAPI/Swagger inventory layer. OWASP's API Security Top 10 emphasizes API inventory and authorization risks; this module focuses on discovering and documenting the API surface before deeper authenticated testing.
+
+### Run the API inventory
+
+`powershell
+python security.py --target https://amwebtech.com --api-surface --confirm-authorized
+`
+
+For another authorized application:
+
+`powershell
+python security.py --target https://staging.example.com --api-surface --confirm-authorized
+`
+
+The API layer:
+
+- probes common OpenAPI/Swagger JSON locations
+- discovers same-origin API documentation links from the root page
+- parses OpenAPI 3 and Swagger 2 JSON documents
+- inventories documented paths, HTTP methods, operation IDs and parameters
+- records documented state-changing operations
+- identifies deprecated operations
+- identifies operations that explicitly override inherited security with an empty security requirement
+- records external server origins advertised by the API specification without requesting them
+- keeps exact-origin scope enforcement and redirects disabled
+- does not submit forms, authenticate, brute-force credentials, modify data or perform DoS testing
+
+Evidence is written to:
+
+`text
+evidence/api_surface.json
+`
+
+### Interpreting API findings
+
+API inventory observations are not automatically vulnerabilities. For example, a public OpenAPI document or a documented POST route may be intentional. The important next step is authenticated/role-aware validation of authorization boundaries, object access, sensitive business flows and API-specific input handling.
+
+OWASP's API Security Top 10 includes Broken Object Level Authorization, Broken Authentication, Broken Function Level Authorization, Unrestricted Access to Sensitive Business Flows, SSRF, Security Misconfiguration and Improper Inventory Management. This phase primarily establishes the inventory needed for those later tests.
+
+### Phase 4 workflow
+
+`powershell
+python -m py_compile scanners\api_surface.py security.py
+python -m pytest tests\test_api_surface.py -v
+python security.py --target https://amwebtech.com --api-surface --confirm-authorized
+Get-Content .\evidence\api_surface.json
+`
+
+The next security phase should build on this inventory with explicitly authorized, role-aware API testing rather than blindly replaying every documented operation.
