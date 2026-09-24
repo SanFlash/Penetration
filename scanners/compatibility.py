@@ -45,6 +45,21 @@ def _page_findings(url, browser_name, viewport_name, data):
             "impact": "Console errors can indicate broken JavaScript, failed integrations, or client-side functionality that may not work correctly for users.",
             "remediation": "Inspect the originating JavaScript error and fix the failing client-side code or dependency.",
         })
+    if data.get("status") is not None and data["status"] >= 400:
+        findings.append({
+            "id": f"COMP-HTTP-{abs(hash((url, prefix, data['status']))) % 100000:05d}",
+            "title": "HTTP page failure status",
+            "severity": "Medium",
+            "confidence": "High",
+            "category": "Compatibility",
+            "method": "GET",
+            "url": url,
+            "evidence": f"{prefix}: HTTP {data['status']}",
+            "screenshot": screenshot,
+            "detail": "Chrome received an HTTP error status for the requested page.",
+            "impact": "Users may be unable to load the affected page or workflow.",
+            "remediation": "Inspect the server response, routing, deployment configuration, and application logs for the affected URL.",
+        })
     for failure in data["request_failures"]:
         findings.append({
             "id": f"COMP-NET-{abs(hash((url, prefix, failure))) % 100000:05d}",
