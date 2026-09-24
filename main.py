@@ -459,7 +459,7 @@ def main():
         "--profile",
         choices=("auto", "lab", "compatibility", "pentest", "security"),
         default="auto",
-        help="auto selects pentest for AM Webtech and lab for localhost; security runs security-only mode",
+        help="auto selects pentest for AM Webtech or an explicitly authorized target; lab remains available for localhost",
     )
     parser.add_argument("--headed", action="store_true", help="show Chrome/Chromium browser windows during UI testing")
     parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
@@ -467,7 +467,7 @@ def main():
     parser.add_argument("--no-dashboard", action="store_true",
                         help="disable the local visual dashboard")
     parser.add_argument("--confirm-authorized", action="store_true",
-                        help="confirm authorization when using the arbitrary-target security profile")
+                        help="confirm that you own the target or have explicit authorization for arbitrary-target pentesting")
     args = parser.parse_args()
     if args.slow_mo < 0 or args.slow_mo > 5000:
         parser.error("--slow-mo must be between 0 and 5000 milliseconds")
