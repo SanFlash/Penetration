@@ -221,19 +221,43 @@ Use exactly `https://amwebtech.com` for the professional pentest profile. Do not
 
 The framework now has a separate security engine that does **not** launch the UI/compatibility workflow. Use it when the objective is security assessment rather than responsive/browser testing.
 
+### Arbitrary authorized targets
+
+The security-only engine is now target-agnostic. You can supply another web application without editing `config.py`. Each run locks itself to the exact origin you supplied, and redirects to another origin are refused.
+
+Example:
+
+~~~powershell
+python security.py --target https://staging.example.com --confirm-authorized
+~~~
+
+With a custom port:
+
+~~~powershell
+python security.py --target https://staging.example.com:8443 --confirm-authorized
+~~~
+
+Using the integrated CLI:
+
+~~~powershell
+python main.py --target https://staging.example.com --profile security --confirm-authorized
+~~~
+
+The `--confirm-authorized` flag is intentionally required for the arbitrary-target security profile. Use it only when you own the application or have explicit authorization to assess it.
+
 ### Primary command
 
 ~~~powershell
 cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python security.py --target https://amwebtech.com
+python security.py --target https://amwebtech.com --confirm-authorized
 ~~~
 
 Equivalent integrated profile:
 
 ~~~powershell
-python main.py --target https://amwebtech.com --profile security
+python main.py --target https://amwebtech.com --profile security --confirm-authorized
 ~~~
 
 Higher bounded coverage:
