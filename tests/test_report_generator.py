@@ -23,7 +23,7 @@ def test_interactive_report_contains_metadata_and_summaries(tmp_path):
     with open(result["json_path"], encoding="utf-8") as f:
         data = json.load(f)
 
-    assert data["schema_version"] == "2.0"
+    assert data["schema_version"] == "3.0"
     assert data["total_findings"] == 1
     assert data["category_summary"]["Compatibility"] == 1
     assert data["metadata"]["profile"] == "compatibility"
