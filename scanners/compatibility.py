@@ -189,6 +189,9 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                         if metrics["unlabeledControls"]:
                             issues.append(f"UNLABELED CONTROLS: {metrics['unlabeledControls']}")
 
+                        if response and response.status >= 400:
+                            issues.append(f"HTTP FAILURE: {response.status}")
+
                         evidence_marked = bool(issues)
                         if evidence_marked:
                             _mark_evidence(page, issues)
@@ -224,18 +227,32 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                     except Exception as exc:
                         completed += 1
                         finding_key = ("chromium", viewport_name, url)
+                        failure_label = f"CHROME/{viewport_name} navigation or inspection failure"
+                        failure_issues = [f"CHECK FAILED: {type(exc).__name__}", str(exc)]
+                        try:
+                            _mark_evidence(page, failure_issues)
+                            failure_filename = os.path.join(
+                                EVIDENCE_DIR,
+                                f"chromium_failure_{viewport_name}_{_safe_filename(url)}.png"
+                            )
+                            page.screenshot(path=failure_filename, full_page=True)
+                        except Exception as screenshot_exc:
+                            failure_filename = None
+                            failure_issues.append(f"SCREENSHOT FAILED: {type(screenshot_exc).__name__}: {screenshot_exc}")
+
                         findings.append({
                             "id": f"COMP-PAGE-{abs(hash(finding_key)) % 100000:05d}",
                             "title": "Page compatibility check failed", "severity": "Medium", "confidence": "High",
                             "category": "Compatibility", "url": url,
                             "evidence": f"chromium/{viewport_name}: {type(exc).__name__}: {exc}",
-                            "detail": "The Chrome browser could not complete navigation or inspection.",
-                            "impact": "The affected viewport requires manual investigation.",
+                            "screenshot": failure_filename,
+                            "detail": "The Chrome browser could not complete navigation or inspection. A marked failure screenshot is captured when Playwright can still render the page.",
+                            "impact": "The affected viewport requires manual investigation and may represent a broken user experience.",
                             "remediation": "Reproduce the failure in Chrome at the specified viewport and inspect page errors and network requests.",
                         })
                         emit(checks=completed, findings=len(findings), errors=len(findings),
                              progress=round(completed/total*100,1), stage="CHECK FAILED", detail=str(exc),
-                             log={"time":"","level":"err","message":f"Failed CHROME/{viewport_name}: {exc}"})
+                             log={"time":"","level":"err","message":failure_label})
                     finally:
                         page.close()
                 context.close()
