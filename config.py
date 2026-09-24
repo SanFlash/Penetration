@@ -1,8 +1,6 @@
 """Central safety and assessment configuration.
 
-Targets are allowlisted explicitly. Only add systems you own or are authorized
-in writing to assess. The AM Webtech entry below is enabled because the
-repository owner requested an assessment of their own website.
+Only add systems you own or have explicit written authorization to assess.
 """
 
 ALLOWED_HOSTS = [
@@ -22,8 +20,13 @@ EVIDENCE_DIR = "evidence"
 DEMO_USERNAME = "bob"
 DEMO_PASSWORD = "bob_pw"
 
-# Safe browser compatibility profile.
+# Runtime controls.
 COMPATIBILITY_MAX_PAGES = 12
+ACTIVE_SECURITY_MAX_URLS = 12
+
+# The professional pentest profile intentionally uses Chromium only.
+# Six responsive sizes provide mobile/tablet/desktop coverage without
+# multiplying runtime across Firefox/WebKit.
 COMPATIBILITY_VIEWPORTS = [
     (375, 812),
     (390, 844),
