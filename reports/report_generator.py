@@ -214,10 +214,10 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
 
 def _render_html(report: dict) -> str:
     findings_json = json.dumps(report["findings"], ensure_ascii=False).replace("</", "<\\/")
-    gallery_json = json.dumps(report["evidence_gallery"], ensure_ascii=False)
-    coverage_json = json.dumps(report["metadata"].get("ui_responsive") or report["metadata"].get("compatibility") or {}, ensure_ascii=False)
-    security_json = json.dumps(report.get("security_evidence", []), ensure_ascii=False)
-    meta_json = json.dumps(report.get("metadata", {}), ensure_ascii=False)
+    gallery_json = json.dumps(report["evidence_gallery"], ensure_ascii=False).replace("</", "<\\/")
+    coverage_json = json.dumps(report["metadata"].get("ui_responsive") or report["metadata"].get("compatibility") or {}, ensure_ascii=False).replace("</", "<\\/")
+    security_json = json.dumps(report.get("security_evidence", []), ensure_ascii=False).replace("</", "<\\/")
+    meta_json = json.dumps(report.get("metadata", {}), ensure_ascii=False).replace("</", "<\\/")
 
     cards = []
     for severity, count in report["severity_summary"].items():
