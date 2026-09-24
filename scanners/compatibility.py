@@ -216,8 +216,9 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                                   "message":f"Completed CHROME/{viewport_name} -> {data['status']}"})
                     except Exception as exc:
                         completed += 1
+                        finding_key = ("chromium", viewport_name, url)
                         findings.append({
-                            "id": f"COMP-PAGE-{abs(hash(("chromium", viewport_name, url))) % 100000:05d}",
+                            "id": f"COMP-PAGE-{abs(hash(finding_key)) % 100000:05d}",
                             "title": "Page compatibility check failed", "severity": "Medium", "confidence": "High",
                             "category": "Compatibility", "url": url,
                             "evidence": f"chromium/{viewport_name}: {type(exc).__name__}: {exc}",
