@@ -216,28 +216,6 @@ The compatibility engine attempts a marked failure screenshot inside the excepti
 Use exactly `https://amwebtech.com` for the professional pentest profile. Do not disable scope enforcement.
 
 
-```powershell
-cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m playwright install chromium
-```
-
-Only Chromium is required for the professional UI/responsive phase.
-
-Verify:
-
-```powershell
-python main.py --help
-python -m py_compile main.py scanners\compatibility.py scanners\active_security.py
-```
-
-The CLI should show:
-
-```text
---profile {auto,lab,compatibility,pentest}
-```
-
 ## Commands for AM Webtech
 
 ### 1. Recommended full authorized assessment
