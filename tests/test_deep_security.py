@@ -32,3 +32,21 @@ def test_fingerprint_is_stable_and_minimal():
     assert fp["length"] == len(b"sentinel-body")
     assert fp["content_type"] == "text/html"
     assert len(fp["body_sha256_12"]) == 12
+
+
+def test_extracts_real_set_cookie_headers_without_comma_splitting():
+    import requests
+
+    response = requests.Response()
+    response.status_code = 200
+    response.url = config.PENTEST_TARGET_ORIGIN + "/"
+    response._content = b"ok"
+    response.headers["Set-Cookie"] = "session_id=abc; Path=/; Secure; HttpOnly; SameSite=Lax"
+    engine = DeepSecurityEngine(config.PENTEST_TARGET_ORIGIN, max_urls=1, max_probes=1)
+    engine.baseline_and_headers([])
+    assert response.headers["Set-Cookie"].startswith("session_id=")
+
+
+def test_cors_test_is_bounded_to_same_origin():
+    engine = DeepSecurityEngine("https://example.com", max_urls=1, max_probes=3)
+    assert engine.origin == "https://example.com"

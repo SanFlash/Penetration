@@ -222,30 +222,52 @@ class DeepSecurityEngine:
                     method="GET", owasp="WSTG-INFO-02",
                 )
 
-            for cookie in resp.headers.get("Set-Cookie", "").split(","):
+            raw_cookie_headers = []
+            try:
+                raw_cookie_headers = list(resp.raw.headers.getlist("Set-Cookie"))
+            except Exception:
+                combined = resp.headers.get("Set-Cookie", "")
+                if combined:
+                    raw_cookie_headers = [combined]
+            for cookie in raw_cookie_headers:
                 c = cookie.strip()
                 if not c:
                     continue
                 lower = c.lower()
+                cookie_name = c.split("=", 1)[0].strip().lower()
+                sensitive_name = any(token in cookie_name for token in ("session", "auth", "token", "jwt", "sid"))
                 if "secure" not in lower and url.lower().startswith("https://"):
                     self.add(
-                        f"DS-COOKIE-{index:03d}-{len(self.findings)}",
+                        f"DS-COOKIE-SECURE-{index:03d}-{len(self.findings)}",
                         "HTTPS response sets a cookie without Secure",
-                        "Medium", "High", "Session Management", url,
+                        "Medium" if sensitive_name else "Low", "High", "Session Management", url,
                         "A cookie was observed without the Secure attribute on an HTTPS response.",
                         "The cookie may be exposed if transmitted over an insecure channel.",
-                        "Set Secure on cookies that carry authentication or sensitive state.",
+                        "Set Secure on cookies that carry authentication or sensitive state; review non-sensitive cookies separately.",
                         c[:300], method="GET", owasp="WSTG-SESS-02",
+                        cookie_name=cookie_name,
                     )
-                if "httponly" not in lower and ("session" in lower or "auth" in lower or "token" in lower):
+                if sensitive_name and "httponly" not in lower:
                     self.add(
                         f"DS-COOKIE-HTTPONLY-{index:03d}-{len(self.findings)}",
                         "Potentially sensitive cookie lacks HttpOnly",
-                        "Medium", "Medium", "Session Management", url,
+                        "Medium", "High", "Session Management", url,
                         "A cookie whose name suggests session/authentication state was observed without HttpOnly.",
                         "Client-side script access can increase the impact of XSS.",
                         "Set HttpOnly on server-managed authentication/session cookies where compatible.",
                         c[:300], method="GET", owasp="WSTG-SESS-02",
+                        cookie_name=cookie_name,
+                    )
+                if sensitive_name and "samesite=" not in lower:
+                    self.add(
+                        f"DS-COOKIE-SAMESITE-{index:03d}-{len(self.findings)}",
+                        "Potentially sensitive cookie lacks SameSite",
+                        "Low", "High", "Session Management", url,
+                        "A cookie whose name suggests authentication/session state was observed without an explicit SameSite attribute.",
+                        "Cross-site request behavior may be less restricted than intended, increasing CSRF exposure depending on application design.",
+                        "Set an explicit SameSite policy appropriate to the authentication flow, commonly Lax or Strict where compatible.",
+                        c[:300], method="GET", owasp="WSTG-SESS-06",
+                        cookie_name=cookie_name,
                     )
 
     def method_tests(self, urls):
@@ -279,6 +301,50 @@ class DeepSecurityEngine:
                     )
             except requests.RequestException:
                 continue
+
+    def cors_tests(self, urls):
+        for index, url in enumerate(urls[: min(len(urls), 12)], 1):
+            origin = "https://sentinel-invalid-origin.invalid"
+            try:
+                response, _ = self.request("GET", url, headers={"Origin": origin})
+            except requests.RequestException:
+                continue
+
+            allow_origin = response.headers.get("Access-Control-Allow-Origin", "")
+            allow_credentials = response.headers.get("Access-Control-Allow-Credentials", "")
+            self.record(
+                check="cors",
+                url=url,
+                status=response.status_code,
+                request_origin=origin,
+                allow_origin=allow_origin,
+                allow_credentials=allow_credentials,
+            )
+
+            reflected = allow_origin.strip() == origin
+            wildcard_credentials = allow_origin.strip() == "*" and allow_credentials.lower().strip() == "true"
+            if reflected and allow_credentials.lower().strip() == "true":
+                self.add(
+                    f"DS-CORS-{index:03d}",
+                    "CORS reflects arbitrary Origin with credentials enabled",
+                    "High", "High", "CORS", url,
+                    "The response reflected a controlled cross-origin value and also enabled credentials.",
+                    "A permissive credentialed CORS policy can allow an untrusted origin to read authenticated cross-origin responses.",
+                    "Allowlist trusted origins and enable credentials only where required.",
+                    f"Origin={origin}; Access-Control-Allow-Origin={allow_origin}; Access-Control-Allow-Credentials={allow_credentials}",
+                    method="GET", owasp="WSTG-CONF-07",
+                )
+            elif wildcard_credentials:
+                self.add(
+                    f"DS-CORS-WILD-{index:03d}",
+                    "CORS uses wildcard origin with credentials enabled",
+                    "High", "High", "CORS", url,
+                    "The response advertised wildcard CORS together with credential support.",
+                    "This combination indicates a dangerous cross-origin policy, although browser enforcement details still depend on the endpoint and response.",
+                    "Replace wildcard origins with an explicit trusted-origin allowlist and review credential requirements.",
+                    f"Access-Control-Allow-Origin={allow_origin}; Access-Control-Allow-Credentials={allow_credentials}",
+                    method="GET", owasp="WSTG-CONF-07",
+                )
 
     def query_tests(self, urls):
         vectors = [
@@ -563,6 +629,7 @@ class DeepSecurityEngine:
         urls, forms = self.crawl()
         self.baseline_and_headers(urls)
         self.method_tests(urls)
+        self.cors_tests(urls)
         self.query_tests(urls)
         self.redirect_and_crlf(urls)
         self.header_routing_tests(urls)
