@@ -14,7 +14,7 @@ import requests
 
 from config import EVIDENCE_DIR, RATE_LIMIT_RPS
 from utils.http_client import get, TargetConnectionError
-from utils.scope import assert_in_scope
+from utils.scope import assert_in_scope, assert_same_target
 
 _TIMEOUT = 12
 _MAX_URLS = 12
@@ -35,6 +35,12 @@ def _finding(fid, title, severity, confidence, category, url, detail, impact, re
 def _limited_get(url, headers=None):
     assert_in_scope(url)
     return get(url, tag="active-security", headers=headers or {}, timeout=_TIMEOUT)
+
+
+def _same_target(target: str, url: str) -> bool:
+    target_parts = urlparse(target)
+    url_parts = urlparse(url)
+    return (target_parts.scheme.lower(), target_parts.netloc.lower()) == (url_parts.scheme.lower(), url_parts.netloc.lower())
 
 
 def _query_canary(url):
@@ -63,7 +69,8 @@ def run_active_security(target: str, urls: list[str], forms: list[dict], telemet
     assert_in_scope(target)
     findings = []
     checks = []
-    selected = list(dict.fromkeys(urls))[:max_urls]
+    assert_same_target(target, target)
+    selected = [u for u in list(dict.fromkeys(urls)) if _same_target(target, u)][:max_urls]
 
     def emit(**payload):
         if telemetry:
