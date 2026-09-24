@@ -14,6 +14,7 @@ from recon.playwright_recon import authenticated_recon
 from scanners import headers as header_scanner
 from scanners import xss_probe, sqli_probe, idor_probe
 from scanners.compatibility import run_compatibility
+from scanners.active_security import run_active_security
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
@@ -55,13 +56,16 @@ def banner(text):
     print("=" * 74)
 
 
-def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True):
-    state = DashboardState(target=target, profile="compatibility")
+def _build_dashboard(target, profile, dashboard=True):
+    state = DashboardState(target=target, profile=profile)
     dashboard_url = None
     if dashboard:
         dashboard_url = start_dashboard(state, open_browser=True)
         print(f"[DASHBOARD] Live visual console: {dashboard_url}")
+    return state, dashboard_url
 
+
+def _set_telemetry(state, loader):
     def telemetry(**payload):
         now = datetime.now().strftime("%H:%M:%S")
         log = payload.get("log")
@@ -70,40 +74,47 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
         state.update(**payload)
         if log:
             loader.set(log.get("message", "Assessment running"))
+    return telemetry
 
+
+def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True):
+    state, dashboard_url = _build_dashboard(target, "compatibility", dashboard)
     loader = ConsoleLoader()
     loader.start("Initializing assessment engine")
+    telemetry = _set_telemetry(state, loader)
 
     try:
         banner("STEP 1 — Scope-limited website reconnaissance")
         loader.set("Crawling authorized target")
-        state.update(stage="RECONNAISSANCE", detail="Discovering same-host pages and forms.",
-                     log={"time": datetime.now().strftime("%H:%M:%S"), "level":"ok", "message":"Reconnaissance started."})
+        state.update(stage="RECONNAISSANCE", detail="Discovering same-host pages and forms.")
         crawler = SafeCrawler(target, max_pages=config.COMPATIBILITY_MAX_PAGES)
         recon = crawler.crawl()
         urls = [p["url"] for p in recon["pages"]]
-        state.update(stage="RECON COMPLETE",
-                     detail=f"Discovered {len(urls)} pages and {len(recon['forms'])} forms.",
-                     log={"time": datetime.now().strftime("%H:%M:%S"), "level":"ok",
-                          "message":f"Discovered {len(urls)} pages and {len(recon['forms'])} forms."})
+        state.update(
+            stage="RECON COMPLETE",
+            detail=f"Discovered {len(urls)} pages and {len(recon['forms'])} forms.",
+            log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                 "message": f"Discovered {len(urls)} pages and {len(recon['forms'])} forms."},
+        )
         print(f"\nDiscovered {len(urls)} pages and {len(recon['forms'])} forms.")
 
-        banner("STEP 2 — Cross-browser / responsive compatibility")
-        print(f"[VISUAL] {'HEADED browser windows enabled' if headed else 'headless browser engines'}")
+        banner("STEP 2 — Chrome-only UI / responsive testing")
+        print(f"[VISUAL] {'HEADED Chrome/Chromium window enabled' if headed else 'headless Chrome/Chromium'}")
         if slow_mo:
             print(f"[VISUAL] Playwright slow-motion: {slow_mo} ms")
-        result = run_compatibility(target, urls, max_pages=config.COMPATIBILITY_MAX_PAGES,
-                                   headed=headed, slow_mo=slow_mo, telemetry=telemetry)
+        result = run_compatibility(
+            target,
+            urls,
+            max_pages=config.COMPATIBILITY_MAX_PAGES,
+            headed=headed,
+            slow_mo=slow_mo,
+            telemetry=telemetry,
+        )
         print(f"\nURLs tested: {len(result['urls_tested'])}")
-        print(f"Browser engines available: {sorted({r['browser'] for r in result['results']})}")
+        print(f"Browser engines tested: {sorted({r['browser'] for r in result['results']})}")
         print(f"Viewports tested: {len(sorted({r['viewport'] for r in result['results']}))}")
         print(f"Browser checks completed: {len(result['results'])}")
-        print(f"Compatibility findings: {len(result['findings'])}")
-
-        if result["browser_unavailable"]:
-            print("Unavailable browser engines:")
-            for item in result["browser_unavailable"]:
-                print(f"  {item['browser']}: {item['reason']}")
+        print(f"UI/compatibility findings: {len(result['findings'])}")
 
         banner("STEP 3 — Passive security/header checks")
         loader.set("Scanning security headers")
@@ -117,38 +128,168 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
                 state.update(
                     detail=f"Header scan {index}/{len(header_urls)}",
                     log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
-                         "message": f"Header scan complete: {url}"}
+                         "message": f"Header scan complete: {url}"},
                 )
             except TargetConnectionError as exc:
                 state.update(
                     detail=f"Header scan skipped: {url}",
                     log={"time": datetime.now().strftime("%H:%M:%S"), "level": "warn",
-                         "message": f"Header scan skipped for unreachable page: {url}"}
+                         "message": f"Header scan skipped for unreachable page: {url}"},
                 )
                 print(f"  [WARN] Header scan skipped: {exc.url}")
+
         print(f"Header findings: {len(header_findings)}")
 
         all_findings = result["findings"] + header_findings
         banner("STEP 4 — Interactive report generation")
         loader.set("Building interactive analytics report")
         state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
-        metadata = {"profile":"compatibility","headed":headed,"slow_mo_ms":slow_mo,
-                    "dashboard_url":dashboard_url,"compatibility":result}
+        metadata = {
+            "profile": "compatibility",
+            "headed": headed,
+            "slow_mo_ms": slow_mo,
+            "dashboard_url": dashboard_url,
+            "compatibility": result,
+        }
         report = generate(target, all_findings, config.EVIDENCE_DIR, metadata=metadata)
         print(f"Findings JSON: {report['json_path']}")
         print(f"Findings HTML: {report['html_path']}")
         print(f"Total findings: {report['report']['total_findings']}")
 
         banner("ASSESSMENT COMPLETE")
+        state.update(
+            status="COMPLETE",
+            stage="ASSESSMENT COMPLETE",
+            detail="Interactive report is ready.",
+            progress=100,
+            findings=report["report"]["total_findings"],
+            log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                 "message": "Assessment complete. Open reports/report.html."},
+        )
+        loader.set("Assessment complete")
+        return 0
+    finally:
+        loader.stop()
+
+
+def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True):
+    state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
+    loader = ConsoleLoader()
+    loader.start("Initializing authorized pentest engine")
+    telemetry = _set_telemetry(state, loader)
+    all_findings = []
+    start = time.time()
+
+    try:
+        banner("STEP 1 — Scope-limited reconnaissance")
+        state.update(stage="RECONNAISSANCE", detail="Discovering same-host pages, query parameters and forms.")
+        loader.set("Crawling authorized target")
+        crawler = SafeCrawler(target, max_pages=config.COMPATIBILITY_MAX_PAGES)
+        recon = crawler.crawl()
+        urls = [p["url"] for p in recon["pages"]]
+        forms = recon.get("forms", [])
+        state.update(
+            stage="RECON COMPLETE",
+            detail=f"Discovered {len(urls)} pages and {len(forms)} forms.",
+            log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                 "message": f"Recon complete: {len(urls)} pages, {len(forms)} forms."},
+        )
+        print(f"\nDiscovered {len(urls)} pages and {len(forms)} forms.")
+
+        banner("STEP 2 — Chrome-only UI / responsive evidence")
+        print(f"[VISUAL] {'HEADED Chrome/Chromium window enabled' if headed else 'headless Chrome/Chromium'}")
+        if slow_mo:
+            print(f"[VISUAL] Playwright slow-motion: {slow_mo} ms")
+        ui_result = run_compatibility(
+            target,
+            urls,
+            max_pages=config.COMPATIBILITY_MAX_PAGES,
+            headed=headed,
+            slow_mo=slow_mo,
+            telemetry=telemetry,
+        )
+        all_findings.extend(ui_result["findings"])
+        print(f"\nChrome URLs tested: {len(ui_result['urls_tested'])}")
+        print(f"Chrome evidence screenshots/results: {len(ui_result['results'])}")
+        print(f"UI findings: {len(ui_result['findings'])}")
+
+        banner("STEP 3 — Passive security-header checks")
+        loader.set("Scanning security headers")
+        state.update(stage="SECURITY HEADERS", detail="Checking transport and response security headers.")
+        header_findings = []
+        for index, url in enumerate(urls[:config.COMPATIBILITY_MAX_PAGES], 1):
+            try:
+                header_result = header_scanner.scan(url)
+                header_findings.extend(header_result["findings"])
+                state.update(
+                    detail=f"Header scan {index}/{min(len(urls), config.COMPATIBILITY_MAX_PAGES)}",
+                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                         "message": f"Header check {index} complete."},
+                )
+            except TargetConnectionError:
+                state.update(
+                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "warn",
+                         "message": f"Header check skipped: {url}"},
+                )
+        all_findings.extend(header_findings)
+        print(f"Header findings: {len(header_findings)}")
+
+        banner("STEP 4 — Bounded active security testing")
+        loader.set("Running bounded active security controls")
+        state.update(
+            stage="ACTIVE SECURITY TESTING",
+            detail="Testing CORS, HTTP methods, input reflection, CSRF posture, error disclosure and mixed content.",
+        )
+        active_result = run_active_security(
+            target,
+            urls,
+            forms,
+            telemetry=telemetry,
+            max_urls=config.ACTIVE_SECURITY_MAX_URLS,
+        )
+        all_findings.extend(active_result["findings"])
+        print(f"Active URLs tested: {len(active_result['urls_tested'])}")
+        print(f"Active checks: {len(active_result['checks'])}")
+        print(f"Active findings: {len(active_result['findings'])}")
+
+        banner("STEP 5 — Interactive pentest report")
+        loader.set("Building interactive pentest report")
+        state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
+        elapsed = round(time.time() - start, 1)
+        metadata = {
+            "profile": "pentest",
+            "methodology": "OWASP WSTG-aligned bounded assessment",
+            "headed": headed,
+            "slow_mo_ms": slow_mo,
+            "dashboard_url": dashboard_url,
+            "recon": {
+                "pages_discovered": len(urls),
+                "forms_discovered": len(forms),
+            },
+            "ui_responsive": ui_result,
+            "active_security": active_result,
+            "runtime_seconds": elapsed,
+        }
+        report = generate(target, all_findings, config.EVIDENCE_DIR, metadata=metadata)
+        print(f"Findings JSON: {report['json_path']}")
+        print(f"Findings HTML: {report['html_path']}")
+        print(f"Total findings: {report['report']['total_findings']}")
+
+        banner("PENTEST COMPLETE")
         for sev, count in report["report"]["severity_summary"].items():
             if count:
                 print(f"  {sev}: {count}")
-        state.update(status="COMPLETE", stage="ASSESSMENT COMPLETE",
-                     detail="Interactive report is ready.", progress=100,
-                     findings=report["report"]["total_findings"],
-                     log={"time": datetime.now().strftime("%H:%M:%S"), "level":"ok",
-                          "message":"Assessment complete. Open reports/report.html."})
-        loader.set("Assessment complete")
+        state.update(
+            status="COMPLETE",
+            stage="PENTEST COMPLETE",
+            detail="Interactive pentest report and evidence are ready.",
+            progress=100,
+            findings=report["report"]["total_findings"],
+            checks=(len(ui_result["results"]) + len(active_result["checks"])),
+            log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                 "message": "Pentest complete. Open reports/report.html."},
+        )
+        loader.set("Pentest complete")
         return 0
     finally:
         loader.stop()
@@ -171,7 +312,7 @@ def run_lab_full_profile(target: str):
     for c in pw_result["cookies"]:
         print(f"  cookie '{c['name']}': httpOnly={c['httpOnly']} secure={c['secure']}")
         if not c["httpOnly"]:
-            all_findings.append({"id":f"COOKIE-{c['name']}","title":f"Session cookie '{c['name']}' missing HttpOnly flag",
+            all_findings.append({"id":f"COOKIE-{c['name']}","title":f"Session cookie '{c['name']}' missing HttpOnly flag',
                                  "severity":"Medium","confidence":"High","category":"Session Management","url":target,
                                  "detail":"A cookie without HttpOnly is readable by JavaScript.",
                                  "evidence":f"cookie={c['name']} httpOnly=False","impact":"Can increase the impact of XSS.",
@@ -218,13 +359,17 @@ def run_lab_full_profile(target: str):
 def main():
     parser = argparse.ArgumentParser(description="Authorized web assessment framework")
     parser.add_argument("--target", default=config.DEFAULT_TARGET, help="Base URL of an IN-SCOPE target")
-    parser.add_argument("--profile", choices=("auto","lab","compatibility"), default="auto",
-                        help="auto selects compatibility for AM Webtech and lab for localhost")
-    parser.add_argument("--headed", action="store_true", help="show Playwright browser windows during compatibility testing")
+    parser.add_argument(
+        "--profile",
+        choices=("auto", "lab", "compatibility", "pentest"),
+        default="auto",
+        help="auto selects pentest for AM Webtech and lab for localhost",
+    )
+    parser.add_argument("--headed", action="store_true", help="show Chrome/Chromium browser windows during UI testing")
     parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
                         help="delay each Playwright action by MS milliseconds (e.g. 500)")
     parser.add_argument("--no-dashboard", action="store_true",
-                        help="disable the local visual dashboard for compatibility runs")
+                        help="disable the local visual dashboard")
     args = parser.parse_args()
     if args.slow_mo < 0 or args.slow_mo > 5000:
         parser.error("--slow-mo must be between 0 and 5000 milliseconds")
@@ -239,18 +384,33 @@ def main():
     print(f"[OK] '{target}' is in config.ALLOWED_HOSTS — proceeding.")
 
     try:
-        host = target.lower().split("://",1)[-1].split("/",1)[0].split(":")[0]
-        is_amwebtech = host in {"amwebtech.com","www.amwebtech.com"}
-        profile = "compatibility" if args.profile == "auto" and is_amwebtech else args.profile
-        if profile == "auto":
-            profile = "lab"
+        host = target.lower().split("://", 1)[-1].split("/", 1)[0].split(":")[0]
+        is_amwebtech = host in {"amwebtech.com", "www.amwebtech.com"}
+
+        if args.profile == "auto":
+            profile = "pentest" if is_amwebtech else "lab"
+        else:
+            profile = args.profile
+
         print(f"[PROFILE] {profile}")
+
         if profile == "compatibility":
-            return run_compatibility_profile(target, headed=args.headed, slow_mo=args.slow_mo,
-                                             dashboard=not args.no_dashboard)
+            return run_compatibility_profile(
+                target, headed=args.headed, slow_mo=args.slow_mo,
+                dashboard=not args.no_dashboard
+            )
+
+        if profile == "pentest":
+            return run_pentest_profile(
+                target, headed=args.headed, slow_mo=args.slow_mo,
+                dashboard=not args.no_dashboard
+            )
+
         if args.headed or args.slow_mo or args.no_dashboard:
-            print("[NOTE] visual/dashboard options are used by the compatibility profile.")
+            print("[NOTE] visual/browser options are primarily used by compatibility and pentest profiles.")
+
         return run_lab_full_profile(target)
+
     except TargetConnectionError as exc:
         print("\n[ERROR] Target is unreachable.")
         print(f"  Target: {exc.url}")
