@@ -155,6 +155,12 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     for finding in findings_sorted:
         if finding.get("screenshot"):
             finding["screenshot_relative"] = _safe_relative_path(finding["screenshot"], out_dir)
+        finding["screenshots_relative"] = [
+            rel for rel in (
+                _safe_relative_path(path, out_dir)
+                for path in finding.get("screenshots", [])
+            ) if rel
+        ]
 
     report = {
         "schema_version": "3.0",
@@ -339,8 +345,8 @@ function renderFindings(){
  if(!filtered.length){list.innerHTML='<div class="empty">No matching findings.</div>';return}
  list.innerHTML=filtered.map(function(f){
   const color=colors[f.severity]||colors.Info;
-  const shot=f.screenshot_relative||"";
-  const shotHtml=shot?'<div style="margin-top:12px"><b>Visual evidence:</b><br><a href="'+esc(shot)+'" target="_blank" rel="noopener"><img src="'+esc(shot)+'" alt="Security evidence screenshot" style="max-width:100%;border:1px solid #263b55;border-radius:10px;margin-top:8px"></a></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
+  const shots=f.screenshots_relative||[];
+  const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return '<a href="'+esc(p)+'" target="_blank" rel="noopener"><img src="'+esc(p)+'" alt="Security evidence screenshot" style="width:100%;border:1px solid #263b55;border-radius:10px"></a>'}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
   return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+'</div><details open><summary>Evidence / impact / remediation</summary><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
  }).join("");
 }
