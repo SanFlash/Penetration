@@ -312,11 +312,18 @@ def run_lab_full_profile(target: str):
     for c in pw_result["cookies"]:
         print(f"  cookie '{c['name']}': httpOnly={c['httpOnly']} secure={c['secure']}")
         if not c["httpOnly"]:
-            all_findings.append({"id":f"COOKIE-{c['name']}","title":f"Session cookie '{c['name']}' missing HttpOnly flag',
-                                 "severity":"Medium","confidence":"High","category":"Session Management","url":target,
-                                 "detail":"A cookie without HttpOnly is readable by JavaScript.",
-                                 "evidence":f"cookie={c['name']} httpOnly=False","impact":"Can increase the impact of XSS.",
-                                 "remediation":"Set HttpOnly on session cookies."})
+            all_findings.append({
+                "id": f"COOKIE-{c['name']}",
+                "title": f"Session cookie '{c['name']}' missing HttpOnly flag",
+                "severity": "Medium",
+                "confidence": "High",
+                "category": "Session Management",
+                "url": target,
+                "detail": "A cookie without HttpOnly is readable by JavaScript.",
+                "evidence": f"cookie={c['name']} httpOnly=False",
+                "impact": "Can increase the impact of XSS.",
+                "remediation": "Set HttpOnly on session cookies.",
+            })
 
     banner("STEP 3 — Security header scan")
     header_result = header_scanner.scan(target + "/")
