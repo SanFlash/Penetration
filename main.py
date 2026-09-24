@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 
 import config
-from utils.scope import assert_in_scope, OutOfScopeError
+from utils.scope import assert_in_scope, assert_same_target, OutOfScopeError
 from utils.http_client import TargetConnectionError
 from recon.crawler import SafeCrawler
 from recon.playwright_recon import authenticated_recon
@@ -172,7 +172,17 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
         loader.stop()
 
 
+def _is_exact_target_url(target: str, url: str) -> bool:
+    try:
+        assert_same_target(target, url)
+        return True
+    except OutOfScopeError:
+        return False
+
+
 def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True):
+    assert_in_scope(target)
+    assert_same_target(config.PENTEST_TARGET_ORIGIN, target)
     state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
     loader = ConsoleLoader()
     loader.start("Initializing authorized pentest engine")
@@ -186,7 +196,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         loader.set("Crawling authorized target")
         crawler = SafeCrawler(target, max_pages=config.COMPATIBILITY_MAX_PAGES)
         recon = crawler.crawl()
-        urls = [p["url"] for p in recon["pages"]]
+        urls = [p["url"] for p in recon["pages"] if _is_exact_target_url(target, p["url"])]
         forms = recon.get("forms", [])
         state.update(
             stage="RECON COMPLETE",
