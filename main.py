@@ -327,14 +327,11 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
 
 def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None):
     """Run security-only testing with no UI/compatibility/browser phase."""
-    assert_in_scope(target)
-    assert_same_target(config.PENTEST_TARGET_ORIGIN, target)
-
     banner("SECURITY-ONLY MODE — DEEP AUTHORIZED ASSESSMENT")
     print("[MODE] UI/compatibility testing: DISABLED")
     print("[MODE] Browser/Playwright: DISABLED")
     print("[MODE] Security engine: ENABLED")
-    print("[MODE] Scope: exact origin only")
+    print("[MODE] Scope: exact origin of supplied target; redirects disabled")
     print("[MODE] State-changing requests: DISABLED")
     print("[MODE] Credential attacks / DoS / destructive writes: DISABLED")
     print("[MODE] GET / HEAD / OPTIONS / TRACE + controlled header/query probes")
@@ -438,29 +435,39 @@ def main():
                         help="delay each Playwright action by MS milliseconds (e.g. 500)")
     parser.add_argument("--no-dashboard", action="store_true",
                         help="disable the local visual dashboard")
+    parser.add_argument("--confirm-authorized", action="store_true",
+                        help="confirm authorization when using the arbitrary-target security profile")
     args = parser.parse_args()
     if args.slow_mo < 0 or args.slow_mo > 5000:
         parser.error("--slow-mo must be between 0 and 5000 milliseconds")
     target = args.target.rstrip("/")
 
-    banner("STEP 0 — Scope check")
-    try:
-        assert_in_scope(target + "/")
-    except OutOfScopeError as exc:
-        print(f"[BLOCKED] {exc}")
-        return 1
-    print(f"[OK] '{target}' is in config.ALLOWED_HOSTS — proceeding.")
+    host = target.lower().split("://", 1)[-1].split("/", 1)[0].split(":")[0]
+    is_amwebtech = host in {"amwebtech.com", "www.amwebtech.com"}
+
+    if args.profile == "auto":
+        profile = "pentest" if is_amwebtech else "lab"
+    else:
+        profile = args.profile
+
+    print(f"[PROFILE] {profile}")
+
+    if profile == "security":
+        if not args.confirm_authorized:
+            print("[BLOCKED] Security profile requires --confirm-authorized.")
+            print("[INFO] Use only on a system you own or are explicitly authorized to assess.")
+            return 1
+        print("[SCOPE] Security profile accepts an arbitrary absolute http(s) target.")
+    else:
+        banner("STEP 0 — Scope check")
+        try:
+            assert_in_scope(target + "/")
+        except OutOfScopeError as exc:
+            print(f"[BLOCKED] {exc}")
+            return 1
+        print(f"[OK] {target} is in config.ALLOWED_HOSTS — proceeding.")
 
     try:
-        host = target.lower().split("://", 1)[-1].split("/", 1)[0].split(":")[0]
-        is_amwebtech = host in {"amwebtech.com", "www.amwebtech.com"}
-
-        if args.profile == "auto":
-            profile = "pentest" if is_amwebtech else "lab"
-        else:
-            profile = args.profile
-
-        print(f"[PROFILE] {profile}")
 
         if profile == "compatibility":
             return run_compatibility_profile(
