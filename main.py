@@ -18,6 +18,7 @@ from scanners.compatibility import run_compatibility
 from scanners.active_security import run_active_security
 from scanners.browser_evidence import capture_security_evidence
 from scanners.deep_security import run_deep_security
+from scanners.api_surface import run_api_surface
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
@@ -268,7 +269,31 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         print(f"Active checks: {len(active_result['checks'])}")
         print(f"Active findings: {len(active_result['findings'])}")
 
-        banner("STEP 5 — Chrome security evidence capture")
+        banner("STEP 5 — Deep security and API attack-surface assessment")
+        loader.set("Running deep non-destructive security assessment")
+        state.update(
+            stage="DEEP SECURITY TESTING",
+            detail="Running bounded same-origin reconnaissance, headers, methods, query mutations, routing and exposure checks.",
+        )
+        deep_result = run_deep_security(
+            target,
+            max_urls=config.SECURITY_MAX_URLS,
+            max_probes=config.SECURITY_MAX_PROBES,
+        )
+        all_findings.extend(deep_result["findings"])
+        print(f"Deep URLs tested: {len(deep_result['urls_tested'])}")
+        print(f"Deep HTTP probes: {deep_result['probe_count']}")
+        print(f"Deep raw findings: {len(deep_result['findings'])}")
+
+        api_result = run_api_surface(
+            target,
+            max_probes=min(config.SECURITY_MAX_PROBES, 100),
+        )
+        all_findings.extend(api_result.get("findings", []))
+        print(f"API specs discovered: {api_result['summary']['specs']}")
+        print(f"API endpoints inventoried: {api_result['summary']['endpoints']}")
+
+        banner("STEP 6 — Chrome security evidence capture")
         loader.set("Capturing Chrome evidence for security findings")
         state.update(
             stage="SECURITY EVIDENCE",
@@ -283,7 +308,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         print(f"Security evidence screenshots: {sum(1 for item in security_evidence if item.get('screenshot'))}")
 
-        all_findings = ui_result["findings"] + header_findings + active_result["findings"]
+        all_findings = ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", [])
 
         banner("STEP 6 — Interactive pentest report")
         loader.set("Building interactive pentest report")
@@ -301,6 +326,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             },
             "ui_responsive": ui_result,
             "active_security": active_result,
+            "deep_security": deep_result,
+            "api_surface": api_result,
             "security_evidence": security_evidence,
             "runtime_seconds": elapsed,
         }
