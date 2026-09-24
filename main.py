@@ -15,6 +15,7 @@ from scanners import headers as header_scanner
 from scanners import xss_probe, sqli_probe, idor_probe
 from scanners.compatibility import run_compatibility
 from scanners.active_security import run_active_security
+from scanners.browser_evidence import capture_security_evidence
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
@@ -262,7 +263,24 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         print(f"Active checks: {len(active_result['checks'])}")
         print(f"Active findings: {len(active_result['findings'])}")
 
-        banner("STEP 5 — Interactive pentest report")
+        banner("STEP 5 — Chrome security evidence capture")
+        loader.set("Capturing Chrome evidence for security findings")
+        state.update(
+            stage="SECURITY EVIDENCE",
+            detail="Replaying finding URLs in Chromium and capturing marked screenshots.",
+        )
+        security_evidence = capture_security_evidence(
+            target,
+            active_result["findings"],
+            headed=headed,
+            slow_mo=slow_mo,
+            max_items=30,
+        )
+        print(f"Security evidence screenshots: {sum(1 for item in security_evidence if item.get('screenshot'))}")
+
+        all_findings = ui_result["findings"] + header_findings + active_result["findings"]
+
+        banner("STEP 6 — Interactive pentest report")
         loader.set("Building interactive pentest report")
         state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
         elapsed = round(time.time() - start, 1)
@@ -278,6 +296,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             },
             "ui_responsive": ui_result,
             "active_security": active_result,
+            "security_evidence": security_evidence,
             "runtime_seconds": elapsed,
         }
         report = generate(target, all_findings, config.EVIDENCE_DIR, metadata=metadata)
