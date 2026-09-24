@@ -625,16 +625,40 @@ class DeepSecurityEngine:
 
     def run(self):
         started = time.time()
-        urls, forms = self.crawl()
-        self.baseline_and_headers(urls)
-        self.method_tests(urls)
-        self.cors_tests(urls)
-        self.query_tests(urls)
-        self.redirect_and_crlf(urls)
-        self.header_routing_tests(urls)
-        self.content_disclosure(urls)
-        self.metadata_and_exposure()
-        self.error_disclosure()
+        budget_exhausted = False
+        exhausted_stage = None
+
+        # Probe exhaustion is a normal bounded-scan condition, not a fatal
+        # assessment error. Finish the report with the checks completed so far.
+        stages = (
+            ("crawl", lambda: self.crawl()),
+            ("baseline_and_headers", lambda: self.baseline_and_headers(urls)),
+            ("method_tests", lambda: self.method_tests(urls)),
+            ("cors_tests", lambda: self.cors_tests(urls)),
+            ("query_tests", lambda: self.query_tests(urls)),
+            ("redirect_and_crlf", lambda: self.redirect_and_crlf(urls)),
+            ("header_routing_tests", lambda: self.header_routing_tests(urls)),
+            ("content_disclosure", lambda: self.content_disclosure(urls)),
+            ("metadata_and_exposure", self.metadata_and_exposure),
+            ("error_disclosure", self.error_disclosure),
+        )
+
+        urls, forms = [], []
+        for stage_name, stage in stages:
+            if stage_name != "crawl" and self._probe_count >= self.max_probes:
+                budget_exhausted = True
+                exhausted_stage = stage_name
+                break
+            try:
+                value = stage()
+                if stage_name == "crawl":
+                    urls, forms = value
+            except RuntimeError as exc:
+                if str(exc) == "probe budget exhausted":
+                    budget_exhausted = True
+                    exhausted_stage = stage_name
+                    break
+                raise
 
         result = {
             "schema": "deep-security-1.0",
@@ -652,6 +676,8 @@ class DeepSecurityEngine:
             "urls_tested": urls,
             "forms_discovered": len(forms),
             "probe_count": self._probe_count,
+            "budget_exhausted": budget_exhausted,
+            "exhausted_stage": exhausted_stage,
             "checks": self.checks,
             "findings": self.findings,
             "summary": {
