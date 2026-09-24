@@ -22,6 +22,14 @@ def is_in_scope(url: str) -> bool:
     return host_of(url) in ALLOWED_HOSTS
 
 
+def assert_same_target(target: str, url: str) -> None:
+    """Fail closed unless URL belongs to the exact requested target origin."""
+    target_parts = urlparse(target)
+    url_parts = urlparse(url)
+    if (target_parts.scheme.lower(), target_parts.netloc.lower()) != (url_parts.scheme.lower(), url_parts.netloc.lower()):
+        raise OutOfScopeError(f"Refusing to assess '{url}'. Run is locked to '{target_parts.scheme}://{target_parts.netloc}' only.")
+
+
 def assert_in_scope(url: str) -> None:
     if not is_in_scope(url):
         raise OutOfScopeError(
