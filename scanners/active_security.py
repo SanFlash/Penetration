@@ -54,6 +54,93 @@ def _query_canary(url):
     return test, name
 
 
+def _mutate_query(url, index, value):
+    parsed = urlparse(url)
+    params = parse_qsl(parsed.query, keep_blank_values=True)
+    if index >= len(params):
+        return None, None
+    name = params[index][0]
+    params[index] = (name, value)
+    return urlunparse(parsed._replace(query=urlencode(params))), name
+
+
+def _advanced_url_matrix(target, urls, max_requests=48):
+    """GET-only parameter mutation checks; never submits forms or changes server state."""
+    findings = []
+    checks = []
+    vectors = [
+        ("XSS-MARKER", _REFLECTION_MARKER),
+        ("SQL-QUOTE", "'"),
+        ("SQL-DOUBLE-QUOTE", '"'),
+        ("BOUNDARY", "SENTINEL_BOUNDARY_9f2a"),
+    ]
+    count = 0
+    signatures = (
+        "sql syntax", "mysql", "postgresql", "sqlite", "sqlstate",
+        "odbc", "ora-", "syntax error", "unterminated string",
+        "traceback", "stack trace", "exception", "fatal error",
+    )
+
+    for url in urls:
+        params = parse_qsl(urlparse(url).query, keep_blank_values=True)
+        for index in range(min(len(params), 3)):
+            baseline = None
+            for label, vector in vectors:
+                if count >= max_requests:
+                    return findings, checks
+                mutated, parameter = _mutate_query(url, index, vector)
+                if not mutated:
+                    continue
+                try:
+                    baseline = baseline or _limited_get(url)
+                    resp = _limited_get(mutated)
+                    body = resp.text[:30000].lower()
+                    hits = [s for s in signatures if s in body]
+                    reflected = _REFLECTION_MARKER.lower() in body
+                    changed_status = baseline.status_code != resp.status_code
+                    checks.append({
+                        "url": mutated, "base_url": url, "parameter": parameter,
+                        "vector": label, "status": resp.status_code,
+                        "baseline_status": baseline.status_code,
+                        "response_length": len(resp.text),
+                        "changed_status": changed_status,
+                        "server_error_signatures": hits[:8],
+                        "marker_reflected": reflected,
+                    })
+                    if hits:
+                        findings.append(_finding(
+                            f"ACT-FUZZ-{count:03d}",
+                            "Potential server-side error triggered by URL parameter mutation",
+                            "Medium", "Medium", "Input Validation", mutated,
+                            "A bounded GET-only mutation produced a response containing a server/database error signature.",
+                            "Malformed input reaching backend components can disclose implementation details and may indicate insufficient validation.",
+                            "Validate and constrain the parameter before it reaches backend parsers or database operations; return generic production errors.",
+                            f"Vector={label}; parameter={parameter}; HTTP={resp.status_code}; signatures={hits[:8]}",
+                            method="GET", parameter=parameter, evidence_url=mutated,
+                            owasp="WSTG-INJT-05",
+                        ))
+                    elif reflected and label == "XSS-MARKER":
+                        findings.append(_finding(
+                            f"ACT-FUZZ-REFLECT-{count:03d}",
+                            "Potential reflected input injection point",
+                            "Medium", "Medium", "Input Validation", mutated,
+                            "A unique inert marker was reflected after URL parameter mutation. This is a candidate for context-specific output-encoding review, not proof of executable XSS.",
+                            "If untrusted input reaches an executable browser context without correct encoding, reflected XSS may be possible.",
+                            "Trace the value into the DOM and apply context-appropriate output encoding. Manually validate the rendering context.",
+                            f"Parameter={parameter}; marker={_REFLECTION_MARKER}; HTTP={resp.status_code}",
+                            method="GET", parameter=parameter, evidence_url=mutated,
+                            owasp="WSTG-INJT-01",
+                        ))
+                except TargetConnectionError:
+                    checks.append({
+                        "url": mutated, "base_url": url, "parameter": parameter,
+                        "vector": label, "error": "target connection failed",
+                    })
+                count += 1
+
+    return findings, checks
+
+
 def _record_json(name, payload):
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
     path = os.path.join(EVIDENCE_DIR, name)
@@ -158,6 +245,14 @@ def run_active_security(target: str, urls: list[str], forms: list[dict], telemet
         except TargetConnectionError:
             continue
 
+    # 3b. Advanced URL attack-surface mutation (GET-only, bounded, non-destructive).
+    fuzz_findings, fuzz_checks = _advanced_url_matrix(target, selected, max_requests=min(48, max_urls * 4))
+    findings.extend(fuzz_findings)
+    checks.extend(fuzz_checks)
+    emit(checks=len(checks), findings=len(findings), stage="URL MUTATION TESTING",
+         detail=f"Advanced URL mutation completed: {len(fuzz_checks)} GET-only probes.",
+         log={"time":"", "level":"ok", "message":f"URL mutation probes completed: {len(fuzz_checks)}"})
+
     # 4. Form security posture without submitting state-changing forms.
     csrf_missing = 0
     password_autocomplete = 0
@@ -237,6 +332,11 @@ def run_active_security(target: str, urls: list[str], forms: list[dict], telemet
             "findings": len(findings),
         },
         "reflection_marker": _REFLECTION_MARKER,
+        "url_mutation": {
+            "probes": len(fuzz_checks),
+            "findings": len(fuzz_findings),
+            "mode": "GET-only bounded parameter mutation",
+        },
     }
     _record_json("active_security.json", result)
     emit(stage="ACTIVE SECURITY COMPLETE", status="RUNNING", checks=len(checks),
