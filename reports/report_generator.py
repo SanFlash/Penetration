@@ -45,7 +45,7 @@ def _safe_relative_path(path: str, out_dir: str) -> str | None:
     path = os.path.normpath(str(path))
     if not os.path.exists(path):
         if path.startswith("evidence" + os.sep) or path.startswith("evidence/"):
-            return "../" + path.replace("\\", "/").replace("\\", "/")
+            return "../" + path.replace("\\", "/")
         return None
     try:
         rel = os.path.relpath(path, out_dir)
@@ -90,6 +90,48 @@ def _collect_gallery(evidence_dir: str, out_dir: str, findings: list[dict]) -> l
 def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "reports", metadata: dict | None = None) -> dict:
     os.makedirs(out_dir, exist_ok=True)
     normalized = [_normalize_finding(f) for f in findings]
+
+    # Collapse repeated viewport observations into one finding while preserving
+    # every screenshot/occurrence for evidence review.
+    grouped = {}
+    for item in normalized:
+        fid = str(item.get("id", ""))
+        base_url = str(item.get("url", "")).split("?", 1)[0] if fid.startswith("COMP-") else str(item.get("url", ""))
+        evidence = str(item.get("evidence", ""))
+        if fid.startswith("COMP-") and ": " in evidence:
+            evidence = evidence.split(": ", 1)[1]
+        key = (
+            item.get("title"),
+            item.get("category"),
+            base_url,
+            item.get("parameter"),
+            evidence,
+        )
+        if key not in grouped:
+            first = dict(item)
+            first["occurrences"] = 1
+            first["screenshots"] = []
+            if item.get("screenshot"):
+                first["screenshots"].append(item["screenshot"])
+            first["viewports"] = []
+            grouped[key] = first
+        else:
+            current = grouped[key]
+            current["occurrences"] += 1
+            if item.get("screenshot") and item["screenshot"] not in current["screenshots"]:
+                current["screenshots"].append(item["screenshot"])
+            vp = item.get("evidence", "")
+            if "/" in vp:
+                current_viewport = vp.split(":", 1)[0]
+                if current_viewport not in current["viewports"]:
+                    current["viewports"].append(current_viewport)
+
+    normalized = list(grouped.values())
+    for item in normalized:
+        if item.get("screenshots"):
+            item["screenshot"] = item["screenshots"][0]
+        item["viewports"] = sorted(set(item.get("viewports", [])))
+
     findings_sorted = sorted(
         normalized,
         key=lambda f: (SEVERITY_ORDER.get(f.get("severity", "Info"), 5), f.get("category", ""), f.get("title", "")),
