@@ -23,10 +23,9 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 import requests
 
 import config
-from recon.crawler import SafeCrawler
+from bs4 import BeautifulSoup
 from reports.report_generator import generate
 from scanners import headers as header_scanner
-from utils.scope import assert_in_scope, assert_same_target
 
 
 UA = "Sentinel-DeepSecurity/1.0 (authorized security assessment)"
@@ -72,9 +71,11 @@ SENSITIVE_PATHS = (
 class DeepSecurityEngine:
     def __init__(self, target: str, max_urls: int = MAX_URLS, max_probes: int = MAX_PROBES):
         target = target.rstrip("/")
-        assert_in_scope(target + "/")
-        assert_same_target(config.PENTEST_TARGET_ORIGIN, target)
+        parsed = urlparse(target)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Target must be an absolute http:// or https:// URL.")
         self.target = target
+        self.origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
         self.max_urls = max_urls
         self.max_probes = max_probes
         self.session = requests.Session()
@@ -91,8 +92,8 @@ class DeepSecurityEngine:
             time.sleep(delay)
 
     def request(self, method: str, url: str, headers=None, allow_redirects=False):
-        assert_in_scope(url)
-        assert_same_target(self.target, url)
+        if not self._same_origin(url):
+            raise ValueError(f"Out-of-origin URL blocked: {url}")
         if self._probe_count >= self.max_probes:
             raise RuntimeError("probe budget exhausted")
         self._pace()
@@ -136,20 +137,48 @@ class DeepSecurityEngine:
             "body_sha256_12": hashlib.sha256(body.encode("utf-8", "ignore")).hexdigest()[:12],
         }
 
+    def _same_origin(self, url: str) -> bool:
+        parsed = urlparse(url)
+        origin = urlparse(self.origin)
+        return parsed.scheme.lower() == origin.scheme.lower() and parsed.netloc.lower() == origin.netloc.lower()
+
     def crawl(self):
-        crawler = SafeCrawler(self.target, max_pages=self.max_urls)
-        recon = crawler.crawl()
+        queue = [self.target + "/"]
+        visited = set()
         urls = []
-        for page in recon.get("pages", []):
-            url = page.get("url", "")
-            if url:
-                try:
-                    assert_same_target(self.target, url)
-                    urls.append(url)
-                except Exception:
-                    continue
-        urls = list(dict.fromkeys([self.target + "/"] + urls))[:self.max_urls]
-        return urls, recon.get("forms", [])
+        forms = []
+
+        while queue and len(urls) < self.max_urls and self._probe_count < self.max_probes:
+            url = queue.pop(0).split("#", 1)[0]
+            if url in visited or not self._same_origin(url):
+                continue
+            visited.add(url)
+            try:
+                response, _ = self.request("GET", url)
+            except requests.RequestException:
+                continue
+            urls.append(url)
+
+            if "text/html" not in response.headers.get("Content-Type", "").lower():
+                continue
+
+            soup = BeautifulSoup(response.text, "html.parser")
+            for form in soup.find_all("form"):
+                action = urljoin(url, form.get("action", url)).split("#", 1)[0]
+                if self._same_origin(action):
+                    forms.append({
+                        "page": url,
+                        "action": action,
+                        "method": form.get("method", "GET").upper(),
+                        "inputs": [inp.get("name") for inp in form.find_all(["input", "textarea"]) if inp.get("name")],
+                    })
+
+            for anchor in soup.find_all("a", href=True):
+                next_url = urljoin(url, anchor["href"]).split("#", 1)[0]
+                if self._same_origin(next_url) and next_url not in visited:
+                    queue.append(next_url)
+
+        return urls, forms
 
     def baseline_and_headers(self, urls):
         for index, url in enumerate(urls, 1):
@@ -546,7 +575,8 @@ class DeepSecurityEngine:
             "target": self.target,
             "mode": "security-only aggressive non-destructive",
             "browser_ui": False,
-            "scope_lock": config.PENTEST_TARGET_ORIGIN,
+            "scope_lock": self.origin,
+            "scope_policy": "exact target origin; redirects disabled",
             "limits": {
                 "max_urls": self.max_urls,
                 "max_probes": self.max_probes,
