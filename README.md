@@ -216,6 +216,102 @@ The compatibility engine attempts a marked failure screenshot inside the excepti
 Use exactly `https://amwebtech.com` for the professional pentest profile. Do not disable scope enforcement.
 
 
+
+## Dedicated security-only deep testing
+
+The framework now has a separate security engine that does **not** launch the UI/compatibility workflow. Use it when the objective is security assessment rather than responsive/browser testing.
+
+### Primary command
+
+~~~powershell
+cd "D:\ApplyAI\webpentest-framework\webpentest-framework"
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python security.py --target https://amwebtech.com
+~~~
+
+Equivalent integrated profile:
+
+~~~powershell
+python main.py --target https://amwebtech.com --profile security
+~~~
+
+Higher bounded coverage:
+
+~~~powershell
+python security.py --target https://amwebtech.com --max-urls 40 --max-probes 180
+~~~
+
+### Dedicated security-testing prompt
+
+Use this as the operating brief for the security-only run:
+
+~~~text
+SENTINEL DEEP SECURITY — AUTHORIZED SECURITY ASSESSMENT
+
+Target: https://amwebtech.com
+
+Run security testing only. Do not run UI/responsive compatibility checks, do not launch Playwright/Chrome, and do not open the visual dashboard.
+
+Perform an aggressive, high-coverage, non-destructive web security assessment within the exact target origin. Discover same-origin pages, query parameters, forms, JavaScript assets, robots/sitemap metadata and documented API surfaces. Test security headers, cookie flags, CORS behavior, HTTP method exposure, TRACE reflection, input reflection, SQL/error signatures, redirect handling, CRLF/header-injection signals, host-header handling, URL override headers, error disclosure, JavaScript/source-map leakage, sensitive configuration/backup exposure and path/routing inconsistencies.
+
+For every probe record the exact URL, HTTP method, status, response length, timing, baseline comparison, parameter/header/vector, and a concise evidence summary. Never store or print actual secrets discovered in page source.
+
+Keep redirects disabled so the engine never follows the target into another origin. Enforce the exact https://amwebtech.com origin before every request. Stop at the configured request/probe budget and rate limit.
+
+Do not brute-force credentials, submit discovered state-changing forms, upload files, modify/delete data, execute server commands, perform denial-of-service testing, or attempt persistence.
+
+Generate:
+- evidence/deep_security.json
+- reports/findings.json
+- reports/report.html
+
+Treat automated signals as candidates that require manual validation. Do not call a reflection, error message, missing header, or response difference a confirmed exploit without sufficient evidence.
+~~~
+
+### What the security-only engine tests
+
+The dedicated engine currently performs:
+
+- exact-origin fail-closed scope enforcement
+- same-origin reconnaissance
+- bounded baseline GET collection
+- security-header checks
+- technology/banner disclosure checks
+- cookie Secure/HttpOnly observations
+- OPTIONS method enumeration
+- TRACE reflection testing
+- controlled query-parameter mutation
+- inert reflected-input detection
+- database/framework error-signature detection
+- redirect-parameter testing with redirects disabled
+- CRLF/header-injection canaries
+- Host and X-Forwarded-Host reflection checks
+- X-Original-URL / X-Rewrite-URL routing behavior checks
+- HTML source leakage heuristics
+- JavaScript and source-map exposure checks
+- common configuration/backup/API documentation exposure checks
+- invalid-route verbose-error detection
+- deterministic JSON evidence and the existing interactive report
+
+These checks are aligned to areas covered by the OWASP Web Security Testing Guide, including HTTP methods, input validation/injection, host-header handling, authorization/header-routing behavior, metadata leakage and security-header configuration.
+
+### Important meaning of "aggressive"
+
+"Deep/aggressive" in this framework means **more security coverage and stronger detection**, not destructive exploitation. The engine intentionally stops short of actions that can alter production state or create an outage. It is suitable for an authorized owned site such as the configured AM Webtech target, but findings still need manual confirmation.
+
+### Security-only output
+
+After the run:
+
+~~~powershell
+Get-Content .\evidence\deep_security.json
+Start-Process .\reports\report.html
+~~~
+
+The report is security-focused; it does not require Chrome evidence to populate its security findings.
+
+
 ## Enhanced evidence-first workflow
 
 The current framework revision extends the original scanner into an evidence-first assessment pipeline. The HTML report now consumes pentest coverage from `ui_responsive` as well as the older `compatibility` metadata shape, so the Coverage tab is populated during a pentest run.
@@ -552,6 +648,7 @@ The lab contains controlled examples for reflected XSS, SQL injection signals, I
 ```text
 Penetration/
 ├── main.py
+├── security.py
 ├── config.py
 ├── requirements.txt
 ├── demo_target/
