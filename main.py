@@ -19,6 +19,7 @@ from scanners.active_security import run_active_security
 from scanners.browser_evidence import capture_security_evidence
 from scanners.deep_security import run_deep_security
 from scanners.api_surface import run_api_surface
+from scanners.attack_surface import correlate_attack_surface
 from scanners.intrusive import run_intrusive
 from auth.session import login
 from reports.report_generator import generate
@@ -294,6 +295,19 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         print(f"API specs discovered: {api_result['summary']['specs']}")
         print(f"API endpoints inventoried: {api_result['summary']['endpoints']}")
 
+        attack_surface = correlate_attack_surface(
+            target,
+            recon=recon,
+            route_discovery=api_result.get("route_discovery", {}),
+            api_surface=api_result,
+        )
+        print(
+            "Attack surface: "
+            f"{attack_surface['summary']['total']} unique routes | "
+            f"{attack_surface['summary']['api_like']} API-like | "
+            f"{attack_surface['summary']['state_changing_candidates']} state-changing candidates"
+        )
+
         banner("STEP 6 — Chrome security evidence capture")
         loader.set("Capturing Chrome evidence for security findings")
         state.update(
@@ -329,6 +343,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "active_security": active_result,
             "deep_security": deep_result,
             "api_surface": api_result,
+            "attack_surface": attack_surface,
             "security_evidence": security_evidence,
             "runtime_seconds": elapsed,
         }
