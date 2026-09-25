@@ -1,0 +1,18 @@
+{
+  "target_origin": "https://amwebtech.com",
+  "operations": [
+    {
+      "name": "create-and-delete-disposable-record",
+      "method": "POST",
+      "url": "/REPLACE_WITH_TEST_CREATE_ENDPOINT",
+      "json": {
+        "name": "sentinel-intrusive-test-{run_id}"
+      },
+      "id_path": "id",
+      "rollback": {
+        "method": "DELETE",
+        "url": "/REPLACE_WITH_TEST_RESOURCE/{resource_id}"
+      }
+    }
+  ]
+}
