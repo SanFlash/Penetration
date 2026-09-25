@@ -217,6 +217,57 @@ Use exactly `https://amwebtech.com` for the professional pentest profile. Do not
 
 
 
+## Controlled intrusive testing (state-changing, rollback-first)
+
+The framework now has an explicit **intrusive** profile for a small amount of state-changing testing. This is intentionally more destructive than the normal pentest profile, but it is **not** an unrestricted destructive scanner.
+
+Intrusive mode has two confirmations:
+
+- `--confirm-authorized`
+- `--confirm-intrusive`
+
+It will only execute operations declared in `intrusive_plan.json`. The plan must name the exact target origin, use same-origin URLs, and provide a rollback operation for every action. Redirects are disabled.
+
+### Supported controlled actions
+
+- Create a disposable test resource with `POST`, then remove that resource with a configured `DELETE` rollback.
+- Modify a disposable test resource with `PUT`/`PATCH` only when the original representation is supplied as `restore_json`.
+- Use explicit test-resource identifiers rather than deleting arbitrary discovered data.
+- Produce an audit record in `evidence/intrusive_security.json`.
+- Stop and return a non-zero result if a rollback fails.
+
+The framework does **not** discover arbitrary write endpoints and submit them, brute-force credentials, perform denial-of-service testing, execute server commands, install persistence, or delete arbitrary production data.
+
+### Configure a disposable test resource
+
+Copy the example plan:
+
+~~~powershell
+Copy-Item .\intrusive_plan.example.json .\intrusive_plan.json
+~~~
+
+Edit only the placeholder endpoint/resource paths so they point to a dedicated test resource that you can safely recreate or delete. Keep credentials/tokens out of Git; use environment-backed headers or another local secret mechanism when authentication is required.
+
+Preview the operations first:
+
+~~~powershell
+python main.py --target https://amwebtech.com --profile intrusive --confirm-authorized --confirm-intrusive --intrusive-plan intrusive_plan.json --dry-run
+~~~
+
+Execute the configured actions:
+
+~~~powershell
+python main.py --target https://amwebtech.com --profile intrusive --confirm-authorized --confirm-intrusive --intrusive-plan intrusive_plan.json
+~~~
+
+Review:
+
+~~~powershell
+Get-Content .\evidence\intrusive_security.json
+~~~
+
+**Important:** do not replace the placeholder with a normal customer/user/order resource. Use a disposable test record and a verified rollback path. A failed rollback is treated as an operational stop condition.
+
 ## Dedicated security-only deep testing
 
 The framework now has a separate security engine that does **not** launch the UI/compatibility workflow. Use it when the objective is security assessment rather than responsive/browser testing.
