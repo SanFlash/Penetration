@@ -301,6 +301,35 @@ def _render_html(report: dict) -> str:
         )
 
     browser = report["browser_coverage"]
+    attack = report.get("metadata", {}).get("attack_surface") or {}
+    attack_summary = attack.get("summary") or {}
+    attack_rows = attack.get("routes") or []
+    attack_cells = [
+        ("Unique routes", attack_summary.get("total", 0)),
+        ("API-like", attack_summary.get("api_like", 0)),
+        ("Documented", attack_summary.get("documented", 0)),
+        ("Observed", attack_summary.get("observed", 0)),
+        ("State-changing candidates", attack_summary.get("state_changing_candidates", 0)),
+    ]
+    attack_cards = "".join('<div class="summary-item"><b>%s</b><span>%s</span></div>' % (v, html.escape(k)) for k, v in attack_cells)
+    attack_table_rows = []
+    for row in attack_rows[:40]:
+        flags = []
+        if row.get("api_like"): flags.append("API")
+        if row.get("documented"): flags.append("Documented")
+        if row.get("state_changing_candidate"): flags.append("State-changing candidate")
+        attack_table_rows.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+            html.escape(str(row.get("method", "GET"))),
+            html.escape(str(row.get("path", row.get("url", "")))),
+            html.escape(", ".join(row.get("sources") or [])),
+            html.escape(", ".join(flags) or "-"),
+            html.escape(str(row.get("evidence") or ""))[:220],
+        ))
+    attack_html = '<div class="summary-strip">%s</div>' % attack_cards
+    if attack_table_rows:
+        attack_html += '<div style="overflow:auto;margin-top:14px"><table><thead><tr><th>Method</th><th>Path</th><th>Sources</th><th>Classification</th><th>Evidence</th></tr></thead><tbody>%s</tbody></table></div>' % "".join(attack_table_rows)
+    else:
+        attack_html += '<div class="empty" style="margin-top:14px">No correlated attack-surface inventory was recorded for this run.</div>'
     failed_screens = sum(1 for x in report["evidence_gallery"] if x["kind"] == "failure")
     template = r'''<!doctype html>
 <html lang="en">
@@ -367,6 +396,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="summary-item"><b>__MARKED__</b><span>Marked Chrome checks</span></div>
 <div class="summary-item"><b>__SECURITYCAPS__</b><span>Security captures</span></div>
 </div></div>
+<div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
 </section>
 
 <section id="findings" class="tab" hidden>
@@ -450,6 +480,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__FAILSCREENS__": str(failed_screens),
         "__MARKED__": str(browser["marked"]),
         "__SECURITYCAPS__": str(len(report.get("security_evidence", []))),
+        "__ATTACK_SURFACE__": attack_html,
         "__URLS__": str(browser["urls"]),
         "__VIEWPORTS__": str(browser["viewports"]),
         "__COVERFAILS__": str(browser["failures"]),
