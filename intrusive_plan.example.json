@@ -1,10 +1,13 @@
 {
+  "mode": "controlled-destructive-v1",
+  "destructive_ack": "I_UNDERSTAND_CONTROLLED_DATA_CHANGE",
   "target_origin": "https://amwebtech.com",
   "operations": [
     {
       "name": "create-and-delete-disposable-record",
       "method": "POST",
       "url": "/REPLACE_WITH_TEST_CREATE_ENDPOINT",
+      "disposable_resource": true,
       "json": {
         "name": "sentinel-intrusive-test-{run_id}"
       },

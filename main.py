@@ -372,7 +372,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         loader.stop()
 
 
-def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False, confirm_intrusive: bool = False, dry_run: bool = False):
+def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False, confirm_intrusive: bool = False, confirm_destructive: bool = False, dry_run: bool = False):
     """Run explicitly configured, reversible state-changing tests only."""
     if not authorized:
         print("[BLOCKED] Intrusive mode requires --confirm-authorized.")
@@ -381,8 +381,12 @@ def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False,
         print("[BLOCKED] Intrusive mode requires --confirm-intrusive.")
         print("[INFO] Every operation must be configured against a disposable test resource with rollback.")
         return 1
+    if not dry_run and not confirm_destructive:
+        print("[BLOCKED] Non-dry-run controlled-destructive mode requires --confirm-destructive.")
+        print("[INFO] This second gate confirms that configured disposable data may be created, modified and deleted for rollback.")
+        return 1
     banner("CONTROLLED INTRUSIVE MODE — EXPLICIT ROLLBACK REQUIRED")
-    print("[MODE] State-changing tests: DISABLED (dry-run)" if dry_run else "[MODE] State-changing tests: ENABLED")
+    print("[MODE] Controlled-destructive tests: DISABLED (dry-run)" if dry_run else "[MODE] Controlled-destructive tests: ENABLED")
     print("[MODE] Scope: exact supplied origin; redirects disabled")
     print("[MODE] Arbitrary form submission: DISABLED")
     print("[MODE] Brute force / DoS / server command execution: DISABLED")
@@ -554,7 +558,9 @@ def main():
     parser.add_argument("--confirm-authorized", action="store_true",
                         help="confirm that you own the target or have explicit authorization for arbitrary-target pentesting")
     parser.add_argument("--confirm-intrusive", action="store_true",
-                        help="second confirmation for configured state-changing tests with rollback")
+                        help="confirm the controlled intrusive profile and its rollback requirements")
+    parser.add_argument("--confirm-destructive", action="store_true",
+                        help="second destructive-data confirmation; required for non-dry-run intrusive execution")
     parser.add_argument("--intrusive-plan", default="intrusive_plan.json",
                         help="JSON plan containing only disposable test resources and rollback actions")
     parser.add_argument("--dry-run", action="store_true", help="preview intrusive actions without sending state-changing requests")
@@ -625,6 +631,7 @@ def main():
                 plan_path=args.intrusive_plan,
                 authorized=args.confirm_authorized,
                 confirm_intrusive=args.confirm_intrusive,
+                confirm_destructive=args.confirm_destructive,
                 dry_run=args.dry_run,
             )
 

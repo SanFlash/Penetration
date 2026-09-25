@@ -519,11 +519,36 @@ A browser screenshot proves what the automated browser observed at that point in
 
 OWASP similarly recommends balancing automated breadth with manual/semi-automated validation and warns that the testing guide is not an exhaustive checklist.
 
-### Destructive testing is intentionally excluded
+### Controlled-destructive validation
 
-The framework does not automatically perform credential brute force, data deletion, malware upload, denial-of-service testing, or destructive PUT/DELETE/PATCH operations. If a later lab-only module is added for destructive validation, it should be explicitly opt-in and separately scoped.
+The framework supports a deliberately gated **controlled-destructive** profile for authorized testing of disposable application resources. This is not an unrestricted "destroy the target" mode. It is designed to validate state-changing behavior while preventing accidental modification of real application data.
 
-OWASP's HTTP-method guidance specifically cautions that destructive method testing can change server state and should be handled with extreme care.
+The controlled-destructive workflow requires:
+
+1. explicit target authorization
+2. the intrusive confirmation gate
+3. a second destructive-data confirmation for non-dry-run execution
+4. a plan declaring `controlled-destructive-v1`
+5. the required destructive acknowledgement string
+6. `disposable_resource: true` for every action
+7. exact target-origin validation
+8. an explicit rollback action
+9. no unresolved template placeholders
+10. a bounded maximum of 12 configured operations
+
+The profile intentionally refuses arbitrary discovered endpoint writes, standalone DELETE actions, arbitrary form submission, credential attacks, denial-of-service behavior, server command execution, persistence, cross-origin requests, and redirects outside the exact target origin.
+
+The supported destructive validation pattern is **create a disposable resource, validate the response, then delete it as rollback**. PUT/PATCH validation requires a complete restore body. Dry-run mode performs plan validation without sending state-changing requests.
+
+Evidence is written to:
+
+```text
+evidence/intrusive_security.json
+```
+
+If rollback fails, the run is marked failed and the operator should restore the disposable resource manually before continuing.
+
+This approach follows OWASP's methodology of mapping application entry points before active testing and documenting the test activity and results.
 
 
 ## Industry-mode authorized pentesting
