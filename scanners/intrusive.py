@@ -76,10 +76,14 @@ def _extract_id(response: requests.Response, path: str | None) -> str | None:
     return None if value is None else str(value)
 
 
-def _render(value, resource_id: str | None) -> str:
+def _render(value, resource_id: str | None = None, run_id: str = "") -> str:
     if not isinstance(value, str):
         return value
-    return value.replace("{resource_id}", resource_id or "")
+    return (
+        value
+        .replace("{resource_id}", resource_id or "")
+        .replace("{run_id}", run_id)
+    )
 
 
 def _sanitize_response(response: requests.Response) -> dict:
@@ -91,7 +95,18 @@ def _sanitize_response(response: requests.Response) -> dict:
 
 
 def load_plan(path: str, target: str) -> list[dict]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    plan_file = Path(path)
+    if not plan_file.is_file():
+        raise IntrusiveConfigurationError(
+            f"Intrusive plan not found: {path}. "
+            "Create it from intrusive_plan.example.json and configure a disposable test endpoint."
+        )
+    try:
+        data = json.loads(plan_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise IntrusiveConfigurationError(
+            f"Intrusive plan is not valid JSON: {path} ({exc.msg})."
+        ) from exc
     if not isinstance(data, dict):
         raise IntrusiveConfigurationError("Intrusive plan must be a JSON object.")
     plan_target = data.get("target_origin")
@@ -120,6 +135,18 @@ def load_plan(path: str, target: str) -> list[dict]:
         rollback_url = _resolve(target, str(rollback.get("url", "")))
         if not _same_origin(target, url) or not _same_origin(target, rollback_url):
             raise IntrusiveConfigurationError(f"Operation {index}: exact-origin check failed.")
+        action_url_text = str(op.get("url", ""))
+        rollback_url_text = str(rollback.get("url", ""))
+        if "{resource_id}" in rollback_url_text and not op.get("id_path"):
+            raise IntrusiveConfigurationError(
+                f"Operation {index}: rollback URL uses {{resource_id}} but id_path is missing."
+            )
+        for label, value in (("action URL", action_url_text), ("rollback URL", rollback_url_text)):
+            if "REPLACE_WITH_" in value:
+                raise IntrusiveConfigurationError(
+                    f"Operation {index}: {label} still contains a template placeholder. "
+                    "Replace it with a real disposable test endpoint before running."
+                )
         if method in {"PUT", "PATCH"} and not op.get("restore_json"):
             raise IntrusiveConfigurationError(
                 f"Operation {index}: PUT/PATCH requires restore_json for rollback."
@@ -169,7 +196,17 @@ def run_intrusive(target: str, plan_path: str, timeout: int = 10, dry_run: bool 
                 continue
 
             resource_id = _extract_id(action, op.get("id_path"))
-            rollback_url = _render(_resolve(target, str(rollback["url"])), resource_id, run_id)
+            rollback_template = str(rollback["url"])
+            if "{resource_id}" in rollback_template and not resource_id:
+                raise IntrusiveConfigurationError(
+                    f"Operation {index}: action succeeded but id_path did not produce a resource ID; "
+                    "rollback was not attempted."
+                )
+            rollback_url = _render(
+                _resolve(target, rollback_template),
+                resource_id,
+                run_id,
+            )
             rollback_spec = dict(rollback)
             if method in {"PUT", "PATCH"}:
                 rollback_spec["json"] = op["restore_json"]

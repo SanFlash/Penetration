@@ -367,13 +367,23 @@ def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False,
         print("[INFO] Every operation must be configured against a disposable test resource with rollback.")
         return 1
     banner("CONTROLLED INTRUSIVE MODE — EXPLICIT ROLLBACK REQUIRED")
-    print("[MODE] State-changing tests: ENABLED")
+    print("[MODE] State-changing tests: DISABLED (dry-run)" if dry_run else "[MODE] State-changing tests: ENABLED")
     print("[MODE] Scope: exact supplied origin; redirects disabled")
     print("[MODE] Arbitrary form submission: DISABLED")
     print("[MODE] Brute force / DoS / server command execution: DISABLED")
     print(f"[MODE] Plan: {plan_path}")
     print(f"[MODE] Dry run: {'YES' if dry_run else 'NO'}")
-    result = run_intrusive(target, plan_path, timeout=config.INTRUSIVE_TIMEOUT, dry_run=dry_run)
+    try:
+        result = run_intrusive(
+            target,
+            plan_path,
+            timeout=config.INTRUSIVE_TIMEOUT,
+            dry_run=dry_run,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"[ERROR] Intrusive plan rejected: {exc}")
+        print("[INFO] Use intrusive_plan.example.json as a starting point and configure a disposable test resource.")
+        return 2
     summary = result["summary"]
     print("\nIntrusive actions:", summary["actions"])
     print("Action failures:", summary["action_failures"])

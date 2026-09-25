@@ -46,3 +46,32 @@ def test_intrusive_update_requires_restore_body(tmp_path):
     }), encoding="utf-8")
     with pytest.raises(IntrusiveConfigurationError):
         load_plan(str(path), "https://example.com")
+
+
+def test_intrusive_plan_rejects_template_placeholders(tmp_path):
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({
+        "target_origin": "https://example.com",
+        "operations": [{
+            "method": "POST",
+            "url": "/REPLACE_WITH_TEST_CREATE_ENDPOINT",
+            "id_path": "id",
+            "rollback": {"method": "DELETE", "url": "/api/test/{resource_id}"}
+        }]
+    }), encoding="utf-8")
+    with pytest.raises(IntrusiveConfigurationError, match="template placeholder"):
+        load_plan(str(path), "https://example.com")
+
+
+def test_intrusive_plan_requires_id_path_for_resource_rollback(tmp_path):
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({
+        "target_origin": "https://example.com",
+        "operations": [{
+            "method": "POST",
+            "url": "/api/test-records",
+            "rollback": {"method": "DELETE", "url": "/api/test-records/{resource_id}"}
+        }]
+    }), encoding="utf-8")
+    with pytest.raises(IntrusiveConfigurationError, match="id_path"):
+        load_plan(str(path), "https://example.com")
