@@ -67,3 +67,33 @@ def test_security_observations_are_aggregated_but_raw_count_is_preserved(tmp_pat
     assert any(x["title"] == "Missing security response headers" and x["observation_count"] == 2 for x in rows)
     assert any(x["title"] == "JavaScript source map publicly accessible" and x["observation_count"] == 2 for x in rows)
     assert all(len(x["affected_urls"]) >= 1 for x in rows)
+
+
+def test_report_renders_correlated_attack_surface(tmp_path):
+    metadata = {
+        "profile": "pentest",
+        "attack_surface": {
+            "summary": {
+                "total": 2,
+                "api_like": 1,
+                "documented": 1,
+                "observed": 2,
+                "state_changing_candidates": 1,
+            },
+            "routes": [{
+                "method": "POST",
+                "path": "/api/orders",
+                "sources": ["javascript-axios", "openapi"],
+                "api_like": True,
+                "documented": True,
+                "state_changing_candidate": True,
+                "evidence": "axios.post('/api/orders')",
+            }],
+        },
+    }
+    result = generate("https://example.com", [], "evidence", out_dir=str(tmp_path), metadata=metadata)
+    with open(result["html_path"], encoding="utf-8") as f:
+        html = f.read()
+    assert "Correlated attack surface" in html
+    assert "/api/orders" in html
+    assert "State-changing candidate" in html
