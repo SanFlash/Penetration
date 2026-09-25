@@ -138,7 +138,7 @@ def run_intrusive(target: str, plan_path: str, timeout: int = 10, dry_run: bool 
     for index, op in enumerate(operations, 1):
         op_id = f"{run_id}-{index:02d}"
         method = str(op["method"]).upper()
-        url = _resolve(target, str(op["url"]))
+        url = _resolve(target, _render(str(op["url"]), None, run_id))
         rollback = op["rollback"]
         rollback_method = str(rollback["method"]).upper()
         resource_id = None
@@ -169,7 +169,7 @@ def run_intrusive(target: str, plan_path: str, timeout: int = 10, dry_run: bool 
                 continue
 
             resource_id = _extract_id(action, op.get("id_path"))
-            rollback_url = _render(_resolve(target, str(rollback["url"])), resource_id)
+            rollback_url = _render(_resolve(target, str(rollback["url"])), resource_id, run_id)
             rollback_spec = dict(rollback)
             if method in {"PUT", "PATCH"}:
                 rollback_spec["json"] = op["restore_json"]
