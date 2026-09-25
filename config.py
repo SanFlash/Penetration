@@ -41,9 +41,9 @@ ROUTE_DISCOVERY_MAX_CANDIDATES = 200
 ROUTE_DISCOVERY_TIMEOUT = 8
 ROUTE_DISCOVERY_MAX_RUNTIME = 120
 
-# Controlled intrusive testing. Every action must target a configured disposable
-# resource and include an explicit rollback operation.
-INTRUSIVE_MAX_ACTIONS = 12
+# Controlled state-change testing. Every action must target a configured disposable
+# resource and include an explicit rollback operation. Keep the default run small.
+INTRUSIVE_MAX_ACTIONS = 3
 INTRUSIVE_TIMEOUT = 10
 
 # The professional pentest profile intentionally uses Chromium only.
