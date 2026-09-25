@@ -548,7 +548,7 @@ def main():
         "--profile",
         choices=("auto", "lab", "compatibility", "pentest", "security", "intrusive"),
         default="auto",
-        help="auto selects pentest for AM Webtech or an explicitly authorized target; lab remains available for localhost",
+        help="auto selects pentest; intrusive is a legacy alias for the non-destructive full pentest; lab remains available for localhost",
     )
     parser.add_argument("--headed", action="store_true", help="show Chrome/Chromium browser windows during UI testing")
     parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
@@ -558,12 +558,12 @@ def main():
     parser.add_argument("--confirm-authorized", action="store_true",
                         help="confirm that you own the target or have explicit authorization for arbitrary-target pentesting")
     parser.add_argument("--confirm-intrusive", action="store_true",
-                        help="confirm the controlled intrusive profile and its rollback requirements")
+                        help="legacy compatibility flag; ignored by the non-destructive intrusive alias")
     parser.add_argument("--confirm-destructive", action="store_true",
-                        help="second destructive-data confirmation; required for non-dry-run intrusive execution")
+                        help="legacy compatibility flag; ignored by the non-destructive intrusive alias")
     parser.add_argument("--intrusive-plan", default="intrusive_plan.json",
-                        help="JSON plan containing only disposable test resources and rollback actions")
-    parser.add_argument("--dry-run", action="store_true", help="preview intrusive actions without sending state-changing requests")
+                        help="legacy compatibility option; not used by the non-destructive intrusive alias")
+    parser.add_argument("--dry-run", action="store_true", help="legacy compatibility option; not used by the non-destructive intrusive alias")
     args = parser.parse_args()
     if args.slow_mo < 0 or args.slow_mo > 5000:
         parser.error("--slow-mo must be between 0 and 5000 milliseconds")
@@ -626,13 +626,14 @@ def main():
             return run_security_profile(target)
 
         if profile == "intrusive":
-            return run_intrusive_profile(
+            print("[NOTE] 'intrusive' is now a compatibility alias for the non-destructive full pentest.")
+            print("[NOTE] No state-changing requests, destructive plan, or rollback actions are executed.")
+            return run_pentest_profile(
                 target,
-                plan_path=args.intrusive_plan,
+                headed=args.headed,
+                slow_mo=args.slow_mo,
+                dashboard=not args.no_dashboard,
                 authorized=args.confirm_authorized,
-                confirm_intrusive=args.confirm_intrusive,
-                confirm_destructive=args.confirm_destructive,
-                dry_run=args.dry_run,
             )
 
         if args.headed or args.slow_mo or args.no_dashboard:

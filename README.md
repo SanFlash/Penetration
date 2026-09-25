@@ -1065,4 +1065,60 @@ Configuration:
 - `ROUTE_DISCOVERY_MAX_RUNTIME` — maximum route-discovery runtime in seconds.
 
 The scanner remains exact-origin, redirects-disabled, GET-only for passive discovery, and non-destructive by default.
+## Non-destructive full web security assessment
 
+The `intrusive` profile is now a **non-destructive compatibility alias** for the full `pentest` profile. It does not execute the controlled-destructive plan and does not send POST/PUT/PATCH/DELETE state-changing requests.
+
+Use it when you want the familiar intrusive command name while performing a broad automated assessment:
+
+```powershell
+python main.py --target https://amwebtech.com --profile intrusive --confirm-authorized
+```
+
+For a visible browser run:
+
+```powershell
+python main.py --target https://amwebtech.com --profile intrusive --confirm-authorized --headed --slow-mo 250
+```
+
+The full non-destructive assessment covers:
+
+- same-origin reconnaissance and route discovery
+- Chromium UI/responsive checks
+- security headers and cookie posture
+- bounded CORS and HTTP-method checks
+- inert reflection/XSS signals
+- bounded SQL/error-injection indicators
+- CSRF posture without submitting state-changing forms
+- mixed-content checks
+- deep GET/HEAD/OPTIONS/TRACE security probes
+- query-parameter mutation checks
+- redirect/header manipulation checks without following redirects
+- verbose error disclosure checks
+- source-map and exposed client-artifact checks
+- sensitive-path/API documentation discovery
+- passive JavaScript route and API-candidate discovery
+- OpenAPI/Swagger inventory
+- attack-surface correlation
+- browser security evidence capture
+- interactive HTML/JSON reporting
+
+### Important safety boundary
+
+This mode is intentionally **read-only/non-destructive**. Discovered POST/PUT/PATCH/DELETE routes are inventory candidates only and are never automatically executed. It does not brute-force credentials, upload/delete application data, execute server commands, persist on the target, or intentionally cause denial of service.
+
+The previous controlled-destructive implementation remains documented in the repository history, but it is not part of the `intrusive` execution path.
+
+### Recommended AM Webtech command
+
+```powershell
+python main.py --target https://amwebtech.com --profile intrusive --confirm-authorized --no-dashboard
+```
+
+Results are written to:
+
+```text
+evidence/
+reports/findings.json
+reports/report.html
+```
