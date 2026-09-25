@@ -15,11 +15,12 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from utils.scope import assert_same_target, OutOfScopeError
+import config
 
 
 SAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 ACTION_METHODS = {"POST", "PUT", "PATCH"}
-MAX_ACTIONS = 12
+MAX_ACTIONS = max(1, min(int(getattr(config, "INTRUSIVE_MAX_ACTIONS", 3)), 3))
 PLAN_MODE = "controlled-destructive-v1"
 DESTRUCTIVE_ACK = "I_UNDERSTAND_CONTROLLED_DATA_CHANGE"
 

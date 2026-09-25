@@ -521,6 +521,21 @@ OWASP similarly recommends balancing automated breadth with manual/semi-automate
 
 ### Controlled-destructive validation
 
+For a small, bounded state-change assessment, configure only disposable test resources and use the existing two-step confirmation gates. The runtime now caps each run at three configured actions; discovered production routes are never promoted automatically into the action plan.
+
+Dry run first:
+
+```powershell
+python main.py --target https://amwebtech.com --profile intrusive --confirm-authorized --confirm-intrusive --dry-run
+```
+
+A real run additionally requires the second confirmation and a valid local plan:
+
+```powershell
+python main.py --target https://amwebtech.com --profile intrusive --confirm-authorized --confirm-intrusive --confirm-destructive --intrusive-plan intrusive_plan.json
+```
+
+
 The framework supports a deliberately gated **controlled-destructive** profile for authorized testing of disposable application resources. This is not an unrestricted "destroy the target" mode. It is designed to validate state-changing behavior while preventing accidental modification of real application data.
 
 The controlled-destructive workflow requires:
@@ -534,11 +549,11 @@ The controlled-destructive workflow requires:
 7. exact target-origin validation
 8. an explicit rollback action
 9. no unresolved template placeholders
-10. a bounded maximum of 12 configured operations
+10. a bounded maximum of 3 configured operations per run
 
 The profile intentionally refuses arbitrary discovered endpoint writes, standalone DELETE actions, arbitrary form submission, credential attacks, denial-of-service behavior, server command execution, persistence, cross-origin requests, and redirects outside the exact target origin.
 
-The supported destructive validation pattern is **create a disposable resource, validate the response, then delete it as rollback**. PUT/PATCH validation requires a complete restore body. Dry-run mode performs plan validation without sending state-changing requests.
+The supported limited state-change pattern is **create a disposable resource, validate the response, then delete it as rollback**. PUT/PATCH validation requires a complete restore body. The default runtime budget is capped at 3 configured actions per run. Dry-run mode performs plan validation without sending state-changing requests.
 
 Evidence is written to:
 
