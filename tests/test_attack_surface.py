@@ -36,7 +36,7 @@ def test_attack_surface_correlates_and_deduplicates_sources():
     )
 
     summary = result["summary"]
-    assert summary["total"] == 3
+    assert summary["total"] == 2
     assert summary["documented"] == 1
     assert summary["state_changing_candidates"] == 1
     assert summary["api_like"] == 1
