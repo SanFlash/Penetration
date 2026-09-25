@@ -19,6 +19,7 @@ from scanners.active_security import run_active_security
 from scanners.browser_evidence import capture_security_evidence
 from scanners.deep_security import run_deep_security
 from scanners.api_surface import run_api_surface
+from scanners.intrusive import run_intrusive
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
@@ -356,6 +357,35 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         loader.stop()
 
 
+def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False, confirm_intrusive: bool = False, dry_run: bool = False):
+    """Run explicitly configured, reversible state-changing tests only."""
+    if not authorized:
+        print("[BLOCKED] Intrusive mode requires --confirm-authorized.")
+        return 1
+    if not confirm_intrusive:
+        print("[BLOCKED] Intrusive mode requires --confirm-intrusive.")
+        print("[INFO] Every operation must be configured against a disposable test resource with rollback.")
+        return 1
+    banner("CONTROLLED INTRUSIVE MODE — EXPLICIT ROLLBACK REQUIRED")
+    print("[MODE] State-changing tests: ENABLED")
+    print("[MODE] Scope: exact supplied origin; redirects disabled")
+    print("[MODE] Arbitrary form submission: DISABLED")
+    print("[MODE] Brute force / DoS / server command execution: DISABLED")
+    print(f"[MODE] Plan: {plan_path}")
+    print(f"[MODE] Dry run: {'YES' if dry_run else 'NO'}")
+    result = run_intrusive(target, plan_path, timeout=config.INTRUSIVE_TIMEOUT, dry_run=dry_run)
+    summary = result["summary"]
+    print("\nIntrusive actions:", summary["actions"])
+    print("Action failures:", summary["action_failures"])
+    print("Successful rollbacks:", summary["rollbacks_ok"])
+    print("FAILED ROLLBACKS:", summary["failed_rollbacks"])
+    print("Evidence: evidence/intrusive_security.json")
+    if summary["failed_rollbacks"]:
+        print("[STOP] One or more rollback operations failed. Do not continue until the test resource is restored manually.")
+        return 3
+    return 0
+
+
 def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None):
     """Run security-only testing with no UI/compatibility/browser phase."""
     banner("SECURITY-ONLY MODE — DEEP AUTHORIZED ASSESSMENT")
@@ -457,7 +487,7 @@ def main():
     parser.add_argument("--target", default=config.DEFAULT_TARGET, help="Base URL of an IN-SCOPE target")
     parser.add_argument(
         "--profile",
-        choices=("auto", "lab", "compatibility", "pentest", "security"),
+        choices=("auto", "lab", "compatibility", "pentest", "security", "intrusive"),
         default="auto",
         help="auto selects pentest for AM Webtech or an explicitly authorized target; lab remains available for localhost",
     )
@@ -468,6 +498,11 @@ def main():
                         help="disable the local visual dashboard")
     parser.add_argument("--confirm-authorized", action="store_true",
                         help="confirm that you own the target or have explicit authorization for arbitrary-target pentesting")
+    parser.add_argument("--confirm-intrusive", action="store_true",
+                        help="second confirmation for configured state-changing tests with rollback")
+    parser.add_argument("--intrusive-plan", default="intrusive_plan.json",
+                        help="JSON plan containing only disposable test resources and rollback actions")
+    parser.add_argument("--dry-run", action="store_true", help="preview intrusive actions without sending state-changing requests")
     args = parser.parse_args()
     if args.slow_mo < 0 or args.slow_mo > 5000:
         parser.error("--slow-mo must be between 0 and 5000 milliseconds")
@@ -488,12 +523,12 @@ def main():
 
     print(f"[PROFILE] {profile}")
 
-    if profile == "security":
+    if profile in {"security", "intrusive"}:
         if not args.confirm_authorized:
             print("[BLOCKED] Security profile requires --confirm-authorized.")
             print("[INFO] Use only on a system you own or are explicitly authorized to assess.")
             return 1
-        print("[SCOPE] Security profile accepts an arbitrary absolute http(s) target.")
+        print(f"[SCOPE] {profile} profile accepts an arbitrary absolute http(s) target.")
     else:
         banner("STEP 0 — Scope check")
         if profile == "pentest":
@@ -528,6 +563,15 @@ def main():
             if args.headed or args.slow_mo or args.no_dashboard:
                 print("[NOTE] security-only mode ignores UI/dashboard flags.")
             return run_security_profile(target)
+
+        if profile == "intrusive":
+            return run_intrusive_profile(
+                target,
+                plan_path=args.intrusive_plan,
+                authorized=args.confirm_authorized,
+                confirm_intrusive=args.confirm_intrusive,
+                dry_run=args.dry_run,
+            )
 
         if args.headed or args.slow_mo or args.no_dashboard:
             print("[NOTE] visual/browser options are primarily used by compatibility and pentest profiles.")
