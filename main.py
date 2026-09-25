@@ -413,10 +413,29 @@ def run_security_profile(target: str, max_urls: int | None = None, max_probes: i
         max_probes=max_probes or config.SECURITY_MAX_PROBES,
     )
 
+    banner("PASSIVE ROUTE / API DISCOVERY")
+    print("[MODE] GET-only discovery; discovered POST/PUT/PATCH/DELETE routes are inventory candidates.")
+    api_result = run_api_surface(
+        target,
+        max_probes=min(config.SECURITY_MAX_PROBES, 100),
+    )
+    route = api_result.get("route_discovery") or {}
+    route_summary = route.get("summary", {})
+    print(f"Pages inspected: {route_summary.get('pages', 0)}")
+    print(f"JavaScript assets inspected: {route_summary.get('assets', 0)}")
+    print(f"Routes discovered: {route_summary.get('routes', 0)}")
+    print(f"API-like routes: {route_summary.get('api_like_routes', 0)}")
+    print(f"State-changing candidates: {route_summary.get('state_changing_candidates', 0)}")
+    print(f"API specifications: {api_result['summary']['specs']}")
+    print(f"Documented API endpoints: {api_result['summary']['endpoints']}")
+    print(f"Evidence: {config.EVIDENCE_DIR}/discovered_routes.json")
+    print(f"API inventory: {config.EVIDENCE_DIR}/api_surface.json")
+
     banner("DEEP SECURITY ASSESSMENT COMPLETE")
     print(f"URLs tested: {len(result['urls_tested'])}")
     print(f"HTTP probes: {result['probe_count']}")
-    print(f"Findings: {len(result['findings'])}")
+    print(f"Deep findings: {len(result['findings'])}")
+    print(f"API inventory observations: {len(api_result.get('findings', []))}")
     for sev, count in result["summary"]["by_severity"].items():
         print(f"  {sev}: {count}")
     print(f"Evidence: {config.EVIDENCE_DIR}/deep_security.json")
