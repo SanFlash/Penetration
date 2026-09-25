@@ -76,10 +76,14 @@ def _extract_id(response: requests.Response, path: str | None) -> str | None:
     return None if value is None else str(value)
 
 
-def _render(value, resource_id: str | None) -> str:
+def _render(value, resource_id: str | None = None, run_id: str = "") -> str:
     if not isinstance(value, str):
         return value
-    return value.replace("{resource_id}", resource_id or "")
+    return (
+        value
+        .replace("{resource_id}", resource_id or "")
+        .replace("{run_id}", run_id)
+    )
 
 
 def _sanitize_response(response: requests.Response) -> dict:
@@ -91,7 +95,18 @@ def _sanitize_response(response: requests.Response) -> dict:
 
 
 def load_plan(path: str, target: str) -> list[dict]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    plan_file = Path(path)
+    if not plan_file.is_file():
+        raise IntrusiveConfigurationError(
+            f"Intrusive plan not found: {path}. "
+            "Create it from intrusive_plan.example.json and configure a disposable test endpoint."
+        )
+    try:
+        data = json.loads(plan_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise IntrusiveConfigurationError(
+            f"Intrusive plan is not valid JSON: {path} ({exc.msg})."
+        ) from exc
     if not isinstance(data, dict):
         raise IntrusiveConfigurationError("Intrusive plan must be a JSON object.")
     plan_target = data.get("target_origin")
