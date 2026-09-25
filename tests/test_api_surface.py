@@ -44,3 +44,33 @@ def test_openapi_parser_inventory():
     assert len(engine.endpoints) == 3
     assert any(x["category"] == "API Authorization" for x in engine.findings)
     assert any(x["category"] == "API Inventory" for x in engine.findings)
+
+
+
+def test_api_surface_includes_passive_route_discovery(monkeypatch):
+    monkeypatch.setattr(
+        "scanners.api_surface.run_route_discovery",
+        lambda *args, **kwargs: {
+            "schema": "route-discovery-1.0",
+            "summary": {
+                "pages": 2,
+                "assets": 1,
+                "routes": 4,
+                "api_like_routes": 2,
+                "state_changing_candidates": 1,
+            },
+        },
+    )
+
+    engine = ApiSurfaceEngine("https://example.com")
+
+    class Response:
+        headers = {"Content-Type": "text/html"}
+        status_code = 404
+        content = b""
+
+    monkeypatch.setattr(engine, "request", lambda url: Response())
+    result = engine.run()
+
+    assert result["route_discovery"]["schema"] == "route-discovery-1.0"
+    assert result["route_discovery"]["summary"]["state_changing_candidates"] == 1
