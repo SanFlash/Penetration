@@ -7,7 +7,7 @@ state-changing methods.
 from __future__ import annotations
 
 from collections import Counter
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 
 def _add(items, seen, url, method, sources, state_changing=False, documented=False, api_like=False, evidence=None):
@@ -54,7 +54,7 @@ def correlate_attack_surface(target: str, recon: dict | None = None,
     for page in recon.get("pages", []) or []:
         url = page.get("url") if isinstance(page, dict) else page
         if url:
-            _add(items, seen, str(url), "GET", ["crawler"], observed=True if False else False)
+            _add(items, seen, str(url), "GET", ["crawler"])
 
     for form in recon.get("forms", []) or []:
         if not isinstance(form, dict):
@@ -84,7 +84,7 @@ def correlate_attack_surface(target: str, recon: dict | None = None,
              evidence=endpoint.get("operation_id") or endpoint.get("summary"))
 
     for item in items:
-        item["path"] = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(item["url"]).path or "/"
+        item["path"] = urlparse(item["url"]).path or "/"
         item["observed"] = "crawler" in item["sources"] or any(
             source.startswith("javascript") or source in {"link", "form"} for source in item["sources"]
         )
