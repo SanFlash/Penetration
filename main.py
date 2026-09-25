@@ -626,13 +626,14 @@ def main():
             return run_security_profile(target)
 
         if profile == "intrusive":
-            return run_intrusive_profile(
+            print("[NOTE] 'intrusive' is now a compatibility alias for the non-destructive full pentest.")
+            print("[NOTE] No state-changing requests, destructive plan, or rollback actions are executed.")
+            return run_pentest_profile(
                 target,
-                plan_path=args.intrusive_plan,
+                headed=args.headed,
+                slow_mo=args.slow_mo,
+                dashboard=not args.no_dashboard,
                 authorized=args.confirm_authorized,
-                confirm_intrusive=args.confirm_intrusive,
-                confirm_destructive=args.confirm_destructive,
-                dry_run=args.dry_run,
             )
 
         if args.headed or args.slow_mo or args.no_dashboard:
