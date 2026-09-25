@@ -18,7 +18,10 @@ from utils.scope import assert_same_target, OutOfScopeError
 
 
 SAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+ACTION_METHODS = {"POST", "PUT", "PATCH"}
 MAX_ACTIONS = 12
+PLAN_MODE = "controlled-destructive-v1"
+DESTRUCTIVE_ACK = "I_UNDERSTAND_CONTROLLED_DATA_CHANGE"
 
 
 class IntrusiveConfigurationError(ValueError):
@@ -109,6 +112,14 @@ def load_plan(path: str, target: str) -> list[dict]:
         ) from exc
     if not isinstance(data, dict):
         raise IntrusiveConfigurationError("Intrusive plan must be a JSON object.")
+    if data.get("mode") != PLAN_MODE:
+        raise IntrusiveConfigurationError(
+            f"Intrusive plan must declare mode={PLAN_MODE!r}."
+        )
+    if data.get("destructive_ack") != DESTRUCTIVE_ACK:
+        raise IntrusiveConfigurationError(
+            "Intrusive plan requires destructive_ack=I_UNDERSTAND_CONTROLLED_DATA_CHANGE."
+        )
     plan_target = data.get("target_origin")
     if plan_target and plan_target.rstrip("/") != target.rstrip("/"):
         raise IntrusiveConfigurationError(
@@ -124,8 +135,12 @@ def load_plan(path: str, target: str) -> list[dict]:
             raise IntrusiveConfigurationError(f"Operation {index} is not an object.")
         method = str(op.get("method", "")).upper()
         rollback = op.get("rollback")
-        if method not in SAFE_METHODS:
+        if method not in ACTION_METHODS:
             raise IntrusiveConfigurationError(f"Operation {index}: unsupported method {method}.")
+        if op.get("disposable_resource") is not True:
+            raise IntrusiveConfigurationError(
+                f"Operation {index}: disposable_resource=true is required for controlled-destructive execution."
+            )
         if not isinstance(rollback, dict):
             raise IntrusiveConfigurationError(f"Operation {index}: rollback is required.")
         rollback_method = str(rollback.get("method", "")).upper()
@@ -147,6 +162,14 @@ def load_plan(path: str, target: str) -> list[dict]:
                     f"Operation {index}: {label} still contains a template placeholder. "
                     "Replace it with a real disposable test endpoint before running."
                 )
+        if method == "POST" and rollback_method != "DELETE":
+            raise IntrusiveConfigurationError(
+                f"Operation {index}: POST create actions must roll back with DELETE of the created disposable resource."
+            )
+        if method in {"PUT", "PATCH"} and rollback_method not in {"PUT", "PATCH"}:
+            raise IntrusiveConfigurationError(
+                f"Operation {index}: PUT/PATCH actions require PUT/PATCH rollback with restore_json."
+            )
         if method in {"PUT", "PATCH"} and not op.get("restore_json"):
             raise IntrusiveConfigurationError(
                 f"Operation {index}: PUT/PATCH requires restore_json for rollback."
