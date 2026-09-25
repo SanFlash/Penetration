@@ -32,6 +32,12 @@ SECURITY_MAX_PROBES = 500
 SECURITY_TIMEOUT = 10
 SECURITY_RATE_RPS = 2
 
+# Passive route/API discovery. Network activity remains GET-only; discovered
+# state-changing methods are inventory candidates and are never submitted.
+ROUTE_DISCOVERY_MAX_PAGES = 8
+ROUTE_DISCOVERY_MAX_ASSETS = 20
+ROUTE_DISCOVERY_MAX_CANDIDATES = 200
+
 # Controlled intrusive testing. Every action must target a configured disposable
 # resource and include an explicit rollback operation.
 INTRUSIVE_MAX_ACTIONS = 12
