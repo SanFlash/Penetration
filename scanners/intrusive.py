@@ -166,6 +166,10 @@ def load_plan(path: str, target: str) -> list[dict]:
             raise IntrusiveConfigurationError(
                 f"Operation {index}: POST create actions must roll back with DELETE of the created disposable resource."
             )
+        if method == "POST" and "{resource_id}" not in rollback_url_text:
+            raise IntrusiveConfigurationError(
+                f"Operation {index}: POST rollback URL must reference {{resource_id}} so only the created resource can be deleted."
+            )
         if method in {"PUT", "PATCH"} and rollback_method not in {"PUT", "PATCH"}:
             raise IntrusiveConfigurationError(
                 f"Operation {index}: PUT/PATCH actions require PUT/PATCH rollback with restore_json."
@@ -257,10 +261,19 @@ def run_intrusive(target: str, plan_path: str, timeout: int = 10, dry_run: bool 
         "run_id": run_id,
         "target": target,
         "dry_run": dry_run,
-        "destructive_scope": "configured disposable resources only",
+        "destructive_scope": "configured disposable resources only; no discovered endpoint execution",
+        "mode": PLAN_MODE,
         "redirects": "disabled",
         "max_actions": MAX_ACTIONS,
         "operations": records,
+        "safety": {
+            "authorization_required": True,
+            "plan_ack_required": True,
+            "disposable_resource_required": True,
+            "automatic_discovery_writes": False,
+            "arbitrary_delete_actions": False,
+            "redirects_followed": False,
+        },
         "summary": {
             "actions": len(records),
             "action_failures": action_failures,
