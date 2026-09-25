@@ -996,3 +996,33 @@ The intrusive workflow still requires:
 5. exact target-origin validation
 6. no unresolved template placeholders
 
+
+
+## Live scan progress and runtime controls
+
+Security scans now expose visible CLI progress instead of appearing idle during long GET-only phases.
+
+Typical output:
+
+```text
+[STAGE 1/2] Deep security assessment starting...
+[DEEP] Crawl starting: max_urls=60, max_probes=500, timeout=10s
+[DEEP] probes=10/500 | latest=GET 200 | https://target.example/page | runtime=5.2s
+...
+[STAGE 2/2] Passive route/API discovery starting...
+[DISCOVERY] Starting passive route discovery (max 8 pages, 20 JS assets, 120s budget)
+[DISCOVERY] GET 01 | 200 | https://target.example/
+[DISCOVERY] JS asset 1/5 | https://target.example/static/app.js
+[API] GET 02/100 | 404 | https://target.example/openapi.json
+```
+
+Route discovery is additionally protected by a bounded runtime budget and shorter request timeout so a slow endpoint cannot make the discovery phase appear indefinitely stuck.
+
+Configuration:
+
+- `SECURITY_PROGRESS_INTERVAL` — number of deep-security probes between progress messages.
+- `ROUTE_DISCOVERY_TIMEOUT` — per-request route-discovery timeout.
+- `ROUTE_DISCOVERY_MAX_RUNTIME` — maximum route-discovery runtime in seconds.
+
+The scanner remains exact-origin, redirects-disabled, GET-only for passive discovery, and non-destructive by default.
+

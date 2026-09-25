@@ -397,50 +397,61 @@ def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False,
 
 
 def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None):
-    """Run security-only testing with no UI/compatibility/browser phase."""
-    banner("SECURITY-ONLY MODE — DEEP AUTHORIZED ASSESSMENT")
-    print("[MODE] UI/compatibility testing: DISABLED")
-    print("[MODE] Browser/Playwright: DISABLED")
-    print("[MODE] Security engine: ENABLED")
-    print("[MODE] Scope: exact origin of supplied target; redirects disabled")
-    print("[MODE] State-changing requests: DISABLED")
-    print("[MODE] Credential attacks / DoS / destructive writes: DISABLED")
-    print("[MODE] GET / HEAD / OPTIONS / TRACE + controlled header/query probes")
+    """Run security-only testing with visible progress and bounded phases."""
+    loader = ConsoleLoader()
+    loader.start("Initializing security assessment")
+    try:
+        banner("SECURITY-ONLY MODE — DEEP AUTHORIZED ASSESSMENT")
+        print("[MODE] UI/compatibility testing: DISABLED")
+        print("[MODE] Browser/Playwright: DISABLED")
+        print("[MODE] Security engine: ENABLED")
+        print("[MODE] Scope: exact origin of supplied target; redirects disabled")
+        print("[MODE] State-changing requests: DISABLED")
+        print("[MODE] Credential attacks / DoS / destructive writes: DISABLED")
+        print("[MODE] GET / HEAD / OPTIONS / TRACE + controlled header/query probes")
+        print(f"[LIMITS] max_urls={max_urls or config.SECURITY_MAX_URLS}, max_probes={max_probes or config.SECURITY_MAX_PROBES}, timeout={config.SECURITY_TIMEOUT}s")
 
-    result = run_deep_security(
-        target,
-        max_urls=max_urls or config.SECURITY_MAX_URLS,
-        max_probes=max_probes or config.SECURITY_MAX_PROBES,
-    )
+        loader.set("Deep security assessment — progress appears below")
+        print("\n[STAGE 1/2] Deep security assessment starting...", flush=True)
+        result = run_deep_security(
+            target,
+            max_urls=max_urls or config.SECURITY_MAX_URLS,
+            max_probes=max_probes or config.SECURITY_MAX_PROBES,
+        )
+        print(f"[STAGE 1/2] Deep security complete: {result['probe_count']} probes, {len(result['findings'])} raw findings.", flush=True)
 
-    banner("PASSIVE ROUTE / API DISCOVERY")
-    print("[MODE] GET-only discovery; discovered POST/PUT/PATCH/DELETE routes are inventory candidates.")
-    api_result = run_api_surface(
-        target,
-        max_probes=min(config.SECURITY_MAX_PROBES, 100),
-    )
-    route = api_result.get("route_discovery") or {}
-    route_summary = route.get("summary", {})
-    print(f"Pages inspected: {route_summary.get('pages', 0)}")
-    print(f"JavaScript assets inspected: {route_summary.get('assets', 0)}")
-    print(f"Routes discovered: {route_summary.get('routes', 0)}")
-    print(f"API-like routes: {route_summary.get('api_like_routes', 0)}")
-    print(f"State-changing candidates: {route_summary.get('state_changing_candidates', 0)}")
-    print(f"API specifications: {api_result['summary']['specs']}")
-    print(f"Documented API endpoints: {api_result['summary']['endpoints']}")
-    print(f"Evidence: {config.EVIDENCE_DIR}/discovered_routes.json")
-    print(f"API inventory: {config.EVIDENCE_DIR}/api_surface.json")
+        banner("PASSIVE ROUTE / API DISCOVERY")
+        print("[MODE] GET-only discovery; discovered POST/PUT/PATCH/DELETE routes are inventory candidates.")
+        loader.set("Passive route/API discovery — GET only")
+        print("[STAGE 2/2] Passive route/API discovery starting...", flush=True)
+        api_result = run_api_surface(
+            target,
+            max_probes=min(config.SECURITY_MAX_PROBES, 100),
+        )
+        route = api_result.get("route_discovery") or {}
+        route_summary = route.get("summary", {})
+        print(f"Pages inspected: {route_summary.get('pages', 0)}")
+        print(f"JavaScript assets inspected: {route_summary.get('assets', 0)}")
+        print(f"Routes discovered: {route_summary.get('routes', 0)}")
+        print(f"API-like routes: {route_summary.get('api_like_routes', 0)}")
+        print(f"State-changing candidates: {route_summary.get('state_changing_candidates', 0)}")
+        print(f"API specifications: {api_result['summary']['specs']}")
+        print(f"Documented API endpoints: {api_result['summary']['endpoints']}")
+        print(f"Evidence: {config.EVIDENCE_DIR}/discovered_routes.json")
+        print(f"API inventory: {config.EVIDENCE_DIR}/api_surface.json")
 
-    banner("DEEP SECURITY ASSESSMENT COMPLETE")
-    print(f"URLs tested: {len(result['urls_tested'])}")
-    print(f"HTTP probes: {result['probe_count']}")
-    print(f"Deep findings: {len(result['findings'])}")
-    print(f"API inventory observations: {len(api_result.get('findings', []))}")
-    for sev, count in result["summary"]["by_severity"].items():
-        print(f"  {sev}: {count}")
-    print(f"Evidence: {config.EVIDENCE_DIR}/deep_security.json")
-    print(f"Report: {result['report']['html_path']}")
-    return 0
+        banner("DEEP SECURITY ASSESSMENT COMPLETE")
+        print(f"URLs tested: {len(result['urls_tested'])}")
+        print(f"HTTP probes: {result['probe_count']}")
+        print(f"Deep findings: {len(result['findings'])}")
+        print(f"API inventory observations: {len(api_result.get('findings', []))}")
+        for sev, count in result["summary"]["by_severity"].items():
+            print(f"  {sev}: {count}")
+        print(f"Evidence: {config.EVIDENCE_DIR}/deep_security.json")
+        print(f"Report: {result['report']['html_path']}")
+        return 0
+    finally:
+        loader.stop()
 
 
 def run_lab_full_profile(target: str):

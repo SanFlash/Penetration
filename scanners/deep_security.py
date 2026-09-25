@@ -32,6 +32,7 @@ TIMEOUT = getattr(config, "SECURITY_TIMEOUT", 10)
 MAX_URLS = getattr(config, "SECURITY_MAX_URLS", 40)
 MAX_PROBES = getattr(config, "SECURITY_MAX_PROBES", 180)
 RATE_RPS = max(float(getattr(config, "SECURITY_RATE_RPS", 2)), 0.2)
+PROGRESS_INTERVAL = max(int(getattr(config, "SECURITY_PROGRESS_INTERVAL", 10)), 1)
 SENTINEL = "SENTINEL-" + uuid.uuid4().hex[:12]
 EXTERNAL = "https://sentinel-invalid-origin.invalid"
 ERROR_SIGNATURES = (
@@ -83,6 +84,7 @@ class DeepSecurityEngine:
         self.checks: list[dict] = []
         self._last_request = 0.0
         self._probe_count = 0
+        self._started = time.monotonic()
 
     def _pace(self):
         interval = 1.0 / RATE_RPS
@@ -103,6 +105,9 @@ class DeepSecurityEngine:
         )
         self._last_request = time.monotonic()
         self._probe_count += 1
+        elapsed_total = time.monotonic() - self._started
+        if self._probe_count == 1 or self._probe_count % PROGRESS_INTERVAL == 0:
+            print(f"[DEEP] probes={self._probe_count}/{self.max_probes} | latest={method} {response.status_code} | {url} | runtime={elapsed_total:.1f}s", flush=True)
         return response, round(time.monotonic() - started, 3)
 
     def add(self, fid, title, severity, confidence, category, url, detail, impact, remediation, evidence, **extra):
@@ -142,6 +147,7 @@ class DeepSecurityEngine:
         return parsed.scheme.lower() == origin.scheme.lower() and parsed.netloc.lower() == origin.netloc.lower()
 
     def crawl(self):
+        print(f"[DEEP] Crawl starting: max_urls={self.max_urls}, max_probes={self.max_probes}, timeout={TIMEOUT}s", flush=True)
         queue = [self.target + "/"]
         visited = set()
         urls = []
@@ -177,9 +183,11 @@ class DeepSecurityEngine:
                 if self._same_origin(next_url) and next_url not in visited:
                     queue.append(next_url)
 
+        print(f"[DEEP] Crawl complete: {len(urls)} pages, {len(forms)} forms, {self._probe_count} probes", flush=True)
         return urls, forms
 
     def baseline_and_headers(self, urls):
+        print(f"[DEEP] Header/baseline stage: {len(urls)} URLs", flush=True)
         for index, url in enumerate(urls, 1):
             try:
                 resp, elapsed = self.request("GET", url)
@@ -625,6 +633,8 @@ class DeepSecurityEngine:
 
     def run(self):
         started = time.time()
+        self._started = time.monotonic()
+        print("[DEEP] Starting deep security engine...", flush=True)
         budget_exhausted = False
         exhausted_stage = None
 

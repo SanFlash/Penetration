@@ -21,6 +21,8 @@ import config
 UA = "Sentinel-RouteDiscovery/1.0 (authorized security assessment)"
 DEFAULT_TIMEOUT = getattr(config, "SECURITY_TIMEOUT", 10)
 DEFAULT_RPS = max(float(getattr(config, "SECURITY_RATE_RPS", 2)), 0.2)
+REQUEST_TIMEOUT = max(float(getattr(config, "ROUTE_DISCOVERY_TIMEOUT", 8)), 2.0)
+MAX_RUNTIME = max(float(getattr(config, "ROUTE_DISCOVERY_MAX_RUNTIME", 120)), 15.0)
 
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}
 API_HINT = re.compile(r"(?:^|/)(?:api|api/v\d+|graphql|rest)(?:/|$)", re.I)
@@ -57,6 +59,7 @@ class RouteDiscoveryEngine:
         self.assets = []
         self.checks = []
         self._seen_routes = set()
+        self.started = time.monotonic()
 
     def same_origin(self, url: str) -> bool:
         p, o = urlparse(url), urlparse(self.origin)
@@ -69,9 +72,11 @@ class RouteDiscoveryEngine:
         delay = interval - (time.monotonic() - self.last_request)
         if delay > 0:
             time.sleep(delay)
-        response = self.session.get(url, timeout=DEFAULT_TIMEOUT, allow_redirects=False, verify=True)
+        response = self.session.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=False, verify=True)
         self.last_request = time.monotonic()
         self.probes += 1
+        elapsed = time.monotonic() - self.started
+        print(f"[DISCOVERY] GET {self.probes:02d} | {response.status_code} | {url} | {elapsed:.1f}s", flush=True)
         return response
 
     def _add_route(self, raw_url: str, method: str, source: str, discovered_from: str, evidence: str):
@@ -128,10 +133,12 @@ class RouteDiscoveryEngine:
 
     def run(self):
         started = time.time()
+        self.started = time.monotonic()
+        print(f"[DISCOVERY] Starting passive route discovery (max {self.max_pages} pages, {self.max_assets} JS assets, {MAX_RUNTIME:.0f}s budget)", flush=True)
         queue = [self.target + "/"]
         seen_pages = set()
 
-        while queue and len(self.pages) < self.max_pages:
+        while queue and len(self.pages) < self.max_pages and (time.monotonic() - self.started) < MAX_RUNTIME:
             url = queue.pop(0)
             if url in seen_pages or not self.same_origin(url):
                 continue
@@ -161,13 +168,16 @@ class RouteDiscoveryEngine:
                 if self.same_origin(link) and link not in seen_pages and len(queue) < self.max_pages * 4:
                     queue.append(link)
 
-        for asset in self.assets:
-            if self.probes >= self.max_pages + self.max_assets:
+        for index, asset in enumerate(self.assets, 1):
+            if self.probes >= self.max_pages + self.max_assets or (time.monotonic() - self.started) >= MAX_RUNTIME:
+                print("[DISCOVERY] Time/request budget reached; stopping JS asset inspection.", flush=True)
+                break
                 break
             try:
                 response = self._get(asset)
             except (requests.RequestException, ValueError):
                 continue
+            print(f"[DISCOVERY] JS asset {index}/{len(self.assets)} | {asset}", flush=True)
             self.checks.append({
                 "check": "javascript-asset",
                 "url": asset,
@@ -190,7 +200,8 @@ class RouteDiscoveryEngine:
                 "max_assets": self.max_assets,
                 "max_candidates": self.max_candidates,
                 "rate_rps": DEFAULT_RPS,
-                "timeout_seconds": DEFAULT_TIMEOUT,
+                "timeout_seconds": REQUEST_TIMEOUT,
+                "max_runtime_seconds": MAX_RUNTIME,
             },
             "probes": self.probes,
             "pages": self.pages,
@@ -207,6 +218,8 @@ class RouteDiscoveryEngine:
             },
             "checks": self.checks,
             "runtime_seconds": round(time.time() - started, 2),
+            "completed": (time.monotonic() - self.started) < MAX_RUNTIME and not queue,
+            "stop_reason": "time_budget" if (time.monotonic() - self.started) >= MAX_RUNTIME else "completed",
         }
         os.makedirs(config.EVIDENCE_DIR, exist_ok=True)
         with open(os.path.join(config.EVIDENCE_DIR, "discovered_routes.json"), "w", encoding="utf-8") as handle:

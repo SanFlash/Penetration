@@ -60,6 +60,7 @@ class ApiSurfaceEngine:
         self.specs = []
         self.endpoints = []
         self.route_discovery = None
+        self.started = time.monotonic()
 
     def same_origin(self, url: str) -> bool:
         p = urlparse(url)
@@ -80,6 +81,7 @@ class ApiSurfaceEngine:
         )
         self.last_request = time.monotonic()
         self.probes += 1
+        print(f"[API] GET {self.probes:02d}/{self.max_probes} | {response.status_code} | {url}", flush=True)
         return response
 
     def add(self, fid, title, severity, confidence, category, url, detail, impact, remediation, evidence, **extra):
@@ -288,6 +290,7 @@ class ApiSurfaceEngine:
 
     def run(self):
         started = time.time()
+        print("[API] Starting API attack-surface inventory...", flush=True)
         # Passive route discovery uses GET only and never submits discovered forms.
         self.route_discovery = run_route_discovery(
             self.target,
