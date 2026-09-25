@@ -17,6 +17,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import config
+from scanners.route_discovery import run_route_discovery
 
 
 UA = "Sentinel-APISurface/1.0 (authorized security assessment)"
@@ -58,6 +59,7 @@ class ApiSurfaceEngine:
         self.findings = []
         self.specs = []
         self.endpoints = []
+        self.route_discovery = None
 
     def same_origin(self, url: str) -> bool:
         p = urlparse(url)
@@ -286,6 +288,13 @@ class ApiSurfaceEngine:
 
     def run(self):
         started = time.time()
+        # Passive route discovery uses GET only and never submits discovered forms.
+        self.route_discovery = run_route_discovery(
+            self.target,
+            max_pages=min(getattr(config, "ROUTE_DISCOVERY_MAX_PAGES", 8), 20),
+            max_assets=min(getattr(config, "ROUTE_DISCOVERY_MAX_ASSETS", 20), 50),
+            max_candidates=min(getattr(config, "ROUTE_DISCOVERY_MAX_CANDIDATES", 200), 500),
+        )
         candidates = self.candidate_urls()
         for url in candidates:
             if self.probes >= self.max_probes:
@@ -310,6 +319,7 @@ class ApiSurfaceEngine:
             "scope_lock": self.origin,
             "scope_policy": "exact target origin; redirects disabled",
             "browser_ui": False,
+            "route_discovery": self.route_discovery,
             "limits": {
                 "max_probes": self.max_probes,
                 "rate_rps": DEFAULT_RPS,
