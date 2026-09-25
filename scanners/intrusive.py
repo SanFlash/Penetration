@@ -135,6 +135,18 @@ def load_plan(path: str, target: str) -> list[dict]:
         rollback_url = _resolve(target, str(rollback.get("url", "")))
         if not _same_origin(target, url) or not _same_origin(target, rollback_url):
             raise IntrusiveConfigurationError(f"Operation {index}: exact-origin check failed.")
+        action_url_text = str(op.get("url", ""))
+        rollback_url_text = str(rollback.get("url", ""))
+        if "{resource_id}" in rollback_url_text and not op.get("id_path"):
+            raise IntrusiveConfigurationError(
+                f"Operation {index}: rollback URL uses {{resource_id}} but id_path is missing."
+            )
+        for label, value in (("action URL", action_url_text), ("rollback URL", rollback_url_text)):
+            if "REPLACE_WITH_" in value:
+                raise IntrusiveConfigurationError(
+                    f"Operation {index}: {label} still contains a template placeholder. "
+                    "Replace it with a real disposable test endpoint before running."
+                )
         if method in {"PUT", "PATCH"} and not op.get("restore_json"):
             raise IntrusiveConfigurationError(
                 f"Operation {index}: PUT/PATCH requires restore_json for rollback."
@@ -184,7 +196,17 @@ def run_intrusive(target: str, plan_path: str, timeout: int = 10, dry_run: bool 
                 continue
 
             resource_id = _extract_id(action, op.get("id_path"))
-            rollback_url = _render(_resolve(target, str(rollback["url"])), resource_id, run_id)
+            rollback_template = str(rollback["url"])
+            if "{resource_id}" in rollback_template and not resource_id:
+                raise IntrusiveConfigurationError(
+                    f"Operation {index}: action succeeded but id_path did not produce a resource ID; "
+                    "rollback was not attempted."
+                )
+            rollback_url = _render(
+                _resolve(target, rollback_template),
+                resource_id,
+                run_id,
+            )
             rollback_spec = dict(rollback)
             if method in {"PUT", "PATCH"}:
                 rollback_spec["json"] = op["restore_json"]
