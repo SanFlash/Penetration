@@ -16,22 +16,6 @@
         "method": "DELETE",
         "url": "/REPLACE_WITH_TEST_RESOURCE/{resource_id}"
       }
-    },
-    {
-      "name": "update-and-restore-disposable-record",
-      "method": "PATCH",
-      "url": "/REPLACE_WITH_TEST_RESOURCE/{resource_id}",
-      "disposable_resource": true,
-      "json": {
-        "name": "sentinel-intrusive-mutated-{run_id}"
-      },
-      "restore_json": {
-        "name": "sentinel-intrusive-test-{run_id}"
-      },
-      "rollback": {
-        "method": "PATCH",
-        "url": "/REPLACE_WITH_TEST_RESOURCE/{resource_id}"
-      }
     }
   ]
 }
