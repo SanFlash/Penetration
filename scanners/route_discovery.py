@@ -37,6 +37,8 @@ XHR_RE = re.compile(
     r"""\.open\s*\(\s*['"]([A-Za-z]+)['"]\s*,\s*['"]([^'"]+)['"]""", re.I
 )
 PATH_RE = re.compile(r"""['"]((?:/api(?:/[^'"]*)?|/graphql(?:/[^'"]*)?|/rest(?:/[^'"]*)?))['"]""", re.I)
+GENERIC_ENDPOINT_RE = re.compile(r"""(?:fetch|axios\.(?:get|post|put|patch|delete|head)|\.(?:open|post|put|patch|delete|get))\s*\(\s*['"]([^'"]+)['"]""", re.I)
+TEMPLATE_ENDPOINT_RE = re.compile(r"""(?:fetch|axios\.(?:get|post|put|patch|delete|head))\s*\(\s*\x60([^\x60]+)\x60""", re.I)
 
 
 class RouteDiscoveryEngine:
@@ -103,7 +105,11 @@ class RouteDiscoveryEngine:
             "source": source,
             "discovered_from": discovered_from,
             "evidence": evidence[:500],
-            "api_like": bool(API_HINT.search(path) or API_EXT.search(path)),
+            "api_like": bool(
+                API_HINT.search(path)
+                or API_EXT.search(path)
+                or any(token in path.lower() for token in ("/ajax/", "/rpc/", "/endpoint/", "/service/"))
+            ),
         })
 
     def _parse_html(self, url: str, text: str):
@@ -128,8 +134,17 @@ class RouteDiscoveryEngine:
             self._add_route(match.group(2), match.group(1), "javascript-axios", url, match.group(0))
         for match in XHR_RE.finditer(text[:1000000]):
             self._add_route(match.group(2), match.group(1), "javascript-xhr", url, match.group(0))
-        for match in PATH_RE.finditer(text[:1000000]):
+        source_text = text[:1000000]
+        for match in PATH_RE.finditer(source_text):
             self._add_route(match.group(1), "GET", "javascript-path", url, match.group(0))
+        for match in GENERIC_ENDPOINT_RE.finditer(source_text):
+            raw = match.group(1)
+            if raw.startswith(("/", "http://", "https://")):
+                self._add_route(raw, "GET", "javascript-endpoint", url, match.group(0))
+        for match in TEMPLATE_ENDPOINT_RE.finditer(source_text):
+            raw = match.group(1)
+            if raw.startswith("/"):
+                self._add_route(raw, "GET", "javascript-template", url, match.group(0))
 
     def run(self):
         started = time.time()
@@ -172,7 +187,6 @@ class RouteDiscoveryEngine:
             if self.probes >= self.max_pages + self.max_assets or (time.monotonic() - self.started) >= MAX_RUNTIME:
                 print("[DISCOVERY] Time/request budget reached; stopping JS asset inspection.", flush=True)
                 break
-                break
             try:
                 response = self._get(asset)
             except (requests.RequestException, ValueError):
@@ -185,7 +199,11 @@ class RouteDiscoveryEngine:
                 "content_type": response.headers.get("Content-Type", ""),
                 "length": len(response.content),
             })
-            if response.status_code < 400 and "javascript" in response.headers.get("Content-Type", "").lower():
+            content_type = response.headers.get("Content-Type", "").lower()
+            asset_path = urlparse(asset).path.lower()
+            if response.status_code < 400 and (
+                "javascript" in content_type or asset_path.endswith((".js", ".mjs", ".cjs"))
+            ):
                 self._parse_script_text(asset, response.text)
 
         api_routes = [r for r in self.routes if r["api_like"]]

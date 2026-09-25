@@ -30,3 +30,19 @@ def test_route_discovery_parses_forms_and_javascript_without_submitting():
     assert ("GET", "/api/profile") in methods
     assert ("POST", "/api/orders") in methods
     assert ("GET", "/graphql") in methods
+
+
+def test_javascript_endpoint_discovery(monkeypatch, tmp_path):
+    from scanners.route_discovery import RouteDiscoveryEngine
+
+    monkeypatch.setattr(config, "EVIDENCE_DIR", str(tmp_path))
+    engine = RouteDiscoveryEngine("https://example.com", max_pages=1, max_assets=2, max_candidates=20)
+
+    js = "fetch('/api/users'); axios.post('/api/orders'); fetch(`" + "/graphql?op=query`); apiClient.get('/service/profile');"
+    engine._parse_script_text("https://example.com/static/app.js", js)
+
+    paths = {(item["method"], item["path"]) for item in engine.routes}
+    assert ("GET", "/api/users") in paths
+    assert any(path == "/api/orders" for _, path in paths)
+    assert any(path == "/graphql" for _, path in paths)
+    assert any(item["api_like"] for item in engine.routes)
