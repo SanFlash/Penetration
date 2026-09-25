@@ -32,6 +32,11 @@ SECURITY_MAX_PROBES = 500
 SECURITY_TIMEOUT = 10
 SECURITY_RATE_RPS = 2
 
+# Controlled intrusive testing. Every action must target a configured disposable
+# resource and include an explicit rollback operation.
+INTRUSIVE_MAX_ACTIONS = 12
+INTRUSIVE_TIMEOUT = 10
+
 # The professional pentest profile intentionally uses Chromium only.
 # Six responsive sizes provide mobile/tablet/desktop coverage without
 # multiplying runtime across Firefox/WebKit.
