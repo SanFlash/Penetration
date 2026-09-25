@@ -1,3 +1,5 @@
+import config
+
 from scanners.route_discovery import RouteDiscoveryEngine
 
 
