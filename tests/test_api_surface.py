@@ -68,6 +68,7 @@ def test_api_surface_includes_passive_route_discovery(monkeypatch):
         headers = {"Content-Type": "text/html"}
         status_code = 404
         content = b""
+        text = ""
 
     monkeypatch.setattr(engine, "request", lambda url: Response())
     result = engine.run()
