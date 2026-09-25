@@ -26,10 +26,14 @@ def test_intrusive_plan_requires_exact_target_and_rollback(tmp_path):
 def test_intrusive_plan_rejects_cross_origin(tmp_path):
     path = tmp_path / "plan.json"
     path.write_text(json.dumps({
+        "mode": "controlled-destructive-v1",
+        "destructive_ack": "I_UNDERSTAND_CONTROLLED_DATA_CHANGE",
         "target_origin": "https://example.com",
         "operations": [{
             "method": "POST",
             "url": "https://evil.example/api",
+            "disposable_resource": True,
+            "id_path": "id",
             "rollback": {"method": "DELETE", "url": "/api/test/{resource_id}"}
         }]
     }), encoding="utf-8")
@@ -40,10 +44,13 @@ def test_intrusive_plan_rejects_cross_origin(tmp_path):
 def test_intrusive_update_requires_restore_body(tmp_path):
     path = tmp_path / "plan.json"
     path.write_text(json.dumps({
+        "mode": "controlled-destructive-v1",
+        "destructive_ack": "I_UNDERSTAND_CONTROLLED_DATA_CHANGE",
         "target_origin": "https://example.com",
         "operations": [{
             "method": "PATCH",
             "url": "/api/test/1",
+            "disposable_resource": True,
             "json": {"name": "changed"},
             "rollback": {"method": "PATCH", "url": "/api/test/1"}
         }]
@@ -55,10 +62,13 @@ def test_intrusive_update_requires_restore_body(tmp_path):
 def test_intrusive_plan_rejects_template_placeholders(tmp_path):
     path = tmp_path / "plan.json"
     path.write_text(json.dumps({
+        "mode": "controlled-destructive-v1",
+        "destructive_ack": "I_UNDERSTAND_CONTROLLED_DATA_CHANGE",
         "target_origin": "https://example.com",
         "operations": [{
             "method": "POST",
             "url": "/REPLACE_WITH_TEST_CREATE_ENDPOINT",
+            "disposable_resource": True,
             "id_path": "id",
             "rollback": {"method": "DELETE", "url": "/api/test/{resource_id}"}
         }]
@@ -70,10 +80,13 @@ def test_intrusive_plan_rejects_template_placeholders(tmp_path):
 def test_intrusive_plan_requires_id_path_for_resource_rollback(tmp_path):
     path = tmp_path / "plan.json"
     path.write_text(json.dumps({
+        "mode": "controlled-destructive-v1",
+        "destructive_ack": "I_UNDERSTAND_CONTROLLED_DATA_CHANGE",
         "target_origin": "https://example.com",
         "operations": [{
             "method": "POST",
             "url": "/api/test-records",
+            "disposable_resource": True,
             "rollback": {"method": "DELETE", "url": "/api/test-records/{resource_id}"}
         }]
     }), encoding="utf-8")
