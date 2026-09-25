@@ -13,6 +13,7 @@ def test_intrusive_plan_requires_exact_target_and_rollback(tmp_path):
             "name": "create",
             "method": "POST",
             "url": "/api/test-records",
+            "id_path": "id",
             "rollback": {"method": "DELETE", "url": "/api/test-records/{resource_id}"}
         }]
     }), encoding="utf-8")
