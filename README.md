@@ -919,3 +919,80 @@ Get-Content .\\evidence\\api_surface.json
 `
 
 API inventory observations are not automatically vulnerabilities. Public API documentation and documented POST/DELETE routes may be intentional; the inventory is the input for later role-aware authorization and business-logic testing.
+
+
+## Passive route and API-candidate discovery
+
+The API inventory now includes a passive route-discovery phase for applications that do not publish OpenAPI/Swagger documentation.
+
+The discovery engine:
+
+- follows a bounded number of same-origin HTML pages
+- extracts links and form actions
+- inspects same-origin JavaScript assets
+- recognizes common `fetch`, Axios and XMLHttpRequest route patterns
+- identifies API-like paths such as `/api/*`, `/graphql` and `/rest/*`
+- records POST/PUT/PATCH/DELETE candidates without submitting them
+- keeps exact-origin locking and redirects disabled
+- performs only GET requests during discovery
+- writes deterministic evidence to `evidence/discovered_routes.json`
+
+### Route discovery output
+
+After a security or pentest run:
+
+```powershell
+Get-Content .\evidence\discovered_routes.json
+```
+
+The evidence contains:
+
+- pages inspected
+- JavaScript assets inspected
+- discovered routes
+- HTTP method
+- whether the method is state-changing
+- API-like classification
+- discovery source
+- source page/asset
+- bounded evidence snippet
+
+A state-changing candidate is an **inventory item**, not permission to execute it. It must be manually reviewed before any controlled intrusive plan is created.
+
+### Security-only profile
+
+The security profile now reports passive route/API discovery in addition to deep GET/HEAD/OPTIONS/TRACE testing:
+
+```powershell
+python main.py --target https://amwebtech.com --profile security --confirm-authorized
+```
+
+Expected output includes:
+
+```text
+PASSIVE ROUTE / API DISCOVERY
+[MODE] GET-only discovery; discovered POST/PUT/PATCH/DELETE routes are inventory candidates.
+Pages inspected: ...
+JavaScript assets inspected: ...
+Routes discovered: ...
+API-like routes: ...
+State-changing candidates: ...
+API specifications: ...
+Documented API endpoints: ...
+```
+
+This is specifically designed for applications such as AM Webtech where common OpenAPI/Swagger locations may return 404.
+
+### Safety boundary
+
+Passive route discovery never submits discovered forms and never sends POST, PUT, PATCH or DELETE requests. It is therefore suitable as the discovery stage before the separately gated controlled-intrusive workflow.
+
+The intrusive workflow still requires:
+
+1. explicit authorization
+2. `--confirm-intrusive`
+3. a configured disposable resource
+4. an explicit rollback operation
+5. exact target-origin validation
+6. no unresolved template placeholders
+
