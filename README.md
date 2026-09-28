@@ -1152,3 +1152,18 @@ Default limits are deliberately bounded in `config.py`:
 - `STRESS_TIMEOUT = 10`
 
 Increase limits only when the target owner has explicitly approved the additional traffic and the environment can safely handle it.
+
+
+### Higher-intensity stress mode
+
+The input-stress phase now uses a larger bounded probe budget and additional boundary/encoding payload classes. It remains GET-only and same-origin, with a hard request budget and rate limiter.
+
+Current defaults:
+
+- 45 candidate routes
+- 300 maximum probes
+- 4 requests/second
+- 10-second request timeout
+- 12 controlled payload classes
+
+For genuinely destructive/state-changing validation, use a disposable test environment and the existing explicitly gated intrusive workflow rather than removing the safety controls from arbitrary-target pentesting.
