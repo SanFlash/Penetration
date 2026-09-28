@@ -33,6 +33,12 @@ SECURITY_TIMEOUT = 10
 SECURITY_RATE_RPS = 2
 SECURITY_PROGRESS_INTERVAL = 10
 
+# Input-stress fuzzing. Same-origin GET requests only; no form submission.
+STRESS_MAX_URLS = 30
+STRESS_MAX_PROBES = 180
+STRESS_RATE_RPS = 3
+STRESS_TIMEOUT = 10
+
 # Passive route/API discovery. Network activity remains GET-only; discovered
 # state-changing methods are inventory candidates and are never submitted.
 ROUTE_DISCOVERY_MAX_PAGES = 8
