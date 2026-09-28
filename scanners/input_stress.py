@@ -32,7 +32,7 @@ PAYLOADS = (
     ("html-marker", "STRESS_HTML_9f31"),
     ("quote-marker", "STRESS_QUOTE_'_9f31"),
     ("jsonish", '{"stress":"9f31","value":1}'),
-    ("sql-metachar", "STRESS_9f31'\")("),
+    ("sql-metachar", "STRESS_9f31'\\\")("),
     ("pathish", "../STRESS_9f31"),
 )
 
