@@ -28,12 +28,16 @@ PAYLOADS = (
     ("boundary-empty", ""),
     ("boundary-space", " "),
     ("boundary-long", "A" * 512),
+    ("boundary-xlong", "B" * 2048),
+    ("boundary-newlines", "line1\nline2\r\nline3"),
     ("boundary-unicode", "Aa-123-हैलो-世界-🚀"),
     ("html-marker", "STRESS_HTML_9f31"),
     ("quote-marker", "STRESS_QUOTE_'_9f31"),
     ("jsonish", '{"stress":"9f31","value":1}'),
     ("sql-metachar", "STRESS_9f31'\\\")("),
     ("pathish", "../STRESS_9f31"),
+    ("encoded", "%2e%2e%2fSTRESS_9f31"),
+    ("delimiter", "STRESS_9f31&=;|,:"),
 )
 
 ERROR_MARKERS = (
@@ -230,6 +234,7 @@ class InputStressEngine:
             "schema": "input-stress-1.0",
             "target": self.target,
             "policy": "same-origin GET fuzzing only; no form submission or state-changing requests",
+            "kill_switch": "probe budget and rate limit are enforced for every request",
             "limits": {
                 "max_candidate_points": self.max_urls * 4,
                 "max_probes": self.max_probes,
@@ -242,6 +247,7 @@ class InputStressEngine:
             "findings": self.findings,
             "summary": {
                 "candidate_points": len(candidates),
+                "payload_classes": len(PAYLOADS),
                 "probes": self.probes,
                 "findings": len(self.findings),
                 "by_severity": dict(Counter(x["severity"] for x in self.findings)),
