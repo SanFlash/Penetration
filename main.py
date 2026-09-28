@@ -19,6 +19,7 @@ from scanners.active_security import run_active_security
 from scanners.browser_evidence import capture_security_evidence
 from scanners.deep_security import run_deep_security
 from scanners.api_surface import run_api_surface
+from scanners.input_stress import run_input_stress
 from scanners.attack_surface import correlate_attack_surface
 from scanners.intrusive import run_intrusive
 from auth.session import login
@@ -308,7 +309,24 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             f"{attack_surface['summary']['state_changing_candidates']} state-changing candidates"
         )
 
-        banner("STEP 6 — Chrome security evidence capture")
+        banner("STEP 6 — Bounded input-stress / typing fuzzing")
+        loader.set("Running bounded input stress tests")
+        state.update(
+            stage="INPUT STRESS TESTING",
+            detail="Fuzzing discovered query inputs with bounded boundary, encoding and error-handling probes; no forms are submitted.",
+        )
+        stress_result = run_input_stress(
+            target,
+            urls,
+            max_urls=config.STRESS_MAX_URLS,
+            max_probes=config.STRESS_MAX_PROBES,
+        )
+        all_findings.extend(stress_result["findings"])
+        print(f"Stress candidate input points: {stress_result['summary']['candidate_points']}")
+        print(f"Stress probes: {stress_result['probes']}")
+        print(f"Stress findings: {len(stress_result['findings'])}")
+
+        banner("STEP 7 — Chrome security evidence capture")
         loader.set("Capturing Chrome evidence for security findings")
         state.update(
             stage="SECURITY EVIDENCE",
@@ -323,7 +341,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         print(f"Security evidence screenshots: {sum(1 for item in security_evidence if item.get('screenshot'))}")
 
-        all_findings = ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", [])
+        all_findings = ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", []) + stress_result["findings"]
 
         banner("STEP 7 — Interactive pentest report")
         loader.set("Building interactive pentest report")
@@ -344,6 +362,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "deep_security": deep_result,
             "api_surface": api_result,
             "attack_surface": attack_surface,
+            "input_stress": stress_result,
             "security_evidence": security_evidence,
             "runtime_seconds": elapsed,
         }
