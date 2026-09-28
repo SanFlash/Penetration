@@ -1122,3 +1122,33 @@ evidence/
 reports/findings.json
 reports/report.html
 ```
+## Bounded input-stress / fuzzing layer
+
+The `pentest` profile now includes a bounded input-stress phase for already-discovered same-origin routes.
+
+It exercises query inputs with controlled boundary, Unicode, reflection-marker, quote, JSON-like, path-like and parser/error-handling payload classes. The purpose is to identify:
+
+- unexpected HTTP 5xx responses
+- application/database/framework error disclosure
+- unsafe input reflection
+- fragile boundary handling
+- inconsistent response behavior
+
+It does not submit HTML forms, send POST/PUT/PATCH/DELETE requests, brute-force credentials, upload files, or intentionally perform denial-of-service testing.
+
+Run the authorized assessment:
+
+    python main.py --target https://amwebtech.com --profile pentest --confirm-authorized --no-dashboard
+
+Stress-test evidence is written to:
+
+    evidence/input_stress.json
+
+Default limits are deliberately bounded in `config.py`:
+
+- `STRESS_MAX_URLS = 30`
+- `STRESS_MAX_PROBES = 180`
+- `STRESS_RATE_RPS = 3`
+- `STRESS_TIMEOUT = 10`
+
+Increase limits only when the target owner has explicitly approved the additional traffic and the environment can safely handle it.
