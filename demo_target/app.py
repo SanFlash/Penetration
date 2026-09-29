@@ -65,10 +65,11 @@ def init_db():
         INSERT INTO users (username, password) VALUES
             ('alice', 'alice_pw'), ('bob', 'bob_pw');
 
-        CREATE TABLE orders (id INTEGER PRIMARY KEY, owner TEXT, item TEXT, total REAL);
+        CREATE TABLE orders (id INTEGER PRIMARY KEY, owner TEXT, item TEXT, total REAL, workflow_state TEXT);
         INSERT INTO orders (owner, item, total) VALUES
-            ('alice', 'Blue Widget x2', 19.98),
-            ('bob', 'Green Gadget x1', 24.00);
+            ('alice', 'Blue Widget x2', 19.98, 'pending'),
+            ('bob', 'Green Gadget x1', 24.00, 'completed'),
+            ('alice', 'Red Widget x1', 12.50, 'completed');
         """
     )
     conn.commit()
@@ -184,6 +185,49 @@ def order_action_decision(order_id, action_name):
     # VULNERABLE: action decision ignores session_user ownership. No mutation occurs.
     allowed = action_name in {"view", "cancel"}
     return jsonify({"order_id": order_id, "action": action_name, "allowed": allowed})
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: read-only workflow-state/precondition decision demo
+# ---------------------------------------------------------------------------
+@app.route("/api/orders/<int:order_id>/workflow/<action_name>")
+def order_workflow_state_decision(order_id, action_name):
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    # VULNERABLE: ignores the server-side workflow state. No mutation occurs.
+    allowed = action_name in {"view", "cancel"}
+    return jsonify({
+        "order_id": order_id,
+        "workflow_state": row["workflow_state"],
+        "action": action_name,
+        "allowed": allowed,
+    })
+
+
+@app.route("/api/orders-secure/<int:order_id>/workflow/<action_name>")
+def order_workflow_state_decision_secure(order_id, action_name):
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    session_user = request.cookies.get("session_user")
+    # Correct precondition: only the owner may request the decision, and
+    # cancel is valid only while the order is pending.
+    allowed = (
+        session_user == row["owner"]
+        and (
+            action_name == "view"
+            or (action_name == "cancel" and row["workflow_state"] == "pending")
+        )
+    )
+    return jsonify({
+        "order_id": order_id,
+        "workflow_state": row["workflow_state"],
+        "action": action_name,
+        "allowed": allowed,
+    })
 
 
 @app.route("/api/orders-secure/<int:order_id>/action/<action_name>")
