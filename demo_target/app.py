@@ -66,7 +66,7 @@ def init_db():
             ('alice', 'alice_pw'), ('bob', 'bob_pw');
 
         CREATE TABLE orders (id INTEGER PRIMARY KEY, owner TEXT, item TEXT, total REAL, workflow_state TEXT);
-        INSERT INTO orders (owner, item, total) VALUES
+        INSERT INTO orders (owner, item, total, workflow_state) VALUES
             ('alice', 'Blue Widget x2', 19.98, 'pending'),
             ('bob', 'Green Gadget x1', 24.00, 'completed'),
             ('alice', 'Red Widget x1', 12.50, 'completed');
