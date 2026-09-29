@@ -38,7 +38,7 @@ def _extract_authorization_decision(response: requests.Response) -> bool | None:
         return None
     try:
         payload: Any = response.json()
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return None
     if not isinstance(payload, dict):
         return None
