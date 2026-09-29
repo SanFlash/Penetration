@@ -162,6 +162,21 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
         print(f"Findings JSON: {report['json_path']}")
         print(f"Findings HTML: {report['html_path']}")
         print(f"Total findings: {report['report']['total_findings']}")
+        remediation = report["report"].get("remediation", {})
+        priority_counts = remediation.get("priority_counts", {})
+        print(
+            "Remediation priorities: "
+            f"Immediate={priority_counts.get('Immediate', 0)} | "
+            f"High={priority_counts.get('High', 0)} | "
+            f"Planned={priority_counts.get('Planned', 0)} | "
+            f"Review={priority_counts.get('Review', 0)}"
+        )
+        for action in remediation.get("actions", [])[:5]:
+            print(
+                f"  [FIX] {action.get('severity', 'Info')} — {action.get('title', 'Untitled')}"
+                f" | Impact: {action.get('impact', '')}"
+                f" | Solve: {action.get('fix', '')}"
+            )
 
         banner("ASSESSMENT COMPLETE")
         state.update(
