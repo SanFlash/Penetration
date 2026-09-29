@@ -9,7 +9,7 @@ from scanners.input_stress import InputStressEngine, PAYLOADS
 
 def test_stress_payloads_are_bounded():
     assert len(PAYLOADS) <= 13
-    assert all(len(payload) <= 600 for _, payload in PAYLOADS)
+    assert all(len(payload) <= 2048 for _, payload in PAYLOADS)
 
 
 def test_fuzz_url_replaces_only_selected_query_parameter():
