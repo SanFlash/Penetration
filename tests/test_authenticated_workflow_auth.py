@@ -81,3 +81,64 @@ def test_same_object_ids_are_rejected():
     except ValueError:
         return
     raise AssertionError("same object IDs should fail")
+
+
+def test_semantic_allowed_decision_detects_bypass_even_when_bodies_differ():
+    class Response:
+        def __init__(self, allowed, order_id):
+            self.content = (
+                '{"order_id":%d,"allowed":%s,"server_note":"unique-%d"}'
+                % (order_id, str(allowed).lower(), order_id)
+            ).encode()
+            self.status_code = 200
+            self.headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            return {"order_id": 1, "allowed": True} if b'"allowed":true' in self.content else {
+                "order_id": 2,
+                "allowed": False,
+            }
+
+    class Session:
+        def __init__(self, owner):
+            self.owner = owner
+
+        def get(self, url, **kwargs):
+            object_id = url.split("/orders/", 1)[1].split("/", 1)[0]
+            # Deliberately return different bodies while granting the same
+            # authorization decision cross-account.
+            return Response(True, int(object_id))
+
+    result = compare_workflow_action(
+        Session("1"), Session("2"), "http://127.0.0.1:5000",
+        "/api/orders/{id}/action/{action}", "1", "2", "cancel",
+    )
+    assert result["cross_account_match"] == {"a_to_b": True, "b_to_a": True}
+    assert result["detection"] == {"a_to_b": "semantic", "b_to_a": "semantic"}
+    assert len(result["findings"]) == 1
+
+
+def test_semantic_denial_does_not_report_bypass():
+    class Response:
+        def __init__(self, allowed):
+            self.content = ('{"allowed":%s}' % str(allowed).lower()).encode()
+            self.status_code = 200
+            self.headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            return {"allowed": b'"allowed":true' in self.content}
+
+    class Session:
+        def __init__(self, owner):
+            self.owner = owner
+
+        def get(self, url, **kwargs):
+            object_id = url.split("/orders/", 1)[1].split("/", 1)[0]
+            return Response(str(object_id) == self.owner)
+
+    result = compare_workflow_action(
+        Session("1"), Session("2"), "http://127.0.0.1:5000",
+        "/api/orders/{id}/action/{action}", "1", "2", "cancel",
+    )
+    assert result["cross_account_match"] == {"a_to_b": False, "b_to_a": False}
+    assert result["findings"] == []
