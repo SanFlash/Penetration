@@ -172,6 +172,30 @@ def get_order_secure(order_id):
         return jsonify({"error": "forbidden"}), 403
     return jsonify(dict(row))
 
+# ---------------------------------------------------------------------------
+# Phase 8: read-only workflow-action authorization decision demo
+# ---------------------------------------------------------------------------
+@app.route("/api/orders/<int:order_id>/action/<action_name>")
+def order_action_decision(order_id, action_name):
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    # VULNERABLE: action decision ignores session_user ownership. No mutation occurs.
+    allowed = action_name in {"view", "cancel"}
+    return jsonify({"order_id": order_id, "action": action_name, "allowed": allowed})
+
+
+@app.route("/api/orders-secure/<int:order_id>/action/<action_name>")
+def order_action_decision_secure(order_id, action_name):
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    session_user = request.cookies.get("session_user")
+    allowed = session_user == row["owner"] and action_name in {"view", "cancel"}
+    return jsonify({"order_id": order_id, "action": action_name, "allowed": allowed})
+
 
 if __name__ == "__main__":
     init_db()
