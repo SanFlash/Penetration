@@ -6,6 +6,8 @@ import re
 from collections import Counter
 from datetime import datetime, timezone
 
+from reports.remediation import build_remediation_summary, enrich_finding
+
 
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
 SEVERITY_COLOR = {
@@ -18,7 +20,7 @@ SEVERITY_COLOR = {
 
 
 def _normalize_finding(finding: dict) -> dict:
-    item = dict(finding)
+    item = enrich_finding(finding)
     item.setdefault("confidence", "Medium")
     item.setdefault("category", "Web Application Security")
     item.setdefault("cwe", None)
@@ -216,6 +218,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     browser_results = compatibility.get("results", [])
     security_evidence = meta.get("security_evidence", [])
     gallery = _collect_gallery(evidence_dir, out_dir, findings_sorted)
+    remediation = build_remediation_summary(findings_sorted)
 
     for finding in findings_sorted:
         if finding.get("screenshot"):
@@ -250,6 +253,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "marked": sum(1 for r in browser_results if r.get("evidence_marked")),
         },
         "security_evidence": security_evidence,
+        "remediation": remediation,
         "metadata": meta,
     }
 
@@ -376,7 +380,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <button data-tab="findings">Findings</button>
 <button data-tab="coverage">Coverage</button>
 <button data-tab="evidence">Evidence</button>
-<button data-tab="execution">Execution</button>
+<button data-tab="remediation">Remediation</button><button data-tab="execution">Execution</button>
 </nav>
 
 <section id="overview" class="tab">
@@ -418,6 +422,13 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="panel"><div class="section-title">Security evidence capture log</div><div class="matrix" id="securityEvidence"></div></div>
 </section>
 
+
+<section id="remediation" class="tab" hidden>
+<div class="panel"><div class="section-title">Remediation center</div>
+<p class="sub">Prioritized corrective actions derived from the observed findings. Impact describes the potential consequence; validation describes how to confirm the fix after deployment.</p>
+<div class="summary-strip"><div class="summary-item"><b>__IMMEDIATE__</b><span>Immediate actions</span></div><div class="summary-item"><b>__HIGH__</b><span>High priority</span></div><div class="summary-item"><b>__PLANNED__</b><span>Planned actions</span></div><div class="summary-item"><b>__REVIEW__</b><span>Review actions</span></div></div>
+<div id="remediationList"></div></div>
+</section>
 <section id="execution" class="tab" hidden>
 <div class="panel"><div class="section-title">Execution metadata</div><pre id="meta"></pre></div>
 </section>
@@ -431,6 +442,7 @@ const meta=__META__;
 const coverage=__COVERAGE__;
 const gallery=__GALLERY__;
 const securityEvidence=__SECURITY__;
+const remediation=__REMEDIATION__;
 const colors=__COLORS__;
 const esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
 const tabs=document.querySelectorAll(".nav button");
@@ -457,6 +469,9 @@ document.getElementById("matrix").innerHTML=rows.length?'<table><thead><tr><th>B
 document.getElementById("gallery").innerHTML=gallery.length?gallery.map(function(g){return '<article class="shot '+(g.kind==="failure"?"failure":"")+'"><span class="tag '+(g.kind==="failure"?"failure":"")+'">'+esc(g.kind.toUpperCase())+'</span><a href="'+esc(g.path)+'" target="_blank" rel="noopener"><img src="'+esc(g.path)+'" alt="'+esc(g.name)+'"></a><div class="caption">'+esc(g.name)+'<br>'+esc(Math.round((g.size||0)/1024))+' KB</div></article>'}).join(""):'<div class="empty">No screenshots were generated.</div>';
 
 document.getElementById("securityEvidence").innerHTML=securityEvidence.length?'<table><thead><tr><th>Finding</th><th>URL</th><th>Status</th><th>Console errors</th><th>Screenshot</th><th>Error</th></tr></thead><tbody>'+securityEvidence.map(function(x){return '<tr><td>'+esc(x.finding_id)+'</td><td>'+esc(x.url)+'</td><td>'+esc(x.status||"-")+'</td><td>'+((x.console_errors||[]).length)+'</td><td>'+(x.screenshot?'<a href="../'+esc(String(x.screenshot).replace(/\\/g,"/"))+'" target="_blank">open</a>':"-")+'</td><td>'+esc(x.error||"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No security browser captures were required.</div>';
+
+
+document.getElementById("remediationList").innerHTML=(remediation.actions||[]).length?(remediation.actions||[]).map(function(a){return '<article class="finding"><div class="fh"><span class="badge" style="background:'+((colors[a.severity]||colors.Info))+'">'+esc(a.severity)+'</span><span class="fid">'+esc(a.category)+'</span><span class="fid">'+esc(a.affected_urls)+' affected URL(s)</span></div><h3>'+esc(a.title)+'</h3><p><b>Impact:</b> '+esc(a.impact)+'</p><p><b>How to solve:</b> '+esc(a.fix)+'</p><p><b>How to validate:</b> '+esc(a.validation)+'</p></article>'}).join(""):'<div class="empty">No remediation actions were generated.</div>';
 
 document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
 </script>
@@ -489,6 +504,11 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__COVERAGE__": coverage_json,
         "__GALLERY__": gallery_json,
         "__SECURITY__": security_json,
+        "__REMEDIATION__": json.dumps(report.get("remediation", {}), ensure_ascii=False).replace("</", "<\\/"),
+        "__IMMEDIATE__": str(report.get("remediation", {}).get("priority_counts", {}).get("Immediate", 0)),
+        "__HIGH__": str(report.get("remediation", {}).get("priority_counts", {}).get("High", 0)),
+        "__PLANNED__": str(report.get("remediation", {}).get("priority_counts", {}).get("Planned", 0)),
+        "__REVIEW__": str(report.get("remediation", {}).get("priority_counts", {}).get("Review", 0)),
         "__COLORS__": json.dumps(SEVERITY_COLOR),
         "__CATEGORY_JSON__": json.dumps(report["category_summary"]),
     }
