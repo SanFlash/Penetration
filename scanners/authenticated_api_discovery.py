@@ -23,10 +23,10 @@ DEFAULT_TIMEOUT = 8
 DEFAULT_MAX_RUNTIME = 90
 
 _ENDPOINT_RE = re.compile(
-    r"""(?:"|')((?:/|https?://)[A-Za-z0-9_./:{}?=&%+\-]{2,220})(?:"|')"""
+    r"""(?:"|')((?:/|https?://)[A-Za-z0-9_./:{}?=&%+-]{2,220})(?:"|')"""
 )
 _API_RE = re.compile(r"/(?:api|ajax|rpc|graphql|service|endpoint)(?:/|$)", re.I)
-_TEMPLATE_RE = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}|:[A-Za-z_][A-Za-z0-9_]*")
+_TEMPLATE_RE = re.compile(r"{[A-Za-z_][A-Za-z0-9_]*}|:[A-Za-z_][A-Za-z0-9_]*")
 
 
 class _HTMLParser(HTMLParser):
@@ -34,6 +34,8 @@ class _HTMLParser(HTMLParser):
         super().__init__()
         self.links: list[str] = []
         self.assets: list[str] = []
+        self.inline_scripts: list[str] = []
+        self._in_script = False
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -41,6 +43,16 @@ class _HTMLParser(HTMLParser):
             self.links.append(attrs["href"])
         if tag in {"script", "img", "iframe"} and attrs.get("src"):
             self.assets.append(attrs["src"])
+        if tag == "script" and not attrs.get("src"):
+            self._in_script = True
+
+    def handle_data(self, data):
+        if self._in_script:
+            self.inline_scripts.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self._in_script = False
 
 
 def _normalize(base: str, value: str) -> str | None:
@@ -140,14 +152,18 @@ def discover_authenticated(
                     if urlparse(normalized).query == "" and normalized not in queue:
                         queue.append(normalized)
 
-            for value in _extract_candidates(response.text, url):
-                if value not in candidates and len(candidates) < max_candidates:
-                    candidates[value] = {
-                        "url": value,
-                        "source": url,
-                        "kind": "api-like" if _API_RE.search(urlparse(value).path) else "endpoint",
-                        "template": bool(_TEMPLATE_RE.search(value)),
-                    }
+            # Only scan JavaScript for string-based API candidates. Do not scan
+            # raw HTML attributes such as <form action="...">, which can cause
+            # non-GET form targets to appear as API candidates.
+            for script_text in parser.inline_scripts:
+                for value in _extract_candidates(script_text, url):
+                    if value not in candidates and len(candidates) < max_candidates:
+                        candidates[value] = {
+                            "url": value,
+                            "source": url,
+                            "kind": "api-like" if _API_RE.search(urlparse(value).path) else "endpoint",
+                            "template": bool(_TEMPLATE_RE.search(value)),
+                        }
         elif "javascript" in ctype or urlparse(url).path.endswith(".js"):
             for value in _extract_candidates(response.text, url):
                 if value not in candidates and len(candidates) < max_candidates:
@@ -172,7 +188,8 @@ def discover_authenticated(
         "observations": observations,
         "notes": [
             "Discovery is GET-only after authentication.",
-            "Forms are inventoried through HTML links/assets only; no forms are submitted.",
+            "HTML links/assets are crawled; form actions are not treated as endpoint candidates.",
+            "Inline/external JavaScript is parsed for string-based endpoint candidates.",
             "Credentials are not written to evidence.",
             "Candidate endpoints are inventory only; no candidate is invoked automatically.",
         ],
