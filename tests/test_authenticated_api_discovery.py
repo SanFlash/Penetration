@@ -37,6 +37,25 @@ def test_discovery_limits_candidates():
 
 
 def test_discovery_never_submits_forms():
-    html = '<form action="/delete" method="POST"><input name="id"></form>'
-    values = _extract_candidates(html, "http://127.0.0.1:5000/")
-    assert "http://127.0.0.1:5000/delete" not in values
+    calls = []
+
+    class FakeResponse:
+        content = b'<form action="/delete" method="POST"><input name="id"></form>'
+        text = content.decode()
+        status_code = 200
+        headers = {"Content-Type": "text/html"}
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append(("GET", url))
+            return FakeResponse()
+
+        def post(self, url, **kwargs):
+            calls.append(("POST", url))
+            raise AssertionError("Phase 5 must never submit forms")
+
+    result = discover_authenticated(
+        FakeSession(), "http://127.0.0.1:5000", max_pages=1, max_candidates=10, max_runtime=5
+    )
+    assert calls == [("GET", "http://127.0.0.1:5000/")]
+    assert result["candidates"] == []
