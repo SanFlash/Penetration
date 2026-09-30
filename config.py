@@ -39,7 +39,13 @@ STRESS_MAX_PROBES = 300
 STRESS_RATE_RPS = 4
 STRESS_TIMEOUT = 10
 
-# Valid/invalid input validation. Same-origin GET requests only.\nVALIDATION_MAX_URLS = 40\nVALIDATION_MAX_PROBES = 260\nVALIDATION_RATE_RPS = 3\nVALIDATION_TIMEOUT = 10\n\n# Passive route/API discovery. Network activity remains GET-only; discovered
+# Valid/invalid input validation. Same-origin GET requests only.
+VALIDATION_MAX_URLS = 40
+VALIDATION_MAX_PROBES = 260
+VALIDATION_RATE_RPS = 3
+VALIDATION_TIMEOUT = 10
+
+# Passive route/API discovery. Network activity remains GET-only; discovered
 # state-changing methods are inventory candidates and are never submitted.
 ROUTE_DISCOVERY_MAX_PAGES = 8
 ROUTE_DISCOVERY_MAX_ASSETS = 20
