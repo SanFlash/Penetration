@@ -162,6 +162,8 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
         report = generate(target, all_findings, config.EVIDENCE_DIR, metadata=metadata)
         print(f"Findings JSON: {report['json_path']}")
         print(f"Findings HTML: {report['html_path']}")
+        print(f"Portable HTML: {report.get('portable_html_path', '-')}")
+        print(f"PDF report: {report.get('pdf_path') or 'not generated (open portable HTML and Print -> Save as PDF)'}")
         print(f"Total findings: {report['report']['total_findings']}")
         remediation = report["report"].get("remediation", {})
         priority_counts = remediation.get("priority_counts", {})
@@ -398,6 +400,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         report = generate(target, all_findings, config.EVIDENCE_DIR, metadata=metadata)
         print(f"Findings JSON: {report['json_path']}")
         print(f"Findings HTML: {report['html_path']}")
+        print(f"Portable HTML: {report.get('portable_html_path', '-')}")
+        print(f"PDF report: {report.get('pdf_path') or 'not generated (open portable HTML and Print -> Save as PDF)'}")
         print(f"Total findings: {report['report']['total_findings']}")
 
         banner("PENTEST COMPLETE")
