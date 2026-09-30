@@ -791,6 +791,29 @@ Get-Content .\evidence\compatibility.json
 
 Do not commit real engagement screenshots, cookies, tokens, authorization headers, or sensitive request/response data.
 
+## Portable report sharing
+
+Every assessment now generates a normal interactive HTML report plus a single-file portable HTML report. When Playwright/Chromium is available, a PDF is also generated.
+
+Generated files:
+
+```text
+reports/
+  report.html
+  report_portable.html
+  report.pdf
+  findings.json
+  evidence_manifest.json
+```
+
+- **report.html** — full interactive local report.
+- **report_portable.html** — self-contained HTML with visual evidence images embedded, so it can be opened on another device without the local evidence folder.
+- **report.pdf** — print-friendly export with all report tabs exposed as document sections. If automatic PDF rendering is unavailable, open the portable HTML and use **Print → Save as PDF**.
+
+The PDF/portable report includes Overview, Findings, Coverage, Evidence, Remediation and Execution sections. Keep engagement evidence private and share reports only with authorized recipients.
+
+See [REPORT_EXPORTS.md](REPORT_EXPORTS.md) for the sharing workflow.
+
 ## Local vulnerable lab
 
 The repository includes a deliberately vulnerable Flask lab for learning.
