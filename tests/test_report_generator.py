@@ -97,3 +97,30 @@ def test_report_renders_correlated_attack_surface(tmp_path):
     assert "Correlated attack surface" in html
     assert "/api/orders" in html
     assert "State-changing candidate" in html
+
+
+def test_report_creates_portable_html_and_pdf_friendly_print_layout(tmp_path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    # Minimal valid PNG so the portable exporter can embed evidence.
+    (evidence / "capture.png").write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c6360606000000004000105f9d8"
+            "0000000049454e44ae426082"
+        )
+    )
+    result = generate(
+        "http://127.0.0.1:5000",
+        [],
+        str(evidence),
+        out_dir=str(tmp_path / "reports"),
+        metadata={"profile": "pentest"},
+    )
+
+    assert result["portable_html_path"].endswith("report_portable.html")
+    assert result["pdf_path"] is None or result["pdf_path"].endswith("report.pdf")
+    portable = open(result["portable_html_path"], encoding="utf-8").read()
+    assert "sentinel-report-mode" in portable
+    assert "data:image/png;base64," in portable
+    assert ".tab[hidden]{display:block!important" in open(result["html_path"], encoding="utf-8").read()
