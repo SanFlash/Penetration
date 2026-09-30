@@ -80,3 +80,27 @@ It does not silently embed arbitrary non-image files. Raw JSON evidence remains 
 4. Share report_portable.html for browser-based single-file delivery.
 5. Share report.pdf for a fixed document/management handoff.
 6. Keep raw evidence and findings.json in the secured engagement workspace.
+
+
+## 4. XLSX penetration report — `penetration_report.xlsx`
+
+The framework also creates a downloadable Excel workbook for sharing the assessment as a structured penetration report.
+
+The workbook contains:
+
+- **Executive Summary** — target, run metadata, totals and severity distribution.
+- **Failed Issues** — one row per reported finding with issue ID, failed issue, severity, confidence, category, method, URL, evidence/proof, impact and remediation.
+- **Evidence** — evidence inventory and file references.
+- **Remediation** — corrective actions and validation steps.
+- **Coverage** — browser/viewport execution results.
+
+### Evidence images inside the sheet
+
+When a finding has a captured screenshot, the image is inserted directly into the **Failed Issues** worksheet. The workbook therefore carries the visual proof with the issue instead of requiring the recipient to locate a separate screenshot folder.
+
+The generated file is:
+
+    reports/penetration_report.xlsx
+
+It can be opened in Microsoft Excel, LibreOffice Calc, or compatible spreadsheet software.
+

@@ -124,3 +124,58 @@ def test_report_creates_portable_html_and_pdf_friendly_print_layout(tmp_path):
     assert "sentinel-report-mode" in portable
     assert "data:image/png;base64," in portable
     assert ".tab[hidden]{display:block!important" in open(result["html_path"], encoding="utf-8").read()
+
+
+def test_xlsx_report_contains_failed_issue_and_embedded_evidence(tmp_path):
+    from openpyxl import load_workbook
+    from reports.xlsx_exporter import generate_xlsx, validate_xlsx
+
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    screenshot = evidence / "failed-login.png"
+    screenshot.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c6360606000000004000105f9d8"
+            "0000000049454e44ae426082"
+        )
+    )
+    report = {
+        "target": "http://127.0.0.1:5000",
+        "generated_at": "2026-09-30T12:00:00+00:00",
+        "metadata": {"profile": "pentest"},
+        "unique_findings": 1,
+        "raw_findings": 1,
+        "total_observations": 1,
+        "severity_summary": {"Critical": 0, "High": 1, "Medium": 0, "Low": 0, "Info": 0},
+        "evidence_gallery": [{"name": "failed-login.png", "kind": "failure", "size": screenshot.stat().st_size, "path": str(screenshot)}],
+        "findings": [{
+            "id": "P-001",
+            "title": "Authorization failure",
+            "severity": "High",
+            "confidence": "High",
+            "category": "Authorization",
+            "method": "GET",
+            "url": "http://127.0.0.1:5000/api/orders/2",
+            "evidence": "Unauthorized account received protected object",
+            "impact": "Protected data may be exposed.",
+            "remediation": "Enforce object-level authorization.",
+            "screenshots": [str(screenshot)],
+            "screenshot": str(screenshot),
+        }],
+        "remediation": {"actions": []},
+    }
+    output = tmp_path / "penetration_report.xlsx"
+    path = generate_xlsx(report, str(output))
+    assert validate_xlsx(path)
+
+    wb = load_workbook(path)
+    try:
+        assert "Failed Issues" in wb.sheetnames
+        ws = wb["Failed Issues"]
+        assert ws["A2"].value == "P-001"
+        assert ws["B2"].value == "Authorization failure"
+        assert ws["C2"].value == "High"
+        assert len(ws._images) == 1
+    finally:
+        wb.close()

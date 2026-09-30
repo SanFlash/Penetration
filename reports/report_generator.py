@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from reports.remediation import build_remediation_summary, enrich_finding
 from reports.exporter import make_portable_html, make_pdf
+from reports.xlsx_exporter import generate_xlsx
 
 
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
@@ -283,12 +284,18 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         portable_html_path,
         os.path.join(out_dir, "report.pdf"),
     )
+    xlsx_path = generate_xlsx(
+        report,
+        os.path.join(out_dir, "penetration_report.xlsx"),
+    )
     report["exports"] = {
         "html_path": html_path,
         "portable_html_path": portable_html_path,
         "pdf_path": pdf_path,
+        "xlsx_path": xlsx_path,
         "portable": True,
         "pdf_generated": bool(pdf_path),
+        "xlsx_generated": bool(xlsx_path),
     }
 
     return {
@@ -296,6 +303,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "html_path": html_path,
         "portable_html_path": portable_html_path,
         "pdf_path": pdf_path,
+        "xlsx_path": xlsx_path,
         "manifest_path": manifest_path,
         "report": report,
     }
