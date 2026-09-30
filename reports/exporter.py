@@ -80,7 +80,7 @@ def make_portable_html(report_html_path: str, output_path: str | None = None) ->
     # Findings and gallery data are rendered dynamically, so their image
     # references do not necessarily occur in literal src/href attributes.
     evidence_paths = sorted(set(re.findall(
-        r'(?:(?:\\.\\./)?evidence/[A-Za-z0-9_./-]+\\.(?:png|jpe?g|webp))',
+        r'(?:(?:\.\./)?evidence/[A-Za-z0-9_./-]+\.(?:png|jpe?g|webp))',
         document,
         flags=re.IGNORECASE,
     )), key=len, reverse=True)
