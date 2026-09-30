@@ -1,28 +1,18 @@
 """Phase 11: bounded deep authenticated/API differential assessment.
 
-This module is intentionally read-only on the target application. It supports:
-- two authenticated sessions from environment variables
-- explicit API endpoint templates
-- BOLA/IDOR object differential checks
-- workflow authorization decision checks
-- GET/HEAD/OPTIONS method differential observations
-- bounded valid/invalid/encoding/size parameter fuzzing
-- response fingerprint evidence
-
-It never submits forms and never performs POST/PUT/PATCH/DELETE against
-application resources. Login is the only POST and is limited to the supplied
-login path.
+Read-only authenticated assessment with explicit endpoints, two test sessions,
+BOLA/IDOR differential checks, workflow authorization checks, method
+differentials, bounded parameter fuzzing and JSON evidence.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -32,7 +22,7 @@ MAX_BODY_BYTES = 200_000
 ALLOWED_LOGIN_STATUSES = {200, 201, 202, 204, 302, 303}
 DEFAULT_TIMEOUT = 10
 
-# Benign malformed/boundary values. These are not exploit payloads.
+# Benign malformed/boundary values only.
 FUZZ_VALUES = {
     "text": ["", " ", "A", "A" * 32, "A" * 256, "%20", "%2F", "é", "🙂"],
     "numeric": ["", "0", "-1", "1.5", "abc", "999999999999999999"],
@@ -95,13 +85,9 @@ def build_url(base_url: str, endpoint_template: str, object_id: str | None = Non
               owner: str | None = None, action: str | None = None) -> str:
     if not endpoint_template.startswith("/"):
         raise ValueError("endpoint must be an absolute path beginning with '/'")
-    if any(x in endpoint_template for x in ("{id}", "{owner}", "{action}")):
-        if "{id}" in endpoint_template and object_id is None:
-            raise ValueError("endpoint contains {id} but no object_id was supplied")
-        if "{owner}" in endpoint_template and owner is None:
-            raise ValueError("endpoint contains {owner} but no owner was supplied")
-        if "{action}" in endpoint_template and action is None:
-            raise ValueError("endpoint contains {action} but no action was supplied")
+    for token, value in (("{id}", object_id), ("{owner}", owner), ("{action}", action)):
+        if token in endpoint_template and value is None:
+            raise ValueError(f"endpoint contains {token} but no value was supplied")
     rendered = endpoint_template.format(
         id=quote(str(object_id), safe="") if object_id is not None else "",
         owner=quote(str(owner), safe="") if owner is not None else "",
@@ -122,12 +108,8 @@ def login_with_env(base_url: str, user_env: str, pass_env: str,
     login_url = build_url(base_url, login_path)
     session = requests.Session()
     session.headers.update({"User-Agent": "Sentinel-Phase11-Authorized/1.0"})
-    response = session.post(
-        login_url,
-        data={"username": username, "password": password},
-        timeout=DEFAULT_TIMEOUT,
-        allow_redirects=False,
-    )
+    response = session.post(login_url, data={"username": username, "password": password},
+                            timeout=DEFAULT_TIMEOUT, allow_redirects=False)
     if response.status_code not in ALLOWED_LOGIN_STATUSES:
         raise RuntimeError(f"Authentication failed for {user_env}: HTTP {response.status_code}")
     return session
@@ -135,12 +117,12 @@ def login_with_env(base_url: str, user_env: str, pass_env: str,
 
 def _mutate_query(url: str, name: str, value: str) -> str:
     parts = urlsplit(url)
-    pairs = [(k, value if k == name else v) for k, v in __import__("urllib.parse").parse_qsl(parts.query, keep_blank_values=True)]
+    pairs = [(k, value if k == name else v)
+             for k, v in parse_qsl(parts.query, keep_blank_values=True)]
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(pairs), parts.fragment))
 
 
 def _query_names(url: str) -> list[str]:
-    from urllib.parse import parse_qsl
     return list(dict.fromkeys(k for k, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)))
 
 
@@ -154,19 +136,14 @@ def _bounded_parameter_fuzz(session: requests.Session, base_url: str,
     probes.append({"kind": "baseline", "url": url, "fingerprint": fingerprint(baseline)})
 
     for name in names:
-        if len(probes) >= max_probes:
-            break
         profile = classify_parameter(name)
-        values = FUZZ_VALUES[profile]
-        for value in values:
+        for value in FUZZ_VALUES[profile]:
             if len(probes) >= max_probes:
                 break
             mutated = _mutate_query(url, name, value)
             assert_same_target(base_url, mutated)
             started = time.monotonic()
             response = session.get(mutated, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
-            elapsed_ms = round((time.monotonic() - started) * 1000, 1)
-            fp = fingerprint(response)
             item = {
                 "kind": "parameter_fuzz",
                 "parameter": name,
@@ -174,8 +151,8 @@ def _bounded_parameter_fuzz(session: requests.Session, base_url: str,
                 "value_length": len(value),
                 "value_preview": value[:80],
                 "url": mutated,
-                "elapsed_ms": elapsed_ms,
-                "fingerprint": fp,
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                "fingerprint": fingerprint(response),
             }
             probes.append(item)
             if response.status_code >= 500:
@@ -193,6 +170,8 @@ def _bounded_parameter_fuzz(session: requests.Session, base_url: str,
                     "remediation": "Validate type, range, encoding and requiredness at the application boundary and return controlled 4xx responses.",
                     "evidence": item,
                 })
+        if len(probes) >= max_probes:
+            break
     return {"endpoint": endpoint, "parameters": names, "probes": probes, "findings": findings}
 
 
@@ -203,11 +182,6 @@ def _method_differential(session: requests.Session, base_url: str, endpoint: str
         response = session.request(method, url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
         responses[method] = fingerprint(response)
     findings = []
-    get_status = responses["GET"]["status"]
-    head_status = responses["HEAD"]["status"]
-    if get_status == 200 and head_status == 200 and responses["GET"]["sha256"] != responses["HEAD"]["sha256"]:
-        # Observation only: HEAD normally has no response body.
-        pass
     allow = responses["OPTIONS"].get("allow", "")
     if allow:
         findings.append({
@@ -240,18 +214,15 @@ def _bola(session_a: requests.Session, session_b: requests.Session, base_url: st
     responses = {}
     for key, url in urls.items():
         response = sessions[key].get(url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
-        responses[key] = {
-            "url": url,
-            "fingerprint": fingerprint(response),
-            "decision": decision(response),
-        }
+        responses[key] = {"url": url, "fingerprint": fingerprint(response), "decision": decision(response)}
     bypasses = []
     for owner_key, other_key in (("a_own", "a_other"), ("b_own", "b_other")):
-        own = responses[owner_key]
-        other = responses[other_key]
+        own, other = responses[owner_key], responses[other_key]
         if other["decision"] is True:
             bypasses.append(other_key)
-        elif other["decision"] is None and own["fingerprint"]["status"] == 200 and other["fingerprint"]["status"] == 200 and own["fingerprint"]["sha256"] == other["fingerprint"]["sha256"]:
+        elif (other["decision"] is None and own["fingerprint"]["status"] == 200
+              and other["fingerprint"]["status"] == 200
+              and own["fingerprint"]["sha256"] == other["fingerprint"]["sha256"]):
             bypasses.append(other_key)
     findings = []
     if bypasses:
@@ -270,7 +241,8 @@ def _bola(session_a: requests.Session, session_b: requests.Session, base_url: st
             "remediation": "Authorize object ownership or access policy server-side for every object lookup; never trust client-supplied identifiers alone.",
             "evidence": responses,
         })
-    return {"endpoint": endpoint, "objects": {"a": object_a, "b": object_b}, "responses": responses, "bypasses": bypasses, "findings": findings}
+    return {"endpoint": endpoint, "objects": {"a": object_a, "b": object_b},
+            "responses": responses, "bypasses": bypasses, "findings": findings}
 
 
 def _workflow(session_a: requests.Session, session_b: requests.Session, base_url: str,
@@ -284,8 +256,7 @@ def _workflow(session_a: requests.Session, session_b: requests.Session, base_url
         ("b_other", session_b, object_a, owner_a, False),
         ("b_other_claim_b", session_b, object_a, owner_b, False),
     ]
-    responses = {}
-    mismatches = []
+    responses, mismatches = {}, []
     for key, session, obj, owner, expected in cases:
         url = build_url(base_url, endpoint, object_id=obj, owner=owner, action=action)
         response = session.get(url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
@@ -310,7 +281,8 @@ def _workflow(session_a: requests.Session, session_b: requests.Session, base_url
             "remediation": "Authorize the authenticated principal, object owner and workflow state together on the server.",
             "evidence": responses,
         })
-    return {"endpoint": endpoint, "action": action, "responses": responses, "mismatches": mismatches, "findings": findings}
+    return {"endpoint": endpoint, "action": action, "responses": responses,
+            "mismatches": mismatches, "findings": findings}
 
 
 def run_phase11(base_url: str, endpoints: list[str], login_path: str,
@@ -328,8 +300,7 @@ def run_phase11(base_url: str, endpoints: list[str], login_path: str,
     session_a = login_with_env(base_url, user_a_env, pass_a_env, login_path)
     session_b = login_with_env(base_url, user_b_env, pass_b_env, login_path)
 
-    api_results = []
-    findings = []
+    api_results, findings = [], []
     remaining = max_probes
     for endpoint in endpoints[:20]:
         if remaining <= 0:
@@ -340,7 +311,8 @@ def run_phase11(base_url: str, endpoints: list[str], login_path: str,
         remaining -= len(result["probes"])
 
     method_results = [_method_differential(session_a, base_url, endpoint) for endpoint in endpoints[:10]]
-    findings.extend(item["findings"] for item in method_results if item["findings"])
+    for item in method_results:
+        findings.extend(item["findings"])
 
     bola_result = None
     if object_a and object_b:
