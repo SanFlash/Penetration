@@ -148,13 +148,13 @@ def generate_xlsx(report: dict, output_path: str) -> str:
         if image_path:
             try:
                 img = XLImage(image_path)
-                img.width = min(480, img.width)
-                img.height = min(300, img.height)
-                # Preserve aspect ratio after bounding-box scaling.
-                ratio = min(480 / max(1, img.width), 300 / max(1, img.height))
-                if ratio < 1:
-                    img.width = int(img.width * ratio)
-                    img.height = int(img.height * ratio)
+                original_width = max(1, img.width)
+                original_height = max(1, img.height)
+                # Fit the screenshot inside a predictable Excel cell area while
+                # preserving its original aspect ratio.
+                ratio = min(480 / original_width, 300 / original_height, 1)
+                img.width = max(1, int(original_width * ratio))
+                img.height = max(1, int(original_height * ratio))
                 findings_ws.add_image(img, f"L{row_idx}")
                 findings_ws.cell(row_idx, 12, "Embedded evidence image")
                 findings_ws.row_dimensions[row_idx].height = 225
