@@ -241,6 +241,39 @@ def order_action_decision_secure(order_id, action_name):
     return jsonify({"order_id": order_id, "action": action_name, "allowed": allowed})
 
 
+# ---------------------------------------------------------------------------
+# Phase 10: read-only authorization correlation demo
+# ---------------------------------------------------------------------------
+@app.route("/api/orders/<int:order_id>/correlate")
+def order_authz_correlation(order_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    owner = request.args.get("owner", "")
+    action = request.args.get("action", "")
+    # VULNERABLE: ignores authenticated identity and owner parameter.
+    allowed = action in {"view", "cancel"}
+    return jsonify({"order_id": order_id, "owner": owner, "action": action, "allowed": allowed})
+
+
+@app.route("/api/orders-secure/<int:order_id>/correlate")
+def order_authz_correlation_secure(order_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    session_user = request.cookies.get("session_user")
+    owner = request.args.get("owner", "")
+    action = request.args.get("action", "")
+    allowed = (
+        session_user == row["owner"] == owner
+        and action in {"view", "cancel"}
+        and (action == "view" or row["workflow_state"] == "pending")
+    )
+    return jsonify({"order_id": order_id, "owner": owner, "action": action, "allowed": allowed})
+
+
 if __name__ == "__main__":
     init_db()
     print("Demo target initialized. Serving on http://127.0.0.1:5000 (localhost only).")
