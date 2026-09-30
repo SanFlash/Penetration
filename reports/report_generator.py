@@ -7,6 +7,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from reports.remediation import build_remediation_summary, enrich_finding
+from reports.exporter import make_portable_html, make_pdf
 
 
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
@@ -273,9 +274,28 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     html_path = os.path.join(out_dir, "report.html")
     with open(html_path, "w", encoding="utf-8") as handle:
         handle.write(_render_html(report))
+
+    portable_html_path = make_portable_html(
+        html_path,
+        os.path.join(out_dir, "report_portable.html"),
+    )
+    pdf_path = make_pdf(
+        portable_html_path,
+        os.path.join(out_dir, "report.pdf"),
+    )
+    report["exports"] = {
+        "html_path": html_path,
+        "portable_html_path": portable_html_path,
+        "pdf_path": pdf_path,
+        "portable": True,
+        "pdf_generated": bool(pdf_path),
+    }
+
     return {
         "json_path": json_path,
         "html_path": html_path,
+        "portable_html_path": portable_html_path,
+        "pdf_path": pdf_path,
         "manifest_path": manifest_path,
         "report": report,
     }
@@ -357,6 +377,20 @@ a{color:#8fc5ff}.shell{max-width:1500px;margin:auto;padding:22px}.hero{border:1p
 .gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.shot{border:1px solid var(--line);background:#07101b;border-radius:12px;padding:9px}.shot img{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px;border:1px solid #1a2a40}.shot .caption{font-size:12px;margin-top:7px;word-break:break-word}.shot.failure{border-color:#6b2436}.shot.failure .caption{color:#ff8da3}.tag{display:inline-block;border-radius:99px;padding:3px 7px;font-size:10px;font-weight:800;background:#142237;color:#a9bdd1;margin-bottom:5px}.tag.failure{background:#45182a;color:#ff9ab0}
 .summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:10px}.summary-item{padding:12px;background:#07101b;border:1px solid var(--line);border-radius:11px}.summary-item b{display:block;font-size:22px}.summary-item span{color:var(--muted);font-size:11px}
 footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
+@media print{
+  body{background:#fff;color:#111}
+  .shell{max-width:none;padding:0}
+  .nav{display:none!important}
+  .tab,.tab[hidden]{display:block!important;visibility:visible!important}
+  .tab{break-before:page}
+  #overview{break-before:auto}
+  .panel{break-inside:avoid;background:#fff;color:#111;border-color:#bbb;box-shadow:none}
+  .hero,.finding,.shot,.kpi,.summary-item,.risk-card{box-shadow:none}
+  .sub,.chip,.fid,.finding .url,footer{color:#444}
+  pre{background:#f5f5f5;color:#111;border-color:#bbb}
+  .gallery{grid-template-columns:repeat(2,1fr)}
+  a{color:#111;text-decoration:none}
+}
 @media(max-width:950px){.grid{grid-template-columns:1fr}.gallery{grid-template-columns:repeat(2,1fr)}.riskgrid{grid-template-columns:repeat(2,1fr)}.kpis,.summary-strip{grid-template-columns:repeat(2,1fr)}.shell{padding:12px}}
 @media(max-width:560px){.gallery{grid-template-columns:1fr}.hero{padding:18px}.kpis,.summary-strip{grid-template-columns:1fr 1fr}}
 </style>
