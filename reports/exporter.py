@@ -76,6 +76,23 @@ def make_portable_html(report_html_path: str, output_path: str | None = None) ->
 
     document = _IMAGE_RE.sub(replace, document)
 
+    # Also rewrite evidence paths stored inside embedded JSON/JavaScript.
+    # Findings and gallery data are rendered dynamically, so their image
+    # references do not necessarily occur in literal src/href attributes.
+    evidence_paths = sorted(set(re.findall(
+        r'(?:(?:\\.\\./)?evidence/[A-Za-z0-9_./-]+\\.(?:png|jpe?g|webp))',
+        document,
+        flags=re.IGNORECASE,
+    )), key=len, reverse=True)
+    for asset in evidence_paths:
+        path = _resolve_report_asset(source, asset)
+        if not path:
+            continue
+        uri = _image_data_uri(path)
+        if uri:
+            document = document.replace(asset, uri)
+            embedded += 1
+
     # The original report is intentionally retained as the live/local report.
     # This marker lets recipients see that evidence is embedded in this copy.
     marker = (
