@@ -6,6 +6,7 @@ All API routes except /healthz require SENTINEL_ACCESS_TOKEN when configured.
 """
 from __future__ import annotations
 
+import html
 import os
 import threading
 import time
@@ -134,17 +135,10 @@ def run():
         return jsonify({"error": "assessment_already_running"}), 409
 
     body = request.get_json(silent=True) or {}
-    target = str(body.get("target") or "").strip().rstrip("/")
+    target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
     authorized = bool(body.get("authorized", False))
 
-    if not target:
-        _run_lock.release()
-        return jsonify({
-            "error": "target_required",
-            "message": "Enter the web URL you want to assess before starting the pentest.",
-        }), 400
-
-    if not target.startswith(("http://", "https://")):
+        if not target.startswith(("http://", "https://")):
         _run_lock.release()
         return jsonify({
             "error": "invalid_target",
@@ -214,7 +208,7 @@ _HTML = r"""<!doctype html>
 <section class="panel hero"><div class="ring"></div><div class="core"></div><div class="center"><div class="stage" id="stage">READY</div><div class="detail" id="detail">Start an authorized assessment.</div></div></section>
 <aside class="panel pad"><h3>Start Assessment</h3>
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
-<label>Web URL</label><input id="target" value="" placeholder="https://example.com" autocomplete="url" inputmode="url">
+<label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
 <button id="startBtn" onclick="startRun()">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
@@ -240,5 +234,8 @@ async function startRun(){
 async function poll(){try{const r=await fetch("/api/status");const s=await r.json();el("status").textContent=s.running?"RUNNING":(s.status||"IDLE");el("stage").textContent=s.stage||"READY";el("detail").textContent=s.detail||"";el("pages").textContent=s.pages_tested||0;el("checks").textContent=s.checks||0;el("findings").textContent=s.findings||0;el("errors").textContent=s.errors||0;const p=s.progress||0;el("pct").textContent=p+"%";el("fill").style.width=p+"%";if(!s.running){const b=el("startBtn");b.disabled=false;b.textContent="START PENTEST";}el("logs").innerHTML=(s.logs||[]).slice(-160).map(x=>'<div class="'+(x.level||"")+'">['+(x.time||"")+'] '+String(x.message||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+'</div>').join("");el("logs").scrollTop=el("logs").scrollHeight;}catch(e){}setTimeout(poll,700)}poll();
 </script></body></html>"""
 
+_HTML = _HTML.replace("__DEFAULT_TARGET__", html.escape(DEFAULT_TARGET, quote=True))
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "10000")))
+
