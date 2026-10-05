@@ -21,7 +21,7 @@ from ui.dashboard import DashboardState
 app = Flask(__name__)
 
 ACCESS_TOKEN = os.getenv("SENTINEL_ACCESS_TOKEN", "").strip()
-DEFAULT_TARGET = os.getenv("SENTINEL_DEFAULT_TARGET", "").strip()
+DEFAULT_TARGET = os.getenv("SENTINEL_DEFAULT_TARGET", "").strip() or config.PENTEST_TARGET_ORIGIN
 
 _run_lock = threading.Lock()
 _run_thread = None
