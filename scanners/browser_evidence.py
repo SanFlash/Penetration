@@ -277,6 +277,44 @@ def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
     return result
 
 
+
+def capture_target_overview(target: str, headed: bool = False, slow_mo: int = 0) -> dict:
+    """Capture one Chromium viewport of the authorized target homepage for report context."""
+    assert_in_scope(target)
+    os.makedirs(EVIDENCE_DIR, exist_ok=True)
+    path = os.path.join(EVIDENCE_DIR, f"target_overview_{_safe_filename(target)}.png")
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=not headed, slow_mo=slow_mo)
+        context = browser.new_context(viewport={"width": 1440, "height": 900})
+        page = context.new_page()
+        status = None
+        title = ""
+        error = None
+        try:
+            response = page.goto(target, wait_until="domcontentloaded", timeout=30000)
+            status = response.status if response else None
+            page.wait_for_timeout(750)
+            title = page.title()
+            page.screenshot(path=path, full_page=False, animations="disabled")
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        finally:
+            page.close()
+            context.close()
+            browser.close()
+
+    return {
+        "target": target,
+        "url": target,
+        "status": status,
+        "title": title,
+        "screenshot": path if os.path.isfile(path) else None,
+        "capture_scope": "target-viewport-overview",
+        "error": error,
+    }
+
+
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
                               slow_mo: int = 0, max_items: int = 30) -> list[dict]:
     """Capture focused visual evidence for active findings using Chromium and GET-only URLs."""
