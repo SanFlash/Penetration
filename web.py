@@ -125,7 +125,7 @@ def status():
 
 @app.post("/api/run")
 def run():
-    global _run_thread, _state
+    global _run_thread, _state, _last_result
     auth = _require_auth()
     if auth:
         return auth
