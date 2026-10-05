@@ -219,6 +219,22 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     compatibility = _compatibility_meta(meta)
     browser_results = compatibility.get("results", [])
     security_evidence = meta.get("security_evidence", [])
+    for item in security_evidence:
+        if item.get("screenshot"):
+            item["screenshot_relative"] = _safe_relative_path(item["screenshot"], out_dir)
+
+    coverage_results = []
+    for row in browser_results:
+        copy = dict(row)
+        if copy.get("screenshot"):
+            copy["screenshot_relative"] = _safe_relative_path(copy["screenshot"], out_dir)
+        coverage_results.append(copy)
+
+    target_overview = dict(meta.get("target_overview") or {})
+    if target_overview.get("screenshot"):
+        target_overview["screenshot_relative"] = _safe_relative_path(target_overview["screenshot"], out_dir)
+        meta["target_overview"] = target_overview
+
     gallery = _collect_gallery(evidence_dir, out_dir, findings_sorted)
     remediation = build_remediation_summary(findings_sorted)
 
@@ -436,6 +452,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 </div></div>
 <div class="panel"><div class="section-title">Category distribution</div>__CATEGORIES_HTML__</div>
 </div>
+<div class="panel"><div class="section-title">Target website overview</div><p class="sub">Chromium opened the authorized target before assessment. This is a viewport overview only; failure evidence remains focused on the responsible DOM element.</p><div id="targetOverview"></div></div>
 <div class="panel"><div class="section-title">Evidence health</div><div class="summary-strip">
 <div class="summary-item"><b>__SCREENSHOTS__</b><span>Evidence screenshots</span></div>
 <div class="summary-item"><b>__FAILSCREENS__</b><span>Failure screenshots</span></div>
@@ -484,6 +501,7 @@ const meta=__META__;
 const coverage=__COVERAGE__;
 const gallery=__GALLERY__;
 const securityEvidence=__SECURITY__;
+const targetOverview=__TARGET_OVERVIEW__;
 const remediation=__REMEDIATION__;
 const colors=__COLORS__;
 const esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
@@ -507,6 +525,10 @@ cat.addEventListener("change",renderFindings);renderFindings();
 
 const rows=coverage.results||[];
 document.getElementById("matrix").innerHTML=rows.length?'<table><thead><tr><th>Browser</th><th>Viewport</th><th>URL</th><th>Status</th><th>Load</th><th>Console</th><th>Network</th><th>Overflow</th><th>Evidence</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td>'+esc(r.browser)+'</td><td>'+esc(r.viewport)+'</td><td>'+esc(r.url)+'</td><td class="'+((r.status||0)>=400?"fail":"ok")+'">'+esc(r.status||"-")+'</td><td>'+esc(r.load_ms||0)+' ms</td><td>'+r.console_errors.length+'</td><td>'+r.request_failures.length+'</td><td>'+((r.horizontal_overflow)?"YES":"NO")+'</td><td>'+(r.screenshot?'<a href="../'+esc(String(r.screenshot).replace(/\\/g,"/"))+'" target="_blank">open</a>':"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No Chrome coverage metadata recorded.</div>';
+
+document.getElementById("targetOverview").innerHTML=targetOverview.screenshot_relative
+ ? '<div class="shot"><span class="tag">TARGET OVERVIEW</span><a href="'+esc(targetOverview.screenshot_relative)+'" target="_blank" rel="noopener"><img src="'+esc(targetOverview.screenshot_relative)+'" alt="Target website overview"></a><div class="caption"><a href="'+esc(targetOverview.target||"")+'" target="_blank" rel="noopener">Open target website</a><br>'+esc(targetOverview.title||"")+' · HTTP '+esc(targetOverview.status||"-")+'</div></div>'
+ : '<div class="empty">Target overview could not be captured: '+esc(targetOverview.error||"unknown error")+'</div>';
 
 document.getElementById("gallery").innerHTML=gallery.length?gallery.map(function(g){return '<article class="shot '+(g.kind==="failure"?"failure":"")+'"><span class="tag '+(g.kind==="failure"?"failure":"")+'">'+esc(g.kind.toUpperCase())+'</span><a href="'+esc(g.path)+'" target="_blank" rel="noopener"><img src="'+esc(g.path)+'" alt="'+esc(g.name)+'"></a><div class="caption">'+esc(g.name)+'<br>'+esc(Math.round((g.size||0)/1024))+' KB</div></article>'}).join(""):'<div class="empty">No screenshots were generated.</div>';
 
@@ -546,6 +568,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__COVERAGE__": coverage_json,
         "__GALLERY__": gallery_json,
         "__SECURITY__": security_json,
+        "__TARGET_OVERVIEW__": json.dumps(report.get("metadata", {}).get("target_overview") or {}, ensure_ascii=False).replace("</", "<\\/"),
         "__REMEDIATION__": json.dumps(report.get("remediation", {}), ensure_ascii=False).replace("</", "<\\/"),
         "__IMMEDIATE__": str(report.get("remediation", {}).get("priority_counts", {}).get("Immediate", 0)),
         "__HIGH__": str(report.get("remediation", {}).get("priority_counts", {}).get("High", 0)),
