@@ -5,6 +5,7 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main", "feat/security-phase-3"]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -23,9 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Compile
+      - name: Compile application and test modules
         run: |
-          python -m py_compile main.py security.py scanners/compatibility.py scanners/active_security.py scanners/browser_evidence.py scanners/deep_security.py scanners/api_surface.py scanners/input_stress.py scanners/route_discovery.py reports/report_generator.py utils/scope.py
+          python -m compileall -q main.py security.py scanners reports utils tests
 
       - name: Test
         run: python -m pytest tests/ -v
