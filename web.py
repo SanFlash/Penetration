@@ -138,7 +138,7 @@ def run():
     target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
     authorized = bool(body.get("authorized", False))
 
-        if not target.startswith(("http://", "https://")):
+    if not target.startswith(("http://", "https://")):
         _run_lock.release()
         return jsonify({
             "error": "invalid_target",
