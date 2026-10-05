@@ -220,16 +220,44 @@ _HTML = r"""<!doctype html>
 <script>
 const el=id=>document.getElementById(id);
 async function startRun(){
- const target=el("target").value.trim();
- const authorized=el("authorized").checked;
- if(!target)return alert("Enter the web URL first.");
- if(!/^https?:\\/\\//i.test(target))return alert("Enter a complete http:// or https:// URL.");
- if(!authorized)return alert("Please confirm that you own the target or have explicit permission to test it.");
- const btn=el("startBtn");btn.disabled=true;btn.textContent="STARTING...";
- const r=await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target,authorized})});
- const d=await r.json();
- if(!r.ok){btn.disabled=false;btn.textContent="START PENTEST";alert(d.message||d.error||"Unable to start");return;}
- el("stage").textContent="QUEUED";el("detail").textContent="Target accepted. Starting assessment...";
+ const btn=el("startBtn");
+ try{
+  const target=el("target").value.trim().replace(/\\/$/,"");
+  const authorized=el("authorized").checked;
+  if(!target){ el("detail").textContent="Enter the target URL first."; return; }
+  if(!(target.toLowerCase().startsWith("http://") || target.toLowerCase().startsWith("https://"))){
+   el("detail").textContent="Target must start with http:// or https://.";
+   return;
+  }
+  if(!authorized){
+   el("detail").textContent="Please confirm authorization before starting.";
+   return;
+  }
+  btn.disabled=true;
+  btn.textContent="STARTING...";
+  el("status").textContent="STARTING";
+  el("stage").textContent="CONNECTING";
+  el("detail").textContent="Sending assessment request to the server...";
+  const r=await fetch("/api/run?ts="+Date.now(),{
+   method:"POST",
+   headers:{"Content-Type":"application/json","Accept":"application/json"},
+   body:JSON.stringify({target:target,authorized:true})
+  });
+  const text=await r.text();
+  let d={};
+  try{d=JSON.parse(text);}catch(_){d={message:text||"Server returned an invalid response."};}
+  if(!r.ok){
+   throw new Error(d.message||d.error||("Server returned HTTP "+r.status));
+  }
+  el("stage").textContent="QUEUED";
+  el("detail").textContent="Target accepted. Assessment worker is starting...";
+ }catch(err){
+  btn.disabled=false;
+  btn.textContent="START PENTEST";
+  el("status").textContent="ERROR";
+  el("stage").textContent="START FAILED";
+  el("detail").textContent=err&&err.message?err.message:"Unable to start assessment.";
+ }
 }
 async function poll(){try{const r=await fetch("/api/status");const s=await r.json();el("status").textContent=s.running?"RUNNING":(s.status||"IDLE");el("stage").textContent=s.stage||"READY";el("detail").textContent=s.detail||"";el("pages").textContent=s.pages_tested||0;el("checks").textContent=s.checks||0;el("findings").textContent=s.findings||0;el("errors").textContent=s.errors||0;const p=s.progress||0;el("pct").textContent=p+"%";el("fill").style.width=p+"%";if(!s.running){const b=el("startBtn");b.disabled=false;b.textContent="START PENTEST";}el("logs").innerHTML=(s.logs||[]).slice(-160).map(x=>'<div class="'+(x.level||"")+'">['+(x.time||"")+'] '+String(x.message||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+'</div>').join("");el("logs").scrollTop=el("logs").scrollHeight;}catch(e){}setTimeout(poll,700)}poll();
 </script></body></html>"""
