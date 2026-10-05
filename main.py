@@ -402,7 +402,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "security_evidence": security_evidence,
             "runtime_seconds": elapsed,
         }
-        report = generate(target, all_findings, config.EVIDENCE_DIR, metadata=metadata)
+        report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
         print(f"Findings JSON: {report['json_path']}")
         print(f"Findings HTML: {report['html_path']}")
         print(f"Portable HTML: {report.get('portable_html_path', '-')}")
