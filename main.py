@@ -159,7 +159,7 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
             "dashboard_url": dashboard_url,
             "compatibility": result,
         }
-        report = generate(target, all_findings, config.EVIDENCE_DIR, metadata=metadata)
+        report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
         print(f"Findings JSON: {report['json_path']}")
         print(f"Findings HTML: {report['html_path']}")
         print(f"Portable HTML: {report.get('portable_html_path', '-')}")
@@ -207,13 +207,16 @@ def _is_exact_target_url(target: str, url: str) -> bool:
         return False
 
 
-def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, authorized: bool = False):
+def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, authorized: bool = False, state_override=None):
     parsed = urlparse(target)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         raise ValueError("Target must be an absolute http:// or https:// URL.")
     if not authorized and target.rstrip("/") != config.PENTEST_TARGET_ORIGIN.rstrip("/"):
         raise OutOfScopeError("Arbitrary pentest targets require --confirm-authorized.")
-    state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
+    if state_override is not None:
+        state, dashboard_url = state_override, None
+    else:
+        state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
     loader = ConsoleLoader()
     loader.start("Initializing authorized pentest engine")
     telemetry = _set_telemetry(state, loader)
@@ -586,7 +589,7 @@ def run_lab_full_profile(target: str):
     print(f"Own={secure['owned_status']} Other={secure['other_status']} Vulnerable={secure['vulnerable']}")
 
     banner("STEP 7 — Report generation")
-    result = generate(target, all_findings, config.EVIDENCE_DIR)
+    result = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR)
     elapsed = round(time.time() - start, 1)
     print(f"Findings JSON: {result['json_path']}")
     print(f"Findings HTML: {result['html_path']}")
