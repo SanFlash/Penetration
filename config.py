@@ -15,7 +15,17 @@ ALLOWED_HOSTS = [
 DEFAULT_TARGET = "http://127.0.0.1:5000"
 
 RATE_LIMIT_RPS = 2
-EVIDENCE_DIR = "evidence"
+# Persistent runtime storage. Render mounts the persistent disk at /var/data.
+# Locally this falls back to the repository's evidence/reports directories.
+import os
+
+_DATA_DIR = os.getenv("SENTINEL_DATA_DIR", "").strip()
+if _DATA_DIR:
+    EVIDENCE_DIR = os.path.join(_DATA_DIR, "evidence")
+    REPORT_DIR = os.path.join(_DATA_DIR, "reports")
+else:
+    EVIDENCE_DIR = "evidence"
+    REPORT_DIR = "reports"
 
 DEMO_USERNAME = "bob"
 DEMO_PASSWORD = "bob_pw"
