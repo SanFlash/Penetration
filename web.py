@@ -20,7 +20,7 @@ from ui.dashboard import DashboardState
 app = Flask(__name__)
 
 ACCESS_TOKEN = os.getenv("SENTINEL_ACCESS_TOKEN", "").strip()
-DEFAULT_TARGET = os.getenv("SENTINEL_DEFAULT_TARGET", "https://amwebtech.com").strip()
+DEFAULT_TARGET = os.getenv("SENTINEL_DEFAULT_TARGET", "").strip()
 
 _run_lock = threading.Lock()
 _run_thread = None
@@ -134,17 +134,29 @@ def run():
         return jsonify({"error": "assessment_already_running"}), 409
 
     body = request.get_json(silent=True) or {}
-    target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
+    target = str(body.get("target") or "").strip().rstrip("/")
     authorized = bool(body.get("authorized", False))
+
+    if not target:
+        _run_lock.release()
+        return jsonify({
+            "error": "target_required",
+            "message": "Enter the web URL you want to assess before starting the pentest.",
+        }), 400
+
+    if not target.startswith(("http://", "https://")):
+        _run_lock.release()
+        return jsonify({
+            "error": "invalid_target",
+            "message": "Target must be a complete http:// or https:// URL.",
+        }), 400
+
     if not authorized:
         _run_lock.release()
         return jsonify({
             "error": "authorization_confirmation_required",
-            "message": "Set authorized=true only when you own the target or have explicit permission to assess it.",
+            "message": "Confirm that you own the target or have explicit permission to assess it.",
         }), 400
-    if not target.startswith(("http://", "https://")):
-        _run_lock.release()
-        return jsonify({"error": "invalid_target"}), 400
 
     _state = DashboardState(target=target, profile="pentest")
     _state.update(
@@ -200,9 +212,11 @@ _HTML = r"""<!doctype html>
 <header class="top"><div class="brand">SENTINEL // HOSTED PENTEST CONSOLE</div><div id="status" class="badge">IDLE</div></header>
 <div class="grid">
 <section class="panel hero"><div class="ring"></div><div class="core"></div><div class="center"><div class="stage" id="stage">READY</div><div class="detail" id="detail">Start an authorized assessment.</div></div></section>
-<aside class="panel pad"><h3>Assessment</h3>
-<label>Target</label><input id="target" value="" placeholder="https://example.com">
-<button onclick="startRun()">START AUTHORIZED ASSESSMENT</button>
+<aside class="panel pad"><h3>Start Assessment</h3>
+<div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
+<label>Web URL</label><input id="target" value="" placeholder="https://example.com" autocomplete="url" inputmode="url">
+<label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
+<button id="startBtn" onclick="startRun()">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
 <div class="links"><a href="/reports/report.html">Interactive HTML report</a><a href="/reports/report_portable.html">Portable report</a><a href="/reports/findings.json">Findings JSON</a><a href="/reports/evidence_manifest.json">Evidence manifest</a><a href="/reports/report.pdf">PDF report</a><a href="/reports/penetration_report.xlsx">XLSX report</a></div>
@@ -211,8 +225,19 @@ _HTML = r"""<!doctype html>
 </main>
 <script>
 const el=id=>document.getElementById(id);
-async function startRun(){const target=el("target").value.trim();if(!target)return alert("Enter a target URL.");const r=await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target,authorized:true})});const d=await r.json();if(!r.ok)alert(d.message||d.error||"Unable to start");}
-async function poll(){try{const r=await fetch("/api/status");const s=await r.json();el("status").textContent=s.running?"RUNNING":(s.status||"IDLE");el("stage").textContent=s.stage||"READY";el("detail").textContent=s.detail||"";el("pages").textContent=s.pages_tested||0;el("checks").textContent=s.checks||0;el("findings").textContent=s.findings||0;el("errors").textContent=s.errors||0;const p=s.progress||0;el("pct").textContent=p+"%";el("fill").style.width=p+"%";el("logs").innerHTML=(s.logs||[]).slice(-160).map(x=>'<div class="'+(x.level||"")+'">['+(x.time||"")+'] '+String(x.message||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+'</div>').join("");el("logs").scrollTop=el("logs").scrollHeight;}catch(e){}setTimeout(poll,700)}poll();
+async function startRun(){
+ const target=el("target").value.trim();
+ const authorized=el("authorized").checked;
+ if(!target)return alert("Enter the web URL first.");
+ if(!/^https?:\\/\\//i.test(target))return alert("Enter a complete http:// or https:// URL.");
+ if(!authorized)return alert("Please confirm that you own the target or have explicit permission to test it.");
+ const btn=el("startBtn");btn.disabled=true;btn.textContent="STARTING...";
+ const r=await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target,authorized})});
+ const d=await r.json();
+ if(!r.ok){btn.disabled=false;btn.textContent="START PENTEST";alert(d.message||d.error||"Unable to start");return;}
+ el("stage").textContent="QUEUED";el("detail").textContent="Target accepted. Starting assessment...";
+}
+async function poll(){try{const r=await fetch("/api/status");const s=await r.json();el("status").textContent=s.running?"RUNNING":(s.status||"IDLE");el("stage").textContent=s.stage||"READY";el("detail").textContent=s.detail||"";el("pages").textContent=s.pages_tested||0;el("checks").textContent=s.checks||0;el("findings").textContent=s.findings||0;el("errors").textContent=s.errors||0;const p=s.progress||0;el("pct").textContent=p+"%";el("fill").style.width=p+"%";if(!s.running){const b=el("startBtn");b.disabled=false;b.textContent="START PENTEST";}el("logs").innerHTML=(s.logs||[]).slice(-160).map(x=>'<div class="'+(x.level||"")+'">['+(x.time||"")+'] '+String(x.message||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+'</div>').join("");el("logs").scrollTop=el("logs").scrollHeight;}catch(e){}setTimeout(poll,700)}poll();
 </script></body></html>"""
 
 if __name__ == "__main__":
