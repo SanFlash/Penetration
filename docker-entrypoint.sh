@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
+# Render mounts the persistent disk at runtime. Do not run Playwright's
+# browser installer here: the official Playwright base image already
+# contains the browser and its OS dependencies.
 mkdir -p /var/data/evidence /var/data/reports
-chown -R pwuser:pwuser /var/data
 
-exec su -s /bin/bash pwuser -c 'gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --threads 4 --timeout 180 web:app'
+exec gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --threads 4 --timeout 180 web:app
