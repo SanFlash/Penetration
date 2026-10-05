@@ -210,7 +210,7 @@ _HTML = r"""<!doctype html>
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
 <label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
-<button id="startBtn" onclick="startRun()">START PENTEST</button>
+<button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
 <div class="links"><a href="/reports/report.html">Interactive HTML report</a><a href="/reports/report_portable.html">Portable report</a><a href="/reports/findings.json">Findings JSON</a><a href="/reports/evidence_manifest.json">Evidence manifest</a><a href="/reports/report.pdf">PDF report</a><a href="/reports/penetration_report.xlsx">XLSX report</a></div>
@@ -218,48 +218,166 @@ _HTML = r"""<!doctype html>
 <section class="panel" style="margin-top:14px"><div class="pad"><h3>Live execution log</h3></div><div id="logs" class="logs"></div></section>
 </main>
 <script>
-const el=id=>document.getElementById(id);
-async function startRun(){
- const btn=el("startBtn");
- try{
-  const target=el("target").value.trim().replace(/\\/$/,"");
-  const authorized=el("authorized").checked;
-  if(!target){ el("detail").textContent="Enter the target URL first."; return; }
-  if(!(target.toLowerCase().startsWith("http://") || target.toLowerCase().startsWith("https://"))){
-   el("detail").textContent="Target must start with http:// or https://.";
-   return;
-  }
-  if(!authorized){
-   el("detail").textContent="Please confirm authorization before starting.";
-   return;
-  }
-  btn.disabled=true;
-  btn.textContent="STARTING...";
-  el("status").textContent="STARTING";
-  el("stage").textContent="CONNECTING";
-  el("detail").textContent="Sending assessment request to the server...";
-  const r=await fetch("/api/run?ts="+Date.now(),{
-   method:"POST",
-   headers:{"Content-Type":"application/json","Accept":"application/json"},
-   body:JSON.stringify({target:target,authorized:true})
-  });
-  const text=await r.text();
-  let d={};
-  try{d=JSON.parse(text);}catch(_){d={message:text||"Server returned an invalid response."};}
-  if(!r.ok){
-   throw new Error(d.message||d.error||("Server returned HTTP "+r.status));
-  }
-  el("stage").textContent="QUEUED";
-  el("detail").textContent="Target accepted. Assessment worker is starting...";
- }catch(err){
-  btn.disabled=false;
-  btn.textContent="START PENTEST";
-  el("status").textContent="ERROR";
-  el("stage").textContent="START FAILED";
-  el("detail").textContent=err&&err.message?err.message:"Unable to start assessment.";
- }
+const el = (id) => document.getElementById(id);
+let pollTimer = null;
+
+function showState(status, stage, detail) {
+  el("status").textContent = status || "IDLE";
+  el("stage").textContent = stage || "READY";
+  el("detail").textContent = detail || "";
 }
-async function poll(){try{const r=await fetch("/api/status");const s=await r.json();el("status").textContent=s.running?"RUNNING":(s.status||"IDLE");el("stage").textContent=s.stage||"READY";el("detail").textContent=s.detail||"";el("pages").textContent=s.pages_tested||0;el("checks").textContent=s.checks||0;el("findings").textContent=s.findings||0;el("errors").textContent=s.errors||0;const p=s.progress||0;el("pct").textContent=p+"%";el("fill").style.width=p+"%";if(!s.running){const b=el("startBtn");b.disabled=false;b.textContent="START PENTEST";}el("logs").innerHTML=(s.logs||[]).slice(-160).map(x=>'<div class="'+(x.level||"")+'">['+(x.time||"")+'] '+String(x.message||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+'</div>').join("");el("logs").scrollTop=el("logs").scrollHeight;}catch(e){}setTimeout(poll,700)}poll();
+
+function setButton(running, label) {
+  const btn = el("startBtn");
+  btn.disabled = !!running;
+  btn.textContent = label || (running ? "RUNNING..." : "START PENTEST");
+}
+
+async function startRun() {
+  const btn = el("startBtn");
+  const targetInput = el("target");
+  const authInput = el("authorized");
+
+  const target = (targetInput.value || "").trim().replace(/\/$/, "");
+  const authorized = !!authInput.checked;
+
+  if (!target) {
+    showState("READY", "TARGET REQUIRED", "Enter https://amwebtech.com before starting.");
+    targetInput.focus();
+    return;
+  }
+
+  const lower = target.toLowerCase();
+  if (!(lower.startsWith("http://") || lower.startsWith("https://"))) {
+    showState("READY", "INVALID TARGET", "Target must start with http:// or https://.");
+    targetInput.focus();
+    return;
+  }
+
+  if (!authorized) {
+    showState("READY", "AUTHORIZATION REQUIRED", "Confirm that you own the target or have explicit permission to test it.");
+    return;
+  }
+
+  setButton(true, "STARTING...");
+  showState("STARTING", "CONNECTING", "Submitting the assessment request...");
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch("/api/run?ts=" + Date.now(), {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Cache-Control": "no-cache"
+      },
+      body: JSON.stringify({ target: target, authorized: true }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    const bodyText = await response.text();
+    let data = {};
+    try {
+      data = bodyText ? JSON.parse(bodyText) : {};
+    } catch (_) {
+      data = { message: bodyText || "Server returned an invalid response." };
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || ("Server returned HTTP " + response.status));
+    }
+
+    showState("RUNNING", "QUEUED", "Assessment accepted. The pentest engine is starting.");
+    setButton(true, "PENTEST RUNNING");
+  } catch (error) {
+    const message = error && error.name === "AbortError"
+      ? "The server did not respond within 15 seconds."
+      : (error && error.message ? error.message : "Unable to start the assessment.");
+
+    showState("ERROR", "START FAILED", message);
+    setButton(false, "START PENTEST");
+  }
+}
+
+function renderStatus(s) {
+  const running = !!s.running;
+  el("status").textContent = running ? "RUNNING" : (s.status || "IDLE");
+  el("stage").textContent = s.stage || "READY";
+  el("detail").textContent = s.detail || "";
+  el("pages").textContent = s.pages_tested || 0;
+  el("checks").textContent = s.checks || 0;
+  el("findings").textContent = s.findings || 0;
+  el("errors").textContent = s.errors || 0;
+
+  const progress = Number(s.progress || 0);
+  el("pct").textContent = progress + "%";
+  el("fill").style.width = progress + "%";
+
+  if (running) {
+    setButton(true, "PENTEST RUNNING");
+  } else if (s.status === "FAILED") {
+    setButton(false, "START PENTEST");
+  } else {
+    setButton(false, "START PENTEST");
+  }
+
+  const logs = Array.isArray(s.logs) ? s.logs.slice(-160) : [];
+  el("logs").innerHTML = logs.map(function(item) {
+    const level = String(item.level || "");
+    const time = String(item.time || "");
+    const message = String(item.message || "").replace(/[&<>]/g, function(ch) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;"}[ch];
+    });
+    return '<div class="' + level + '">[' + time + '] ' + message + '</div>';
+  }).join("");
+
+  el("logs").scrollTop = el("logs").scrollHeight;
+}
+
+async function poll() {
+  try {
+    const response = await fetch("/api/status?ts=" + Date.now(), {
+      cache: "no-store",
+      headers: {"Cache-Control": "no-cache"}
+    });
+
+    if (!response.ok) {
+      throw new Error("Status endpoint returned HTTP " + response.status);
+    }
+
+    const data = await response.json();
+    renderStatus(data);
+  } catch (error) {
+    showState("ERROR", "STATUS CONNECTION FAILED",
+      error && error.message ? error.message : "Cannot reach the status endpoint.");
+  } finally {
+    pollTimer = setTimeout(poll, 1000);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  const button = el("startBtn");
+  if (button) {
+    button.addEventListener("click", startRun);
+  }
+
+  const targetInput = el("target");
+  if (targetInput) {
+    targetInput.addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        startRun();
+      }
+    });
+  }
+
+  poll();
+});
 </script></body></html>"""
 
 _HTML = _HTML.replace("__DEFAULT_TARGET__", html.escape(DEFAULT_TARGET, quote=True))
