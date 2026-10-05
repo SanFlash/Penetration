@@ -1,13 +1,13 @@
 services:
   - type: web
     name: sentinel-pentest
-    runtime: python
+    runtime: docker
     plan: starter
     region: singapore
     branch: main
     autoDeploy: true
-    buildCommand: pip install -r requirements.txt && python -m playwright install --with-deps chromium
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180 web:app
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /healthz
     disk:
       name: sentinel-evidence
