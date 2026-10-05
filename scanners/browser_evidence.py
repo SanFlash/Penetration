@@ -188,7 +188,11 @@ def _annotate_focus(page, focus: dict, finding_id: str) -> None:
 
 
 def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
-    """Capture ONLY the DOM element that contains the detected error."""
+    """Capture ONLY the DOM element that contains the detected error.
+
+    The DOM-element screenshot is the source of truth. Post-capture annotation is
+    best-effort and must never downgrade a successful focused capture.
+    """
     if not focus:
         return {
             "mode": "no-focused-region",
@@ -216,10 +220,15 @@ def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
             "error": str(exc),
         }
 
+    annotation_error = None
     try:
         image = Image.open(path).convert("RGB")
         pad_x, pad_y = 12, 28
-        canvas = Image.new("RGB", (image.width + pad_x * 2, image.height + pad_y * 2), "white")
+        canvas = Image.new(
+            "RGB",
+            (image.width + pad_x * 2, image.height + pad_y * 2),
+            "white",
+        )
         canvas.paste(image, (pad_x, pad_y))
         draw = ImageDraw.Draw(canvas)
         x1, y1 = pad_x, pad_y
@@ -230,39 +239,42 @@ def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
         arrow_x = max(pad_x + 8, min(x2 - 8, x1 + image.width // 2))
         arrow_y1 = 18
         arrow_y2 = pad_y + min(24, max(8, image.height // 4))
-        draw.line((arrow_x, arrow_y1, arrow_x, arrow_y2), fill=(255, 23, 68), width=4)
+        draw.line(
+            (arrow_x, arrow_y1, arrow_x, arrow_y2),
+            fill=(255, 23, 68),
+            width=4,
+        )
         draw.polygon(
-            [(arrow_x, arrow_y2 + 7), (arrow_x - 7, arrow_y2 - 4), (arrow_x + 7, arrow_y2 - 4)],
+            [
+                (arrow_x, arrow_y2 + 7),
+                (arrow_x - 7, arrow_y2 - 4),
+                (arrow_x + 7, arrow_y2 - 4),
+            ],
             fill=(255, 23, 68),
         )
         canvas.save(path)
-        return {
-            "mode": "exact-error-element",
-            "focus_found": True,
-            "focus_selector": {
-                "tag": focus.get("tag"),
-                "id": focus.get("id"),
-                "class": focus.get("className"),
-            },
-            "focus_text": focus.get("text"),
-            "focus_keywords": focus.get("hits") or [],
-            "error_signals": focus.get("errorWords") or 0,
-            "focus_reason": "Only the detected error DOM element was captured; no viewport or surrounding webpage was captured.",
-            "capture_scope": "single-dom-element",
-        }
     except Exception as exc:
-        return {
-            "mode": "focused-element-captured-without-annotation",
-            "focus_found": True,
-            "focus_selector": {
-                "tag": focus.get("tag"),
-                "id": focus.get("id"),
-                "class": focus.get("className"),
-            },
-            "focus_text": focus.get("text"),
-            "focus_reason": "Exact error element screenshot was captured; annotation could not be applied.",
-            "error": f"{type(exc).__name__}: {exc}",
-        }
+        # The focused screenshot already exists. Do not convert a successful
+        # element capture into a failure merely because PIL annotation failed.
+        annotation_error = f"{type(exc).__name__}: {exc}"
+
+    result = {
+        "mode": "exact-error-element",
+        "focus_found": True,
+        "focus_selector": {
+            "tag": focus.get("tag"),
+            "id": focus.get("id"),
+            "class": focus.get("className"),
+        },
+        "focus_text": focus.get("text"),
+        "focus_keywords": focus.get("hits") or [],
+        "error_signals": focus.get("errorWords") or 0,
+        "focus_reason": "Only the detected error DOM element was captured; no viewport or surrounding webpage was captured.",
+        "capture_scope": "single-dom-element",
+    }
+    if annotation_error:
+        result["annotation_warning"] = annotation_error
+    return result
 
 
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
