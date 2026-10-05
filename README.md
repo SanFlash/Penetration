@@ -1190,3 +1190,45 @@ Current defaults:
 - 12 controlled payload classes
 
 For genuinely destructive/state-changing validation, use a disposable test environment and the existing explicitly gated intrusive workflow rather than removing the safety controls from arbitrary-target pentesting.
+
+
+## Render deployment (hosted console + persistent evidence)
+
+The repository now includes `web.py` and `render.yaml` for a hosted Render deployment. The hosted service exposes a browser console, starts the authorized pentest in a background worker, streams execution telemetry, and serves the generated HTML/JSON/PDF/XLSX reports plus evidence files.
+
+### Recommended Render setup
+
+Use the included `render.yaml` as a Blueprint. It configures:
+
+- Python web service with Gunicorn
+- Chromium installation for Playwright
+- `/healthz` health check
+- `/var/data` persistent disk
+- `SENTINEL_DATA_DIR=/var/data`
+- one service instance (important because the evidence disk is single-instance)
+- a secret `SENTINEL_ACCESS_TOKEN`
+
+Render's normal service filesystem is ephemeral. The persistent disk is therefore required if evidence must survive restarts and deploys. Only files written below the mounted `/var/data` path are persistent.
+
+### Required secret
+
+In Render, set `SENTINEL_ACCESS_TOKEN` to a strong random value. Keep it out of Git. The health endpoint remains public, while the console, run API, reports and evidence require the token.
+
+### Hosted endpoints
+
+After deployment:
+
+- `/` — hosted Sentinel console
+- `/healthz` — health check
+- `/api/run` — start an authorized assessment
+- `/api/status` — live execution state
+- `/reports/*` — generated reports
+- `/evidence/*` — stored evidence
+
+### Important storage rule
+
+Do not run this service on Render Free if persistent evidence is a requirement. Free web services do not support persistent disks. A paid web service with the attached disk is the intended deployment for this evidence-first architecture.
+
+### Local behavior is unchanged
+
+Without `SENTINEL_DATA_DIR`, the project continues to use the local `evidence/` and `reports/` directories. On Render, `SENTINEL_DATA_DIR=/var/data` moves both under the persistent disk.
