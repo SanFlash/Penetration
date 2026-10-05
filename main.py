@@ -16,7 +16,7 @@ from scanners import headers as header_scanner
 from scanners import xss_probe, sqli_probe, idor_probe
 from scanners.compatibility import run_compatibility
 from scanners.active_security import run_active_security
-from scanners.browser_evidence import capture_security_evidence
+from scanners.browser_evidence import capture_security_evidence, capture_target_overview
 from scanners.deep_security import run_deep_security
 from scanners.api_surface import run_api_surface
 from scanners.input_stress import run_input_stress
@@ -239,7 +239,13 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         print(f"\nDiscovered {len(urls)} pages and {len(forms)} forms.")
 
-        banner("STEP 2 — Chrome-only UI / responsive evidence")
+        banner("STEP 2 — Target website visual overview")
+        loader.set("Capturing target website overview")
+        state.update(stage="TARGET OVERVIEW", detail="Opening the authorized target in Chromium and capturing the report overview.")
+        target_overview = capture_target_overview(target, headed=headed, slow_mo=slow_mo)
+        print(f"Target overview: {target_overview.get('screenshot') or 'not captured'}")
+
+        banner("STEP 3 — Chrome-only UI / responsive evidence")
         print(f"[VISUAL] {'HEADED Chrome/Chromium window enabled' if headed else 'headless Chrome/Chromium'}")
         if slow_mo:
             print(f"[VISUAL] Playwright slow-motion: {slow_mo} ms")
@@ -392,6 +398,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 "pages_discovered": len(urls),
                 "forms_discovered": len(forms),
             },
+            "target_overview": target_overview,
             "ui_responsive": ui_result,
             "active_security": active_result,
             "deep_security": deep_result,
