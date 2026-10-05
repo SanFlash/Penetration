@@ -183,32 +183,48 @@ def _annotate_focus(page, focus: dict, finding_id: str) -> None:
 
 
 def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
-    """Capture only the error window/region; never a full-page security screenshot."""
-    viewport=page.viewport_size or {"width":1440,"height":900}
+    """Capture only the detected error region; never fall back to a viewport screenshot."""
     if not focus:
-        page.screenshot(path=path, full_page=False)
         return {
-            "mode":"viewport-fallback","focus_found":False,
-            "focus_selector":None,"focus_text":None,
-            "focus_reason":"No reliable error UI was identified; captured only the current browser window.",
+            "mode": "no-focused-region",
+            "focus_found": False,
+            "focus_selector": None,
+            "focus_text": None,
+            "focus_reason": (
+                "No reliable error UI was identified; screenshot intentionally skipped "
+                "to prevent full-page or viewport evidence."
+            ),
         }
-    margin_x,margin_y=42,70
-    max_width,max_height=min(1100,viewport["width"]),min(720,viewport["height"])
-    cx=focus["x"]+focus["width"]/2; cy=focus["y"]+focus["height"]/2
-    width=min(max_width,max(360,focus["width"]+margin_x*2))
-    height=min(max_height,max(220,focus["height"]+margin_y*2))
-    x=max(0,min(viewport["width"]-width,cx-width/2))
-    y=max(0,min(viewport["height"]-height,cy-height/2))
-    clip={"x":x,"y":y,"width":width,"height":height}
-    page.screenshot(path=path,full_page=False,clip=clip)
+
+    viewport = page.viewport_size or {"width": 1440, "height": 900}
+    # Keep the evidence deliberately tight: only the error element plus a small context margin.
+    margin_x, margin_y = 18, 24
+    max_width, max_height = min(760, viewport["width"]), min(520, viewport["height"])
+    cx = focus["x"] + focus["width"] / 2
+    cy = focus["y"] + focus["height"] / 2
+    width = min(max_width, max(220, focus["width"] + margin_x * 2))
+    height = min(max_height, max(120, focus["height"] + margin_y * 2))
+    x = max(0, min(viewport["width"] - width, cx - width / 2))
+    y = max(0, min(viewport["height"] - height, cy - height / 2))
+    clip = {"x": x, "y": y, "width": width, "height": height}
+    page.screenshot(path=path, full_page=False, clip=clip)
     return {
-        "mode":"focused-error-window","focus_found":True,
-        "focus_selector":{"tag":focus.get("tag"),"id":focus.get("id"),"class":focus.get("className")},
-        "focus_text":focus.get("text"),"focus_keywords":focus.get("hits") or [],
-        "error_signals":focus.get("errorWords") or 0,
-        "focus_reason":"Bounded screenshot around the detected error UI with red box, FAILED label and arrow.",
-        "clip":clip,
+        "mode": "focused-error-region",
+        "focus_found": True,
+        "focus_selector": {
+            "tag": focus.get("tag"),
+            "id": focus.get("id"),
+            "class": focus.get("className"),
+        },
+        "focus_text": focus.get("text"),
+        "focus_keywords": focus.get("hits") or [],
+        "error_signals": focus.get("errorWords") or 0,
+        "focus_reason": (
+            "Tight crop around the detected error UI with red box, FAILED label and arrow."
+        ),
+        "clip": clip,
     }
+
 
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
                               slow_mo: int = 0, max_items: int = 30) -> list[dict]:
@@ -283,7 +299,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 "finding_id": finding_id,
                 "url": url,
                 "status": status,
-                "screenshot": screenshot,
+                "screenshot": screenshot if focus else None,
                 "capture": capture,
                 "console_errors": console_errors[:20],
                 "error": error,
