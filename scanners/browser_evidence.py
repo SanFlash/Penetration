@@ -5,6 +5,7 @@ import re
 from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
+from PIL import Image, ImageDraw
 
 from config import EVIDENCE_DIR
 from utils.scope import assert_in_scope, assert_same_target
@@ -125,11 +126,15 @@ def _find_focus(page, finding: dict) -> dict | None:
                 textOf(el).slice(0,700) === best.text
             );
             if (target) {
+                document.querySelectorAll('[data-sentinel-focus="1"]').forEach(el =>
+                    el.removeAttribute('data-sentinel-focus')
+                );
+                target.setAttribute('data-sentinel-focus', '1');
                 target.scrollIntoView({block:'center', inline:'center', behavior:'instant'});
                 const r = target.getBoundingClientRect();
                 best.x=r.x; best.y=r.y; best.width=r.width; best.height=r.height;
             }
-            return best;
+            return target ? best : null;
         }""",
         keywords,
     )
@@ -183,47 +188,81 @@ def _annotate_focus(page, focus: dict, finding_id: str) -> None:
 
 
 def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
-    """Capture only the detected error region; never fall back to a viewport screenshot."""
+    """Capture ONLY the DOM element that contains the detected error."""
     if not focus:
         return {
             "mode": "no-focused-region",
             "focus_found": False,
             "focus_selector": None,
             "focus_text": None,
-            "focus_reason": (
-                "No reliable error UI was identified; screenshot intentionally skipped "
-                "to prevent full-page or viewport evidence."
-            ),
+            "focus_reason": "No reliable error element was identified; screenshot intentionally skipped.",
         }
 
-    viewport = page.viewport_size or {"width": 1440, "height": 900}
-    # Keep the evidence deliberately tight: only the error element plus a small context margin.
-    margin_x, margin_y = 18, 24
-    max_width, max_height = min(760, viewport["width"]), min(520, viewport["height"])
-    cx = focus["x"] + focus["width"] / 2
-    cy = focus["y"] + focus["height"] / 2
-    width = min(max_width, max(220, focus["width"] + margin_x * 2))
-    height = min(max_height, max(120, focus["height"] + margin_y * 2))
-    x = max(0, min(viewport["width"] - width, cx - width / 2))
-    y = max(0, min(viewport["height"] - height, cy - height / 2))
-    clip = {"x": x, "y": y, "width": width, "height": height}
-    page.screenshot(path=path, full_page=False, clip=clip)
-    return {
-        "mode": "focused-error-region",
-        "focus_found": True,
-        "focus_selector": {
-            "tag": focus.get("tag"),
-            "id": focus.get("id"),
-            "class": focus.get("className"),
-        },
-        "focus_text": focus.get("text"),
-        "focus_keywords": focus.get("hits") or [],
-        "error_signals": focus.get("errorWords") or 0,
-        "focus_reason": (
-            "Tight crop around the detected error UI with red box, FAILED label and arrow."
-        ),
-        "clip": clip,
-    }
+    locator = page.locator('[data-sentinel-focus="1"]').first
+    try:
+        locator.wait_for(state="visible", timeout=3000)
+        locator.screenshot(path=path, animations="disabled")
+    except Exception as exc:
+        return {
+            "mode": "focused-element-capture-failed",
+            "focus_found": True,
+            "focus_selector": {
+                "tag": focus.get("tag"),
+                "id": focus.get("id"),
+                "class": focus.get("className"),
+            },
+            "focus_text": focus.get("text"),
+            "focus_reason": f"Exact error element could not be captured: {type(exc).__name__}: {exc}",
+            "error": str(exc),
+        }
+
+    try:
+        image = Image.open(path).convert("RGB")
+        pad_x, pad_y = 12, 28
+        canvas = Image.new("RGB", (image.width + pad_x * 2, image.height + pad_y * 2), "white")
+        canvas.paste(image, (pad_x, pad_y))
+        draw = ImageDraw.Draw(canvas)
+        x1, y1 = pad_x, pad_y
+        x2, y2 = pad_x + image.width - 1, pad_y + image.height - 1
+        draw.rectangle((x1, y1, x2, y2), outline=(255, 23, 68), width=4)
+        label = f"FAILED: {focus.get('finding_id') or 'SECURITY FINDING'}"
+        draw.text((pad_x, 5), label, fill=(255, 23, 68))
+        arrow_x = max(pad_x + 8, min(x2 - 8, x1 + image.width // 2))
+        arrow_y1 = 18
+        arrow_y2 = pad_y + min(24, max(8, image.height // 4))
+        draw.line((arrow_x, arrow_y1, arrow_x, arrow_y2), fill=(255, 23, 68), width=4)
+        draw.polygon(
+            [(arrow_x, arrow_y2 + 7), (arrow_x - 7, arrow_y2 - 4), (arrow_x + 7, arrow_y2 - 4)],
+            fill=(255, 23, 68),
+        )
+        canvas.save(path)
+        return {
+            "mode": "exact-error-element",
+            "focus_found": True,
+            "focus_selector": {
+                "tag": focus.get("tag"),
+                "id": focus.get("id"),
+                "class": focus.get("className"),
+            },
+            "focus_text": focus.get("text"),
+            "focus_keywords": focus.get("hits") or [],
+            "error_signals": focus.get("errorWords") or 0,
+            "focus_reason": "Only the detected error DOM element was captured; no viewport or surrounding webpage was captured.",
+            "capture_scope": "single-dom-element",
+        }
+    except Exception as exc:
+        return {
+            "mode": "focused-element-captured-without-annotation",
+            "focus_found": True,
+            "focus_selector": {
+                "tag": focus.get("tag"),
+                "id": focus.get("id"),
+                "class": focus.get("className"),
+            },
+            "focus_text": focus.get("text"),
+            "focus_reason": "Exact error element screenshot was captured; annotation could not be applied.",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
@@ -270,11 +309,8 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 status = response.status if response else None
                 focus = _find_focus(page, finding)
-                _marker(page, f"{finding_id} • HTTP {status}")
                 if focus:
-                    # The marker is intentionally added before annotation so the
-                    # report still shows Sentinel context while focusing the error.
-                    _annotate_focus(page, focus, finding_id)
+                    focus["finding_id"] = finding_id
                 screenshot = os.path.join(
                     EVIDENCE_DIR,
                     f"security_{index:03d}_{_safe_filename(url)}_focused.png",
@@ -282,16 +318,12 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 capture = _focused_screenshot(page, screenshot, focus)
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
-                try:
-                    _marker(page, f"{finding_id} • navigation failure")
-                    screenshot = os.path.join(
-                        EVIDENCE_DIR,
-                        f"security_failure_{index:03d}_{_safe_filename(url)}_focused.png",
-                    )
-                    capture = _focused_screenshot(page, screenshot, None)
-                except Exception as screenshot_exc:
-                    error += f"; screenshot={type(screenshot_exc).__name__}: {screenshot_exc}"
-                    screenshot = None
+                screenshot = None
+                capture = {
+                    "mode": "navigation-failure-no-screenshot",
+                    "focus_found": False,
+                    "focus_reason": "Navigation failed before an error DOM element could be captured.",
+                }
             finally:
                 page.close()
 
