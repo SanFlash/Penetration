@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: sentinel-pentest
+    runtime: python
+    plan: starter
+    region: singapore
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt && python -m playwright install --with-deps chromium
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180 web:app
+    healthCheckPath: /healthz
+    disk:
+      name: sentinel-evidence
+      mountPath: /var/data
+      sizeGB: 10
+    envVars:
+      - key: SENTINEL_DATA_DIR
+        value: /var/data
+      - key: SENTINEL_DEFAULT_TARGET
+        value: https://amwebtech.com
+      - key: SENTINEL_ACCESS_TOKEN
+        sync: false
