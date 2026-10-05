@@ -9,6 +9,7 @@ COPY . .
 
 ENV PYTHONUNBUFFERED=1
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PORT=10000
 
 COPY docker-entrypoint.sh /usr/local/bin/sentinel-entrypoint
 RUN chmod +x /usr/local/bin/sentinel-entrypoint
