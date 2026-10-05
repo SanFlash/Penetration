@@ -62,170 +62,153 @@ def _keywords(finding: dict) -> list[str]:
 
 
 def _find_focus(page, finding: dict) -> dict | None:
-    """Find the smallest visible DOM region that contains finding-specific text."""
+    """Locate the actual visible error UI, prioritizing semantic error containers."""
     keywords = _keywords(finding)
     if not keywords:
         return None
-
     result = page.evaluate(
         """(keywords) => {
             const visible = (el) => {
                 const s = getComputedStyle(el);
                 const r = el.getBoundingClientRect();
                 return s.display !== 'none' && s.visibility !== 'hidden' &&
-                       parseFloat(s.opacity || '1') > 0 && r.width >= 4 && r.height >= 4 &&
-                       r.bottom >= 0 && r.right >= 0 &&
-                       r.top <= innerHeight && r.left <= innerWidth;
+                       parseFloat(s.opacity || '1') > 0 && r.width >= 8 && r.height >= 8 &&
+                       r.bottom >= 0 && r.right >= 0 && r.top <= innerHeight && r.left <= innerWidth;
             };
             const textOf = (el) => (el.innerText || el.textContent || '').trim();
+            const errorSelector =
+                '[role="alert"],[role="status"],[aria-live="assertive"],[aria-live="polite"],' +
+                '.error,.errors,.error-message,.alert,.alert-danger,.alert-error,.danger,' +
+                '.invalid,.validation-error,.field-error,.form-error,.toast,.notification,' +
+                '.snackbar,.modal,.dialog,[data-error],[data-testid*="error" i],' +
+                '[class*="error" i],[id*="error" i],[class*="exception" i],[id*="exception" i]';
             const candidates = [];
+            const add = (el, reason, bonus) => {
+                if (!visible(el)) return;
+                const text = textOf(el);
+                if (!text || text.length > 2400) return;
+                const lower = text.toLowerCase();
+                const hits = keywords.filter(k => lower.includes(k));
+                const errorWords = (lower.match(/\b(error|failed|failure|invalid|denied|forbidden|unauthorized|exception|traceback|not found|bad request|server error|access denied)\b/g) || []).length;
+                if (!hits.length && !errorWords && bonus < 4) return;
+                const r = el.getBoundingClientRect();
+                const area = r.width * r.height;
+                const viewportArea = innerWidth * innerHeight;
+                const giantPenalty = area > viewportArea * 0.72 ? 0.12 : 1;
+                const score = bonus * 1000 + Math.min(1, hits.length / Math.max(keywords.length,1)) * 500 +
+                    errorWords * 80 + hits.length * 60 - Math.log10(Math.max(area,1)) * 18;
+                candidates.push({
+                    tag: el.tagName.toLowerCase(), id: el.id || '',
+                    className: typeof el.className === 'string' ? el.className.slice(0,220) : '',
+                    text: text.slice(0,700), hits, errorWords, reason,
+                    x:r.x,y:r.y,width:r.width,height:r.height,score:score*giantPenalty
+                });
+            };
+            for (const el of document.querySelectorAll(errorSelector)) add(el, 'semantic-error-container', 4);
             for (const el of document.querySelectorAll('body *')) {
                 if (!visible(el)) continue;
                 const text = textOf(el);
-                if (!text || text.length > 1800) continue;
+                if (!text || text.length > 2400) continue;
                 const lower = text.toLowerCase();
                 const hits = keywords.filter(k => lower.includes(k));
-                if (!hits.length) continue;
-                const r = el.getBoundingClientRect();
-                const area = r.width * r.height;
-                // Prefer specific elements over giant wrappers while still allowing
-                // a useful message/card/container to win.
-                const tagBonus = /^(pre|code|textarea|input|button|label|alert)$/i.test(el.tagName) ? 0.35 : 1;
-                const score = (hits.length * 100000) / Math.max(area * tagBonus, 1);
-                candidates.push({
-                    tag: el.tagName.toLowerCase(),
-                    id: el.id || '',
-                    className: typeof el.className === 'string' ? el.className.slice(0, 180) : '',
-                    text: text.slice(0, 500),
-                    hits,
-                    x: Math.max(0, r.x),
-                    y: Math.max(0, r.y),
-                    width: Math.min(innerWidth - Math.max(0, r.x), r.width),
-                    height: Math.min(innerHeight - Math.max(0, r.y), r.height),
-                    score
-                });
+                const errorWords = (lower.match(/\b(error|failed|failure|invalid|denied|forbidden|unauthorized|exception|traceback|not found|bad request|server error|access denied)\b/g) || []).length;
+                if (!hits.length && !errorWords) continue;
+                add(el, 'text/error-signal', errorWords ? 2 : 1);
             }
-            candidates.sort((a,b) => b.score - a.score);
-            return candidates[0] || null;
+            candidates.sort((a,b) => b.score-a.score);
+            const best = candidates.find(x => !['html','body','main'].includes(x.tag) && x.width >= 20 && x.height >= 12) || candidates[0];
+            if (!best) return null;
+            const target = Array.from(document.querySelectorAll('body *')).find(el =>
+                el.tagName.toLowerCase() === best.tag &&
+                (best.id ? el.id === best.id : true) &&
+                (best.id || (typeof el.className === 'string' && el.className.slice(0,220) === best.className)) &&
+                textOf(el).slice(0,700) === best.text
+            );
+            if (target) {
+                target.scrollIntoView({block:'center', inline:'center', behavior:'instant'});
+                const r = target.getBoundingClientRect();
+                best.x=r.x; best.y=r.y; best.width=r.width; best.height=r.height;
+            }
+            return best;
         }""",
         keywords,
     )
-    if not result or result.get("width", 0) < 4 or result.get("height", 0) < 4:
+    if not result or result.get("width",0) < 8 or result.get("height",0) < 8:
         return None
     return result
 
 
 def _annotate_focus(page, focus: dict, finding_id: str) -> None:
-    """Draw a red focus box and arrow without changing application state."""
+    """Draw a red box, FAILED label and arrow around the detected failure."""
     page.evaluate(
         """({focus, findingId}) => {
             const old = document.getElementById('__sentinel_focus_annotation');
             if (old) old.remove();
-
-            const x = Math.max(4, focus.x);
-            const y = Math.max(4, focus.y);
-            const w = Math.max(4, Math.min(focus.width, innerWidth - x - 4));
-            const h = Math.max(4, Math.min(focus.height, innerHeight - y - 4));
-            const svgNS = 'http://www.w3.org/2000/svg';
-            const svg = document.createElementNS(svgNS, 'svg');
-            svg.id = '__sentinel_focus_annotation';
-            Object.assign(svg.style, {
-                position:'fixed', left:'0', top:'0', width:'100vw', height:'100vh',
-                zIndex:'2147483646', pointerEvents:'none'
-            });
-            svg.setAttribute('viewBox', '0 0 ' + innerWidth + ' ' + innerHeight);
-
-            const defs = document.createElementNS(svgNS, 'defs');
-            const marker = document.createElementNS(svgNS, 'marker');
-            marker.setAttribute('id', 'sentinel-arrow');
-            marker.setAttribute('markerWidth', '10');
-            marker.setAttribute('markerHeight', '10');
-            marker.setAttribute('refX', '8');
-            marker.setAttribute('refY', '3');
-            marker.setAttribute('orient', 'auto');
-            const path = document.createElementNS(svgNS, 'path');
-            path.setAttribute('d', 'M0,0 L0,6 L9,3 z');
-            path.setAttribute('fill', '#ff1744');
-            marker.appendChild(path);
-            defs.appendChild(marker);
-            svg.appendChild(defs);
-
-            const rect = document.createElementNS(svgNS, 'rect');
-            rect.setAttribute('x', x); rect.setAttribute('y', y);
-            rect.setAttribute('width', w); rect.setAttribute('height', h);
-            rect.setAttribute('fill', 'none');
-            rect.setAttribute('stroke', '#ff1744');
-            rect.setAttribute('stroke-width', '4');
-            rect.setAttribute('rx', '8');
-            svg.appendChild(rect);
-
-            const label = document.createElementNS(svgNS, 'text');
-            label.setAttribute('x', x);
-            label.setAttribute('y', Math.max(22, y - 9));
-            label.setAttribute('fill', '#ff1744');
-            label.setAttribute('font-size', '16');
-            label.setAttribute('font-family', 'monospace');
-            label.setAttribute('font-weight', '900');
-            label.textContent = 'FAILED: ' + findingId;
-            svg.appendChild(label);
-
-            const sx = Math.max(18, Math.min(innerWidth - 18, x + w / 2));
-            const sy = Math.max(28, y - 72);
-            const ex = x + Math.min(w / 2, Math.max(12, w * 0.65));
-            const ey = y + Math.min(h / 2, Math.max(12, h * 0.35));
-            const line = document.createElementNS(svgNS, 'line');
-            line.setAttribute('x1', sx); line.setAttribute('y1', sy);
-            line.setAttribute('x2', ex); line.setAttribute('y2', ey);
-            line.setAttribute('stroke', '#ff1744');
-            line.setAttribute('stroke-width', '5');
-            line.setAttribute('marker-end', 'url(#sentinel-arrow)');
-            svg.appendChild(line);
-
+            const x=Math.max(4,focus.x), y=Math.max(4,focus.y);
+            const w=Math.max(8,Math.min(focus.width,innerWidth-x-4));
+            const h=Math.max(8,Math.min(focus.height,innerHeight-y-4));
+            const ns='http://www.w3.org/2000/svg';
+            const svg=document.createElementNS(ns,'svg');
+            svg.id='__sentinel_focus_annotation';
+            Object.assign(svg.style,{position:'fixed',left:'0',top:'0',width:'100vw',height:'100vh',zIndex:'2147483646',pointerEvents:'none'});
+            svg.setAttribute('viewBox','0 0 '+innerWidth+' '+innerHeight);
+            const defs=document.createElementNS(ns,'defs');
+            const marker=document.createElementNS(ns,'marker');
+            marker.setAttribute('id','sentinel-arrow'); marker.setAttribute('markerWidth','12');
+            marker.setAttribute('markerHeight','12'); marker.setAttribute('refX','10');
+            marker.setAttribute('refY','4'); marker.setAttribute('orient','auto');
+            const arrow=document.createElementNS(ns,'path');
+            arrow.setAttribute('d','M0,0 L0,8 L11,4 z'); arrow.setAttribute('fill','#ff1744');
+            marker.appendChild(arrow); defs.appendChild(marker); svg.appendChild(defs);
+            const rect=document.createElementNS(ns,'rect');
+            rect.setAttribute('x',x); rect.setAttribute('y',y); rect.setAttribute('width',w); rect.setAttribute('height',h);
+            rect.setAttribute('fill','rgba(255,23,68,.06)'); rect.setAttribute('stroke','#ff1744');
+            rect.setAttribute('stroke-width','4'); rect.setAttribute('rx','8'); svg.appendChild(rect);
+            const label=document.createElementNS(ns,'text');
+            label.setAttribute('x',Math.max(8,Math.min(x,innerWidth-210))); label.setAttribute('y',Math.max(24,y-12));
+            label.setAttribute('fill','#ff1744'); label.setAttribute('font-size','16');
+            label.setAttribute('font-family','monospace'); label.setAttribute('font-weight','900');
+            label.textContent='FAILED: '+findingId; svg.appendChild(label);
+            const sx=Math.max(14,Math.min(innerWidth-14,x+w/2));
+            const sy=y>95 ? y-65 : Math.min(innerHeight-14,y+h+65);
+            const ex=x+w/2, ey=y>95 ? y+4 : y+h-4;
+            const line=document.createElementNS(ns,'line');
+            line.setAttribute('x1',sx); line.setAttribute('y1',sy); line.setAttribute('x2',ex); line.setAttribute('y2',ey);
+            line.setAttribute('stroke','#ff1744'); line.setAttribute('stroke-width','5');
+            line.setAttribute('marker-end','url(#sentinel-arrow)'); svg.appendChild(line);
             document.documentElement.appendChild(svg);
         }""",
-        {"focus": focus, "findingId": finding_id},
+        {"focus":focus,"findingId":finding_id},
     )
 
 
 def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
-    """Capture a viewport-region screenshot; never use full_page for security findings."""
+    """Capture only the error window/region; never a full-page security screenshot."""
+    viewport=page.viewport_size or {"width":1440,"height":900}
     if not focus:
         page.screenshot(path=path, full_page=False)
         return {
-            "mode": "viewport",
-            "focus_found": False,
-            "focus_selector": None,
-            "focus_text": None,
-            "focus_reason": "No reliable error region was identified; captured the visible viewport only.",
+            "mode":"viewport-fallback","focus_found":False,
+            "focus_selector":None,"focus_text":None,
+            "focus_reason":"No reliable error UI was identified; captured only the current browser window.",
         }
-
-    # Keep a modest context margin around the failed UI element.
-    margin = 28
-    x = max(0, focus["x"] - margin)
-    y = max(0, focus["y"] - margin)
-    right = min(page.viewport_size["width"], focus["x"] + focus["width"] + margin)
-    bottom = min(page.viewport_size["height"], focus["y"] + focus["height"] + margin)
-    clip = {
-        "x": x,
-        "y": y,
-        "width": max(20, right - x),
-        "height": max(20, bottom - y),
-    }
-    page.screenshot(path=path, full_page=False, clip=clip)
+    margin_x,margin_y=42,70
+    max_width,max_height=min(1100,viewport["width"]),min(720,viewport["height"])
+    cx=focus["x"]+focus["width"]/2; cy=focus["y"]+focus["height"]/2
+    width=min(max_width,max(360,focus["width"]+margin_x*2))
+    height=min(max_height,max(220,focus["height"]+margin_y*2))
+    x=max(0,min(viewport["width"]-width,cx-width/2))
+    y=max(0,min(viewport["height"]-height,cy-height/2))
+    clip={"x":x,"y":y,"width":width,"height":height}
+    page.screenshot(path=path,full_page=False,clip=clip)
     return {
-        "mode": "focused-region",
-        "focus_found": True,
-        "focus_selector": {
-            "tag": focus.get("tag"),
-            "id": focus.get("id"),
-            "class": focus.get("className"),
-        },
-        "focus_text": focus.get("text"),
-        "focus_keywords": focus.get("hits") or [],
-        "focus_reason": "Screenshot clipped to the visible DOM region matching finding-specific error text, with a red box and arrow.",
-        "clip": clip,
+        "mode":"focused-error-window","focus_found":True,
+        "focus_selector":{"tag":focus.get("tag"),"id":focus.get("id"),"class":focus.get("className")},
+        "focus_text":focus.get("text"),"focus_keywords":focus.get("hits") or [],
+        "error_signals":focus.get("errorWords") or 0,
+        "focus_reason":"Bounded screenshot around the detected error UI with red box, FAILED label and arrow.",
+        "clip":clip,
     }
-
 
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
                               slow_mo: int = 0, max_items: int = 30) -> list[dict]:
