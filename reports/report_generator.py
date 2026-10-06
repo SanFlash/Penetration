@@ -479,6 +479,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="panel"><div class="section-title">Category distribution</div>__CATEGORIES_HTML__</div>
 </div>
 <div class="panel"><div class="section-title">Target website overview</div><p class="sub">Chromium opened the authorized target before assessment. This is a viewport overview only; failure evidence remains focused on the responsible DOM element.</p><div id="targetOverview"></div></div>
+<div class="panel"><div class="section-title">Assessment health</div><div id="assessmentHealth"></div></div>
 <div class="panel"><div class="section-title">Evidence health</div><div class="summary-strip">
 <div class="summary-item"><b>__SCREENSHOTS__</b><span>Evidence screenshots</span></div>
 <div class="summary-item"><b>__FAILSCREENS__</b><span>Failure screenshots</span></div>
@@ -530,6 +531,11 @@ const securityEvidence=__SECURITY__;
 const targetOverview=__TARGET_OVERVIEW__;
 const remediation=__REMEDIATION__;
 const colors=__COLORS__;
+const phaseStatus=(meta&&meta.phase_status)||{};
+const phaseEntries=Object.keys(phaseStatus);
+document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
+ ? '<div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=p.status==="failed";return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds||"-")+' s</td><td>'+esc(p.error||"Completed")+'</td></tr>'}).join("")+'</tbody></table></div>'
+ : '<div class="empty">Assessment phase status will appear as the report is updated.</div>';
 const esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
 const tabs=document.querySelectorAll(".nav button");
 tabs.forEach(function(b){b.addEventListener("click",function(){tabs.forEach(function(x){x.classList.remove("active")});b.classList.add("active");document.querySelectorAll(".tab").forEach(function(x){x.hidden=x.id!==b.dataset.tab})})});
