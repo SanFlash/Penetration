@@ -213,7 +213,7 @@ _HTML = r"""<!doctype html>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
-<div class="links"><a href="/reports/report.html">Interactive HTML report</a><a href="/reports/report_portable.html">Portable report</a><a href="/reports/findings.json">Findings JSON</a><a href="/reports/evidence_manifest.json">Evidence manifest</a><a href="/reports/report.pdf">PDF report</a><a href="/reports/penetration_report.xlsx">XLSX report</a></div>
+<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.</div>
 </aside></div>
 <section class="panel" style="margin-top:14px"><div class="pad"><h3>Live execution log</h3></div><div id="logs" class="logs"></div></section>
 </main>
@@ -318,10 +318,19 @@ function renderStatus(s) {
   el("pct").textContent = progress + "%";
   el("fill").style.width = progress + "%";
 
+  const reportLink = el("reportLink");
+  const reportNotice = el("reportNotice");
+  if (reportLink) {
+    reportLink.href = (s.reports && s.reports.html ? s.reports.html : "/reports/report.html") + "?ts=" + Date.now();
+  }
+  if (reportNotice) {
+    if (running) reportNotice.textContent = "Live report is being refreshed as phases finish. You can open it while the assessment is running.";
+    else if (s.status === "FAILED") reportNotice.textContent = "The assessment stopped, but the partial HTML report and evidence have been preserved for review.";
+    else if (s.status === "COMPLETE") reportNotice.textContent = "Assessment complete. Open the HTML report for findings, explanations and evidence."; 
+    else reportNotice.textContent = "The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.";
+  }
   if (running) {
     setButton(true, "PENTEST RUNNING");
-  } else if (s.status === "FAILED") {
-    setButton(false, "START PENTEST");
   } else {
     setButton(false, "START PENTEST");
   }
