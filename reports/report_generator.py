@@ -217,6 +217,11 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         if item.get("screenshots"):
             item["screenshot"] = item["screenshots"][0]
         item["screenshots"] = list(dict.fromkeys(item.get("screenshots", [])))
+        item["screenshots_relative"] = [
+            rel for rel in (
+                _safe_relative_path(path, out_dir) for path in item["screenshots"]
+            ) if rel
+        ]
         item["affected_urls"] = list(dict.fromkeys(item.get("affected_urls", []) or ([item["url"]] if item.get("url") else [])))
         item["observation_count"] = item.get("occurrences", 1)
         item["viewports"] = sorted(set(item.get("viewports", [])))
@@ -549,7 +554,7 @@ function renderFindings(){
   const color=colors[f.severity]||colors.Info;
   const shots=f.screenshots_relative||[];
   const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return '<a href="'+esc(p)+'" target="_blank" rel="noopener"><img src="'+esc(p)+'" alt="Security evidence screenshot" style="width:100%;border:1px solid #263b55;border-radius:10px"></a>'}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
-  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>Evidence / impact / remediation</summary><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
+  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>What failed / evidence / how to fix</summary><p><b>What this means:</b> '+esc(f.plain_language_summary)+'</p><p><b>Why it matters:</b> '+esc(f.why_it_matters)+'</p><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Recommended action:</b> '+esc(f.recommended_action)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
  }).join("");
 }
 ["search","sev"].forEach(function(id){document.getElementById(id).addEventListener("input",renderFindings)});
