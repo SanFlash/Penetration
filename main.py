@@ -550,7 +550,9 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         banner("STEP 13 — Final interactive report")
         loader.set("Finalizing HTML report")
         phase_status["report_generation"] = {"status": "completed"}
-        report = _refresh_live_report(target, all_findings, current_metadata("COMPLETE"))
+        phase_failures = [name for name, info in phase_status.items() if info.get("status") == "failed"]
+        final_status = "PARTIAL" if phase_failures else "COMPLETE"
+        report = _refresh_live_report(target, all_findings, current_metadata(final_status))
         if not report:
             raise RuntimeError("The assessment completed but the HTML report could not be generated.")
 
@@ -566,7 +568,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         state.update(
             status="COMPLETE",
             stage="PENTEST COMPLETE",
-            detail="Assessment finished. The HTML report contains the target overview, affected pages, focused evidence and plain-language explanations.",
+            detail=("Assessment finished. The HTML report contains the target overview, affected pages, focused evidence and plain-language explanations."
+                    + (f" Some phases failed and are listed in the report: {', '.join(phase_failures)}." if phase_failures else "")),
             progress=100,
             findings=report["report"]["unique_findings"],
             checks=(len(ui_result.get("results", [])) + len(active_result.get("checks", []))),
