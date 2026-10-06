@@ -21,6 +21,25 @@ SEVERITY_COLOR = {
 }
 
 
+
+
+_FRIENDLY_EXPLANATIONS = {
+    "missing security response headers": ("The website is not sending one or more browser security protections that help reduce common attack paths.", "An attacker may have an easier time abusing browser behavior or combining another weakness with this missing protection.", "Add the recommended security headers at the application or web-server layer, then retest the affected pages."),
+    "cookie missing secure attribute": ("A browser cookie used by the website is not explicitly restricted to secure HTTPS connections.", "If an insecure connection is ever available, the cookie could be exposed in transit.", "Mark sensitive cookies as Secure and verify that the entire login/session flow remains HTTPS-only."),
+    "cookie missing httponly attribute": ("A browser cookie can potentially be read by client-side scripts.", "If malicious script code reaches the page, it may be able to access the cookie and misuse the session.", "Use HttpOnly for sensitive session cookies unless the application has a documented need for JavaScript access."),
+    "cookie missing samesite attribute": ("A browser cookie does not clearly define how it should behave when requests originate from another website.", "This can weaken browser-level protection around cross-site requests.", "Set an explicit SameSite policy appropriate to the application's login and cross-site workflows."),
+    "directory listing appears enabled": ("The server appears to show a browsable list of files or folders that should normally remain hidden.", "Visitors may discover files, backups, logs or other resources that reveal useful information about the application.", "Disable directory browsing and confirm that only intended public files can be requested."),
+    "verbose diagnostic information exposed": ("The website is revealing internal diagnostic information in a response that is visible to visitors.", "This information can give an attacker useful clues about the application's internal technology and failure paths.", "Show a generic public error message and keep detailed diagnostic information in server-side logs."),
+    "potentially sensitive resource accessible": ("A resource that normally should not be publicly reachable can be opened without the expected protection.", "It may expose configuration, source-control information, environment details or other internal information.", "Remove the resource from the public deployment or protect it with appropriate server-side access controls."),
+}
+
+def _friendly_fields(item: dict) -> dict:
+    title = str(item.get("title", "")).strip().lower()
+    for key, values in _FRIENDLY_EXPLANATIONS.items():
+        if key in title:
+            return {"plain_language_summary": values[0], "why_it_matters": values[1], "recommended_action": values[2]}
+    return {"plain_language_summary": f"The assessment found a condition that may weaken the website's security: {item.get('title', 'Security issue')}.", "why_it_matters": str(item.get("impact") or "The condition should be reviewed because it may increase the application's exposure to misuse."), "recommended_action": str(item.get("remediation") or "Review the affected page or component and apply the appropriate security control.")}
+
 def _normalize_finding(finding: dict) -> dict:
     item = enrich_finding(finding)
     item.setdefault("confidence", "Medium")
@@ -33,6 +52,7 @@ def _normalize_finding(finding: dict) -> dict:
     item.setdefault("impact", "Security or compatibility impact should be validated in the authorized test environment.")
     item.setdefault("remediation", "Review the affected code path and apply the appropriate control.")
     item.setdefault("references", [])
+    item.update(_friendly_fields(item))
     return item
 
 
