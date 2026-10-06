@@ -255,6 +255,12 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "raw_findings": raw_count,
         "unique_findings": len(findings_sorted),
         "total_observations": sum(int(f.get("observation_count", 1)) for f in findings_sorted),
+        "affected_urls": len({
+            str(url)
+            for finding in findings_sorted
+            for url in (finding.get("affected_urls") or [finding.get("url")])
+            if url
+        }),
         "total_findings": len(findings_sorted),
         "severity_summary": summary,
         "category_summary": dict(categories),
@@ -445,7 +451,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="panel"><div class="section-title">Severity distribution</div><div class="riskgrid">__CARDS__</div></div>
 <div class="grid">
 <div class="panel"><div class="section-title">Assessment metrics</div><div class="kpis">
-<div class="kpi"><b>__TOTAL__</b><span>Unique findings</span></div><div class="kpi"><b>__RAW__</b><span>Raw observations</span></div><div class="kpi"><b>__OBS__</b><span>Affected observations</span></div>
+<div class="kpi"><b>__TOTAL__</b><span>Unique findings</span></div><div class="kpi"><b>__RAW__</b><span>Raw observations</span></div><div class="kpi"><b>__OBS__</b><span>Affected observations</span></div><div class="kpi"><b>__AFFECTED_URLS__</b><span>Affected URLs</span></div>
 <div class="kpi"><b>__CATEGORIES__</b><span>Categories</span></div>
 <div class="kpi"><b>__HIGHCONF__</b><span>High confidence</span></div>
 <div class="kpi"><b>__CHECKS__</b><span>Chrome checks</span></div>
@@ -551,6 +557,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__TOTAL__": str(report["unique_findings"]),
         "__RAW__": str(report["raw_findings"]),
         "__OBS__": str(report["total_observations"]),
+        "__AFFECTED_URLS__": str(report["affected_urls"]),
         "__CATEGORIES__": str(len(report["category_summary"])),
         "__HIGHCONF__": str(report["confidence_summary"].get("High", 0)),
         "__CHECKS__": str(browser["checks"]),
