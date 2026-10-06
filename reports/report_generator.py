@@ -3,6 +3,7 @@ import html
 import json
 import os
 import re
+import shutil
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -65,16 +66,34 @@ def _compatibility_meta(metadata: dict) -> dict:
 
 
 def _safe_relative_path(path: str, out_dir: str) -> str | None:
+    """Return a report-local URL for an evidence file.
+    
+    Reports are served from /reports and evidence is bundled into
+    /reports/evidence so links never need parent-directory traversal.
+    """
     if not path:
         return None
     path = os.path.normpath(str(path))
-    if not os.path.exists(path):
-        if path.startswith("evidence" + os.sep) or path.startswith("evidence/"):
-            return "../" + path.replace("\\", "/")
-        return None
+    out_dir_abs = os.path.abspath(out_dir)
+    bundle_dir = os.path.abspath(os.path.join(out_dir_abs, "evidence"))
+    path_abs = os.path.abspath(path)
+
     try:
-        rel = os.path.relpath(path, out_dir)
+        if os.path.commonpath([path_abs, bundle_dir]) == bundle_dir:
+            return os.path.relpath(path_abs, out_dir_abs).replace("\\", "/")
     except ValueError:
+        pass
+
+    if not os.path.exists(path_abs):
+        return None
+
+    try:
+        rel = os.path.relpath(path_abs, out_dir_abs)
+    except ValueError:
+        return None
+
+    # Never emit ../ links from the hosted report.
+    if rel == ".." or rel.startswith(".." + os.sep):
         return None
     return rel.replace("\\", "/")
 
@@ -174,6 +193,14 @@ def _merge_security_observations(grouped: dict, item: dict) -> None:
 
 def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "reports", metadata: dict | None = None) -> dict:
     os.makedirs(out_dir, exist_ok=True)
+
+    # Bundle evidence beside report.html so hosted links remain valid and the
+    # report can be moved/copied without losing its screenshots.
+    report_evidence_dir = os.path.join(out_dir, "evidence")
+    if os.path.isdir(evidence_dir):
+        os.makedirs(report_evidence_dir, exist_ok=True)
+        shutil.copytree(evidence_dir, report_evidence_dir, dirs_exist_ok=True)
+
     raw_count = len(findings)
     normalized = [_normalize_finding(f) for f in findings]
 
@@ -246,18 +273,36 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     security_evidence = meta.get("security_evidence", [])
     for item in security_evidence:
         if item.get("screenshot"):
-            item["screenshot_relative"] = _safe_relative_path(item["screenshot"], out_dir)
+            source = os.path.abspath(str(item["screenshot"]))
+            try:
+                rel_source = os.path.relpath(source, os.path.abspath(evidence_dir))
+                bundled = os.path.join(out_dir, "evidence", rel_source)
+                item["screenshot_relative"] = _safe_relative_path(bundled, out_dir)
+            except ValueError:
+                item["screenshot_relative"] = None
 
     coverage_results = []
     for row in browser_results:
         copy = dict(row)
         if copy.get("screenshot"):
-            copy["screenshot_relative"] = _safe_relative_path(copy["screenshot"], out_dir)
+            source = os.path.abspath(str(copy["screenshot"]))
+            try:
+                rel_source = os.path.relpath(source, os.path.abspath(evidence_dir))
+                bundled = os.path.join(out_dir, "evidence", rel_source)
+                copy["screenshot_relative"] = _safe_relative_path(bundled, out_dir)
+            except ValueError:
+                copy["screenshot_relative"] = None
         coverage_results.append(copy)
 
     target_overview = dict(meta.get("target_overview") or {})
     if target_overview.get("screenshot"):
-        target_overview["screenshot_relative"] = _safe_relative_path(target_overview["screenshot"], out_dir)
+        source = os.path.abspath(str(target_overview["screenshot"]))
+        try:
+            rel_source = os.path.relpath(source, os.path.abspath(evidence_dir))
+            bundled = os.path.join(out_dir, "evidence", rel_source)
+            target_overview["screenshot_relative"] = _safe_relative_path(bundled, out_dir)
+        except ValueError:
+            target_overview["screenshot_relative"] = None
         meta["target_overview"] = target_overview
 
     gallery = _collect_gallery(evidence_dir, out_dir, findings_sorted)
@@ -536,12 +581,17 @@ const securityEvidence=__SECURITY__;
 const targetOverview=__TARGET_OVERVIEW__;
 const remediation=__REMEDIATION__;
 const colors=__COLORS__;
+
+// Define escaping before ANY rendering code uses it. A previous ordering bug
+// caused a ReferenceError here and prevented all tab/evidence handlers from
+// being registered.
+const esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
+
 const phaseStatus=(meta&&meta.phase_status)||{};
 const phaseEntries=Object.keys(phaseStatus);
 document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
  ? '<div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=p.status==="failed";return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds||"-")+' s</td><td>'+esc(p.error||"Completed")+'</td></tr>'}).join("")+'</tbody></table></div>'
  : '<div class="empty">Assessment phase status will appear as the report is updated.</div>';
-const esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
 const tabs=document.querySelectorAll(".nav button");
 tabs.forEach(function(b){b.addEventListener("click",function(){tabs.forEach(function(x){x.classList.remove("active")});b.classList.add("active");document.querySelectorAll(".tab").forEach(function(x){x.hidden=x.id!==b.dataset.tab})})});
 const cat=document.getElementById("cat");
