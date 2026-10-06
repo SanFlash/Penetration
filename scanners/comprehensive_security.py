@@ -96,7 +96,7 @@ class ComprehensiveSecurityEngine:
             raise ValueError("Target must be an absolute http:// or https:// URL.")
         self.origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
         self.max_urls = max(1, min(int(max_urls), 120))
-        self.max_probes = max(1, min(int(max_probes), 500))
+        self.max_probes = max(1, min(int(max_probes), 1000))
         self.rate_rps = max(float(rate_rps or getattr(config, "COMPREHENSIVE_RATE_RPS", 3)), 0.5)
         self.timeout = int(timeout or getattr(config, "COMPREHENSIVE_TIMEOUT", 8))
         self.session = requests.Session()

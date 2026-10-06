@@ -49,9 +49,9 @@ class RouteDiscoveryEngine:
             raise ValueError("Target must be an absolute http:// or https:// URL.")
         self.target = target
         self.origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-        self.max_pages = max(1, min(int(max_pages), 20))
-        self.max_assets = max(1, min(int(max_assets), 50))
-        self.max_candidates = max(1, min(int(max_candidates), 500))
+        self.max_pages = max(1, min(int(max_pages), 50))
+        self.max_assets = max(1, min(int(max_assets), 100))
+        self.max_candidates = max(1, min(int(max_candidates), 1000))
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": UA, "Accept": "text/html,application/javascript,*/*;q=0.8"})
         self.last_request = 0.0
