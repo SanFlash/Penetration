@@ -433,7 +433,7 @@ Focused Chromium evidence
 Interactive report
 ```
 
-This design follows the OWASP principle that thorough testing starts with mapping the application's attack surface and documenting what was actually discovered and tested. citeturn1search3turn1search7
+This design follows the OWASP Web Security Testing Guide principle that thorough testing starts with mapping the application's attack surface and documenting what was actually discovered and tested.
 
 ## Enhanced evidence-first workflow
 
