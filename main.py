@@ -21,6 +21,9 @@ from scanners.deep_security import run_deep_security
 from scanners.api_surface import run_api_surface
 from scanners.input_stress import run_input_stress
 from scanners.input_validation import run_input_validation
+from scanners.aggressive_readonly import run_aggressive_readonly
+from scanners.comprehensive_security import run_comprehensive_security
+from scanners.route_discovery import run_route_discovery
 from scanners.attack_surface import correlate_attack_surface
 from scanners.intrusive import run_intrusive
 from auth.session import login
@@ -239,7 +242,18 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         print(f"\nDiscovered {len(urls)} pages and {len(forms)} forms.")
 
-        banner("STEP 2 — Target website visual overview")
+        banner("STEP 2 — Deep attack-surface discovery")
+        loader.set("Expanding crawl with route, sitemap and JavaScript discovery")
+        state.update(stage="ATTACK-SURFACE DISCOVERY", detail="Enumerating additional same-origin pages, JavaScript/API routes and assets before security testing.")
+        discovery_result = run_route_discovery(target, max_pages=config.ROUTE_DISCOVERY_MAX_PAGES, max_assets=config.ROUTE_DISCOVERY_MAX_ASSETS, max_candidates=config.ROUTE_DISCOVERY_MAX_CANDIDATES)
+        discovered_pages = [u for u in discovery_result.get("pages", []) if _is_exact_target_url(target, u)]
+        discovered_get_routes = [row.get("url") for row in discovery_result.get("routes", []) if row.get("method", "GET").upper() == "GET" and row.get("url") and _is_exact_target_url(target, row["url"])]
+        urls = list(dict.fromkeys(urls + discovered_pages + discovered_get_routes))[:config.PENTEST_MAX_DISCOVERED_URLS]
+        print(f"Expanded in-scope URL inventory: {len(urls)}")
+        print(f"Discovered JS/assets: {len(discovery_result.get('assets', []))}")
+        print(f"Discovered route candidates: {len(discovery_result.get('routes', []))}")
+
+        banner("STEP 3 — Target website visual overview")
         loader.set("Capturing target website overview")
         state.update(stage="TARGET OVERVIEW", detail="Opening the authorized target in Chromium and capturing the report overview.")
         target_overview = capture_target_overview(target, headed=headed, slow_mo=slow_mo)
@@ -325,6 +339,24 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         print(f"API specs discovered: {api_result['summary']['specs']}")
         print(f"API endpoints inventoried: {api_result['summary']['endpoints']}")
 
+        banner("STEP 8 — Aggressive read-only input and differential testing")
+        loader.set("Running expanded read-only mutation matrix")
+        state.update(stage="AGGRESSIVE READ-ONLY TESTING", detail="Testing discovered URL parameters with bounded malformed, encoded, duplicate and content-negotiation variations.")
+        aggressive_result = run_aggressive_readonly(target, urls, max_urls=config.AGGRESSIVE_MAX_URLS, max_probes=config.AGGRESSIVE_MAX_PROBES)
+        all_findings.extend(aggressive_result["findings"])
+        print(f"Aggressive candidate points: {aggressive_result['summary']['candidate_points']}")
+        print(f"Aggressive probes: {aggressive_result['probes']}")
+        print(f"Aggressive findings: {len(aggressive_result['findings'])}")
+
+        banner("STEP 9 — Comprehensive configuration and exposure sweep")
+        loader.set("Running comprehensive read-only security sweep")
+        state.update(stage="COMPREHENSIVE SECURITY", detail="Checking expanded URL inventory plus common configuration, documentation, diagnostic and disclosure paths.")
+        comprehensive_result = run_comprehensive_security(target, urls=urls, max_urls=config.COMPREHENSIVE_MAX_URLS, max_probes=config.COMPREHENSIVE_MAX_PROBES)
+        all_findings.extend(comprehensive_result["findings"])
+        print(f"Comprehensive URLs tested: {comprehensive_result['summary']['urls_tested']}")
+        print(f"Comprehensive probes: {comprehensive_result['probes']}")
+        print(f"Comprehensive findings: {len(comprehensive_result['findings'])}")
+
         attack_surface = correlate_attack_surface(
             target,
             recon=recon,
@@ -382,7 +414,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         print(f"Security evidence screenshots: {sum(1 for item in security_evidence if item.get('screenshot'))}")
 
-        all_findings = (ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", []) + stress_result["findings"] + validation_result["findings"])
+        all_findings = (ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", []) + aggressive_result["findings"] + comprehensive_result["findings"] + stress_result["findings"] + validation_result["findings"])
 
         banner("STEP 7 — Interactive pentest report")
         loader.set("Building interactive pentest report")
@@ -398,6 +430,9 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 "pages_discovered": len(urls),
                 "forms_discovered": len(forms),
             },
+            "attack_surface_discovery": discovery_result,
+            "aggressive_readonly": aggressive_result,
+            "comprehensive_security": comprehensive_result,
             "target_overview": target_overview,
             "ui_responsive": ui_result,
             "active_security": active_result,
