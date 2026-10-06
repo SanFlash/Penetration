@@ -512,37 +512,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         ) or attack_surface
         refresh_report("ATTACK-SURFACE CORRELATION", "Routes and API candidates were correlated into the assessment inventory.")
 
-        banner("STEP 10 — Input stress testing")
-        loader.set("Running bounded input stress tests")
-        value = _phase_call(
-            "input_stress",
-            phase_status,
-            lambda: run_input_stress(
-                target, urls, max_urls=config.STRESS_MAX_URLS,
-                max_probes=config.STRESS_MAX_PROBES,
-            ),
-        )
-        if value:
-            stress_result = value
-            all_findings.extend(value.get("findings", []))
-        refresh_report("INPUT STRESS", f"Input stress testing completed with {len(stress_result.get('findings', []))} observations.")
-
-        banner("STEP 11 — Input validation")
-        loader.set("Comparing valid and invalid input behavior")
-        value = _phase_call(
-            "input_validation",
-            phase_status,
-            lambda: run_input_validation(
-                target, urls, max_urls=config.VALIDATION_MAX_URLS,
-                max_probes=config.VALIDATION_MAX_PROBES,
-            ),
-        )
-        if value:
-            validation_result = value
-            all_findings.extend(value.get("findings", []))
-        refresh_report("INPUT VALIDATION", f"Input validation completed with {len(validation_result.get('findings', []))} observations.")
-
-        banner("STEP 12 — Focused browser evidence")
+        banner("STEP 10 — Focused browser evidence")
         loader.set("Capturing focused evidence for detected issues")
         evidence_findings = (
             active_result.get("findings", [])
@@ -565,7 +535,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             security_evidence = value
         refresh_report("SECURITY EVIDENCE", f"Focused evidence captured for {sum(1 for x in security_evidence if x.get('screenshot'))} issues.")
 
-        banner("STEP 13 — Final interactive report")
+        banner("STEP 11 — Final interactive report")
         loader.set("Finalizing HTML report")
         phase_status["report_generation"] = {"status": "completed"}
         phase_failures = [name for name, info in phase_status.items() if info.get("status") == "failed"]
