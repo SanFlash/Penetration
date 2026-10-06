@@ -328,7 +328,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         attack_surface = correlate_attack_surface(
             target,
             recon=recon,
-            route_discovery=api_result.get("route_discovery", {}),
+            route_discovery=discovery_result,
             api_surface=api_result,
         )
         print(
@@ -375,7 +375,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         security_evidence = capture_security_evidence(
             target,
-            active_result["findings"] + deep_result["findings"] + api_result.get("findings", []),
+            active_result["findings"] + deep_result["findings"] + api_result.get("findings", []) + aggressive_result["findings"] + comprehensive_result["findings"],
             headed=headed,
             slow_mo=slow_mo,
             max_items=30,
