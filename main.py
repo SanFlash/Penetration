@@ -312,8 +312,18 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "runtime_seconds": round(time.time() - start, 1),
         }
 
-    def refresh_report(stage, detail):
+    last_report_refresh = 0.0
+
+    def refresh_report(stage, detail, force=False):
+        nonlocal last_report_refresh
+        now = time.monotonic()
+        min_interval = float(getattr(config, "LIVE_REPORT_MIN_INTERVAL", 12))
+        if not force and last_report_refresh and (now - last_report_refresh) < min_interval:
+            state.update(stage=stage, detail=detail, findings=len(all_findings))
+            return None
         report = _refresh_live_report(target, all_findings, current_metadata("RUNNING"))
+        if report:
+            last_report_refresh = now
         count = report["report"]["total_findings"] if report else len(all_findings)
         state.update(
             stage=stage,
@@ -408,7 +418,6 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 phase_status.setdefault("security_headers", {"status": "partial"})
                 print(f"[WARN] Header check skipped {url}: {type(exc).__name__}: {exc}")
             if index % 10 == 0 or index == len(urls[:config.SECURITY_MAX_URLS]):
-                all_findings.extend(header_findings[len(all_findings):] if False else [])
                 state.update(detail=f"Security headers: {index}/{min(len(urls), config.SECURITY_MAX_URLS)}")
         all_findings.extend(header_findings)
         phase_status["security_headers"] = {
@@ -562,6 +571,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         phase_failures = [name for name, info in phase_status.items() if info.get("status") == "failed"]
         final_status = "PARTIAL" if phase_failures else "COMPLETE"
         report = _refresh_live_report(target, all_findings, current_metadata(final_status))
+        last_report_refresh = time.monotonic()
         if not report:
             raise RuntimeError("The assessment completed but the HTML report could not be generated.")
 
