@@ -387,6 +387,54 @@ Start-Process .\reports\report.html
 The report is security-focused; it does not require Chrome evidence to populate its security findings.
 
 
+## Deep coverage pentest profile
+
+The full `pentest` profile is now an expanded, bounded read-only assessment rather than a 12-page smoke scan. It first builds a larger attack-surface inventory from HTML links, JavaScript/API route discovery and same-origin route candidates, then reuses that inventory across multiple security engines.
+
+Current default coverage controls are:
+
+- Up to 50 pages for Chrome/UI evidence.
+- Up to 180 discovered in-scope URLs in the unified inventory.
+- Up to 120 URLs / 1,200 probes in the deep security engine.
+- Up to 100 input points / 700 probes in aggressive read-only mutation testing.
+- Up to 120 URLs / 800 probes in the comprehensive exposure/configuration sweep.
+- Up to 100 URLs / 700 probes for stress testing and 80 URLs / 600 probes for input validation.
+- Up to 40 discovery pages, 80 JavaScript assets and 600 route candidates.
+
+All of these are bounded and can be overridden with `SENTINEL_*` environment variables for a larger authorized staging assessment.
+
+The report deliberately separates **unique findings** from **raw observations**. The same missing header found on 40 pages is one underlying finding with 40 affected URLs, not 40 different vulnerabilities. The report now exposes unique findings, raw observations, affected observations and affected URL counts together so high coverage is visible without inflating the vulnerability count.
+
+The expanded flow is:
+
+```text
+Recon
+  ↓
+Deep route / JavaScript / API discovery
+  ↓
+Chrome UI + responsive coverage
+  ↓
+Security headers
+  ↓
+Bounded active security
+  ↓
+Deep security engine
+  ↓
+API / route inventory
+  ↓
+Aggressive read-only mutation matrix
+  ↓
+Comprehensive configuration / exposure sweep
+  ↓
+Input stress + validation
+  ↓
+Focused Chromium evidence
+  ↓
+Interactive report
+```
+
+This design follows the OWASP principle that thorough testing starts with mapping the application's attack surface and documenting what was actually discovered and tested. citeturn1search3turn1search7
+
 ## Enhanced evidence-first workflow
 
 The current framework revision extends the original scanner into an evidence-first assessment pipeline. The HTML report now consumes pentest coverage from `ui_responsive` as well as the older `compatibility` metadata shape, so the Coverage tab is populated during a pentest run.
