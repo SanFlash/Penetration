@@ -326,8 +326,20 @@ function renderStatus(s) {
   if (reportNotice) {
     if (running) reportNotice.textContent = "Live report is being refreshed as phases finish. You can open it while the assessment is running.";
     else if (s.status === "FAILED") reportNotice.textContent = "The assessment stopped, but the partial HTML report and evidence have been preserved for review.";
-    else if (s.status === "COMPLETE") reportNotice.textContent = "Assessment complete. Open the HTML report for findings, explanations and evidence."; 
+    else if (s.status === "COMPLETE") reportNotice.textContent = "Assessment complete. Opening the HTML report with preserved evidence...";
     else reportNotice.textContent = "The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.";
+  }
+
+  if (s.status === "COMPLETE" && !window.__sentinelReportOpened) {
+    window.__sentinelReportOpened = true;
+    const reportUrl = (s.reports && s.reports.html ? s.reports.html : "/reports/report.html") + "?ts=" + Date.now();
+    setTimeout(function() {
+      try {
+        window.location.href = reportUrl;
+      } catch (_) {
+        window.open(reportUrl, "_blank", "noopener");
+      }
+    }, 250);
   }
   if (running) {
     setButton(true, "PENTEST RUNNING");
