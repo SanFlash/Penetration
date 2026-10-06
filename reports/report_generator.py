@@ -98,6 +98,19 @@ def _safe_relative_path(path: str, out_dir: str) -> str | None:
     return rel.replace("\\", "/")
 
 
+def _bundle_evidence_path(path: str, evidence_dir: str, out_dir: str) -> str | None:
+    if not path:
+        return None
+    try:
+        rel = os.path.relpath(os.path.abspath(str(path)), os.path.abspath(evidence_dir))
+    except ValueError:
+        return None
+    if rel == '..' or rel.startswith('..' + os.sep):
+        return None
+    bundled = os.path.join(out_dir, 'evidence', rel)
+    return _safe_relative_path(bundled, out_dir) if os.path.isfile(bundled) else None
+
+
 def _collect_gallery(evidence_dir: str, out_dir: str, findings: list[dict]) -> list[dict]:
     gallery = []
     if os.path.isdir(evidence_dir):
@@ -106,7 +119,7 @@ def _collect_gallery(evidence_dir: str, out_dir: str, findings: list[dict]) -> l
                 if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                     continue
                 path = os.path.join(root, name)
-                rel = _safe_relative_path(path, out_dir)
+                rel = _bundle_evidence_path(path, evidence_dir, out_dir)
                 if not rel:
                     continue
                 gallery.append({
@@ -119,7 +132,7 @@ def _collect_gallery(evidence_dir: str, out_dir: str, findings: list[dict]) -> l
     known = {item["path"] for item in gallery}
     for finding in findings:
         screenshot = finding.get("screenshot")
-        rel = _safe_relative_path(screenshot, out_dir) if screenshot else None
+        rel = _bundle_evidence_path(screenshot, evidence_dir, out_dir) if screenshot else None
         if rel and rel not in known:
             gallery.append({
                 "name": os.path.basename(str(screenshot)),
@@ -246,7 +259,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         item["screenshots"] = list(dict.fromkeys(item.get("screenshots", [])))
         item["screenshots_relative"] = [
             rel for rel in (
-                _safe_relative_path(path, out_dir) for path in item["screenshots"]
+                _bundle_evidence_path(path, evidence_dir, out_dir) for path in item["screenshots"]
             ) if rel
         ]
         item["affected_urls"] = list(dict.fromkeys(item.get("affected_urls", []) or ([item["url"]] if item.get("url") else [])))
