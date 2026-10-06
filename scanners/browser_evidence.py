@@ -316,14 +316,22 @@ def capture_target_overview(target: str, headed: bool = False, slow_mo: int = 0)
 
 
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
-                              slow_mo: int = 0, max_items: int = 30) -> list[dict]:
+                              slow_mo: int = 0, max_items: int = 30,
+                              progress_callback=None, max_seconds: int = 120,
+                              navigation_timeout_ms: int = 12000) -> list[dict]:
     """Capture focused visual evidence for active findings using Chromium and GET-only URLs."""
     assert_in_scope(target)
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
 
     candidates = []
     seen = set()
-    for finding in findings:
+    priority = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+    ordered_findings = sorted(
+        findings,
+        key=lambda item: (priority.get(str(item.get("severity") or "Info"), 5),
+                          str(item.get("title") or ""), str(item.get("url") or "")),
+    )
+    for finding in ordered_findings:
         url = finding.get("evidence_url") or finding.get("url")
         if not url or url in seen:
             continue
@@ -331,7 +339,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             assert_same_target(target, url)
         except Exception:
             continue
-        if finding.get("severity") in {"Medium", "High", "Critical"} or finding.get("evidence_url"):
+        if finding.get("severity") in {"Critical", "High", "Medium"} or finding.get("evidence_url"):
             candidates.append((url, finding.get("id", "security"), finding))
             seen.add(url)
         if len(candidates) >= max_items:
@@ -343,10 +351,34 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             json.dump([], f, indent=2)
         return captured
 
+    started = __import__("time").monotonic()
+    total = len(candidates)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not headed, slow_mo=slow_mo)
         context = browser.new_context(viewport={"width": 1440, "height": 900})
+        context.set_default_timeout(3500)
+        context.set_default_navigation_timeout(navigation_timeout_ms)
         for index, (url, finding_id, finding) in enumerate(candidates, 1):
+            elapsed = __import__("time").monotonic() - started
+            if elapsed >= max_seconds:
+                captured.append({
+                    "finding_id": finding_id,
+                    "url": url,
+                    "status": None,
+                    "screenshot": None,
+                    "capture": {
+                        "mode": "evidence-time-budget-exceeded",
+                        "focus_found": False,
+                        "focus_reason": f"Evidence phase stopped after the {max_seconds}s safety budget; remaining items were not navigated.",
+                    },
+                    "console_errors": [],
+                    "error": f"EvidencePhaseTimeout: global evidence budget of {max_seconds}s exceeded after {len(captured)} item(s).",
+                })
+                break
+
+            if progress_callback:
+                progress_callback(index - 1, total, finding_id, url, "starting")
+
             page = context.new_page()
             console_errors = []
             page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
@@ -356,7 +388,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             focus = None
             capture = {}
             try:
-                response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                response = page.goto(url, wait_until="domcontentloaded", timeout=navigation_timeout_ms)
                 status = response.status if response else None
                 focus = _find_focus(page, finding)
                 if focus:
@@ -366,26 +398,35 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                     f"security_{index:03d}_{_safe_filename(url)}_focused.png",
                 )
                 capture = _focused_screenshot(page, screenshot, focus)
+                if capture.get("mode") == "focused-element-capture-failed":
+                    error = capture.get("error") or capture.get("focus_reason")
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
                 screenshot = None
                 capture = {
                     "mode": "navigation-failure-no-screenshot",
                     "focus_found": False,
-                    "focus_reason": "Navigation failed before an error DOM element could be captured.",
+                    "focus_reason": f"Navigation failed before an error DOM element could be captured: {type(exc).__name__}: {exc}",
+                    "error_type": type(exc).__name__,
+                    "error_description": str(exc),
                 }
             finally:
                 page.close()
 
-            captured.append({
+            item = {
                 "finding_id": finding_id,
                 "url": url,
                 "status": status,
-                "screenshot": screenshot if focus else None,
+                "screenshot": screenshot if focus and os.path.isfile(screenshot or "") else None,
                 "capture": capture,
                 "console_errors": console_errors[:20],
                 "error": error,
-            })
+                "error_type": (type(error).__name__ if error else None),
+                "error_description": error,
+            }
+            captured.append(item)
+            if progress_callback:
+                progress_callback(index, total, finding_id, url, "completed" if not error else "failed")
 
         context.close()
         browser.close()
