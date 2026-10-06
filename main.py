@@ -4,6 +4,7 @@ import argparse
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -432,60 +433,68 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             all_findings.extend(value.get("findings", []))
         refresh_report("ACTIVE SECURITY", f"Active security testing completed with {len(active_result.get('findings', []))} observations.")
 
-        banner("STEP 7 — Deep security and API surface")
-        loader.set("Running deep non-destructive security assessment")
-        value = _phase_call(
-            "deep_security",
-            phase_status,
-            lambda: run_deep_security(
-                target, max_urls=config.SECURITY_MAX_URLS,
-                max_probes=config.SECURITY_MAX_PROBES,
-            ),
-        )
-        if value:
-            deep_result = value
-            all_findings.extend(value.get("findings", []))
-        refresh_report("DEEP SECURITY", f"Deep security engine completed with {len(deep_result.get('findings', []))} observations.")
+        banner("STEP 7 — Parallel read-only security engines")
+        loader.set("Running parallel bounded security engines")
+        scan_urls = urls[:config.PENTEST_MAX_DISCOVERED_URLS]
+        url_count = max(1, len(scan_urls))
 
-        value = _phase_call(
-            "api_surface",
-            phase_status,
-            lambda: run_api_surface(target, max_probes=min(config.SECURITY_MAX_PROBES, 250)),
-        )
-        if value:
-            api_result = value
-            all_findings.extend(value.get("findings", []))
-        refresh_report("API SURFACE", f"API discovery completed: {api_result.get('summary', {}).get('endpoints', 0)} endpoints inventoried.")
+        # Adaptive budgets preserve broad URL coverage without forcing every
+        # engine to consume its maximum probe budget on small/medium sites.
+        deep_budget = min(config.SECURITY_MAX_PROBES, max(120, url_count * 6))
+        api_budget = min(config.SECURITY_MAX_PROBES, max(100, url_count * 4), 250)
+        aggressive_budget = min(config.AGGRESSIVE_MAX_PROBES, max(120, url_count * 6))
+        comprehensive_budget = min(config.COMPREHENSIVE_MAX_PROBES, max(120, url_count * 6))
+        stress_budget = min(config.STRESS_MAX_PROBES, max(120, url_count * 5))
+        validation_budget = min(config.VALIDATION_MAX_PROBES, max(100, url_count * 4))
 
-        banner("STEP 8 — Aggressive read-only differential testing")
-        loader.set("Running expanded read-only mutation matrix")
-        value = _phase_call(
-            "aggressive_readonly",
-            phase_status,
-            lambda: run_aggressive_readonly(
-                target, urls, max_urls=config.AGGRESSIVE_MAX_URLS,
-                max_probes=config.AGGRESSIVE_MAX_PROBES,
+        jobs = {
+            "deep_security": lambda: run_deep_security(
+                target, max_urls=min(config.SECURITY_MAX_URLS, url_count), max_probes=deep_budget
             ),
-        )
-        if value:
-            aggressive_result = value
-            all_findings.extend(value.get("findings", []))
-        refresh_report("AGGRESSIVE READ-ONLY TESTING", f"Mutation testing completed with {len(aggressive_result.get('findings', []))} observations.")
+            "api_surface": lambda: run_api_surface(target, max_probes=api_budget),
+            "aggressive_readonly": lambda: run_aggressive_readonly(
+                target, scan_urls, max_urls=min(config.AGGRESSIVE_MAX_URLS, url_count), max_probes=aggressive_budget
+            ),
+            "comprehensive_security": lambda: run_comprehensive_security(
+                target, urls=scan_urls, max_urls=min(config.COMPREHENSIVE_MAX_URLS, url_count), max_probes=comprehensive_budget
+            ),
+            "input_stress": lambda: run_input_stress(
+                target, scan_urls, max_urls=min(config.STRESS_MAX_URLS, url_count), max_probes=stress_budget
+            ),
+            "input_validation": lambda: run_input_validation(
+                target, scan_urls, max_urls=min(config.VALIDATION_MAX_URLS, url_count), max_probes=validation_budget
+            ),
+        }
 
-        banner("STEP 9 — Comprehensive exposure/configuration testing")
-        loader.set("Running comprehensive read-only security sweep")
-        value = _phase_call(
-            "comprehensive_security",
-            phase_status,
-            lambda: run_comprehensive_security(
-                target, urls=urls, max_urls=config.COMPREHENSIVE_MAX_URLS,
-                max_probes=config.COMPREHENSIVE_MAX_PROBES,
-            ),
+        results = {}
+        # Three concurrent workers reduce wall-clock time while avoiding an
+        # uncontrolled request burst against the authorized target.
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="sentinel-scan") as pool:
+            futures = {pool.submit(_phase_call, name, phase_status, fn): name for name, fn in jobs.items()}
+            for future in as_completed(futures):
+                name = futures[future]
+                value = future.result()
+                results[name] = value
+                if value:
+                    if name == "deep_security":
+                        deep_result = value
+                    elif name == "api_surface":
+                        api_result = value
+                    elif name == "aggressive_readonly":
+                        aggressive_result = value
+                    elif name == "comprehensive_security":
+                        comprehensive_result = value
+                    elif name == "input_stress":
+                        stress_result = value
+                    elif name == "input_validation":
+                        validation_result = value
+                    all_findings.extend(value.get("findings", []))
+                state.update(detail=f"{name.replace('_', ' ').title()} finished")
+
+        refresh_report(
+            "PARALLEL SECURITY TESTING",
+            f"Completed six read-only security engines across {url_count} discovered URLs."
         )
-        if value:
-            comprehensive_result = value
-            all_findings.extend(value.get("findings", []))
-        refresh_report("COMPREHENSIVE SECURITY", f"Configuration and exposure testing completed with {len(comprehensive_result.get('findings', []))} observations.")
 
         attack_surface = _phase_call(
             "attack_surface_correlation",
