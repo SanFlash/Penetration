@@ -179,7 +179,14 @@ def _artifact(directory: str, filename: str):
         return jsonify({"error": "invalid_path"}), 400
     if not full.is_file():
         return jsonify({"error": "not_found"}), 404
-    return send_from_directory(str(base), str(full.relative_to(base)))
+
+    response = send_from_directory(str(base), str(full.relative_to(base)))
+    # Reports are regenerated during an assessment; never let a stale cached
+    # HTML/JSON response hide the newest findings or evidence links.
+    if base == Path(config.REPORT_DIR).resolve():
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.get("/reports/<path:filename>")
