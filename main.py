@@ -523,12 +523,31 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             + stress_result.get("findings", [])
             + validation_result.get("findings", [])
         )
+        def _evidence_progress(done, total, finding_id, url, status):
+            state.update(
+                stage="SECURITY EVIDENCE",
+                detail=f"Evidence {done}/{total}: {finding_id} — {status} — {url}",
+                progress=min(96, 82 + int((done / max(total, 1)) * 14)),
+                findings=len(all_findings),
+                log={
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "level": "ok" if status in {"starting", "completed"} else "warn",
+                    "message": f"Evidence {done}/{total}: {finding_id} ({status})",
+                },
+            )
+
         value = _phase_call(
             "security_evidence",
             phase_status,
             lambda: capture_security_evidence(
-                target, evidence_findings, headed=headed,
-                slow_mo=slow_mo, max_items=50,
+                target,
+                evidence_findings,
+                headed=headed,
+                slow_mo=slow_mo,
+                max_items=30,
+                max_seconds=120,
+                navigation_timeout_ms=12000,
+                progress_callback=_evidence_progress,
             ),
         )
         if value:
