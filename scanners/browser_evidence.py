@@ -385,6 +385,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             screenshot = None
             status = None
             error = None
+            error_type = None
             focus = None
             capture = {}
             try:
@@ -400,7 +401,9 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 capture = _focused_screenshot(page, screenshot, focus)
                 if capture.get("mode") == "focused-element-capture-failed":
                     error = capture.get("error") or capture.get("focus_reason")
+                    error_type = "FocusedElementCaptureError"
             except Exception as exc:
+                error_type = type(exc).__name__
                 error = f"{type(exc).__name__}: {exc}"
                 screenshot = None
                 capture = {
@@ -421,8 +424,10 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 "capture": capture,
                 "console_errors": console_errors[:20],
                 "error": error,
-                "error_type": (type(error).__name__ if error else None),
+                "error_type": error_type,
                 "error_description": error,
+                "observed_status": status,
+                "failure_scope": capture.get("capture_scope") or capture.get("mode"),
             }
             captured.append(item)
             if progress_callback:
