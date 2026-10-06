@@ -210,226 +210,92 @@ def _is_exact_target_url(target: str, url: str) -> bool:
         return False
 
 
+def _phase_call(name, phase_status, fn):
+    """Run one assessment phase without allowing a single broken scanner to abort the whole report."""
+    started = time.monotonic()
+    try:
+        value = fn()
+        phase_status[name] = {
+            "status": "completed",
+            "duration_seconds": round(time.monotonic() - started, 2),
+        }
+        return value
+    except Exception as exc:
+        phase_status[name] = {
+            "status": "failed",
+            "duration_seconds": round(time.monotonic() - started, 2),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        print(f"[WARN] Phase '{name}' failed: {type(exc).__name__}: {exc}", flush=True)
+        return None
+
+
+def _refresh_live_report(target, findings, metadata):
+    """Regenerate the HTML/JSON report after each completed phase.
+
+    This makes the report useful while a long assessment is still running and
+    preserves evidence collected before a later scanner fails.
+    """
+    try:
+        return generate(
+            target,
+            list(findings),
+            config.EVIDENCE_DIR,
+            out_dir=config.REPORT_DIR,
+            metadata=dict(metadata),
+        )
+    except Exception as exc:
+        print(f"[WARN] Live report refresh failed: {type(exc).__name__}: {exc}", flush=True)
+        return None
+
+
 def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, authorized: bool = False, state_override=None):
     parsed = urlparse(target)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         raise ValueError("Target must be an absolute http:// or https:// URL.")
     if not authorized and target.rstrip("/") != config.PENTEST_TARGET_ORIGIN.rstrip("/"):
         raise OutOfScopeError("Arbitrary pentest targets require --confirm-authorized.")
+
     if state_override is not None:
         state, dashboard_url = state_override, None
     else:
         state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
+
     loader = ConsoleLoader()
     loader.start("Initializing authorized pentest engine")
     telemetry = _set_telemetry(state, loader)
+    phase_status = {}
     all_findings = []
     start = time.time()
 
-    try:
-        banner("STEP 1 — Scope-limited reconnaissance")
-        state.update(stage="RECONNAISSANCE", detail="Discovering same-host pages, query parameters and forms.")
-        loader.set("Crawling authorized target")
-        crawler = SafeCrawler(target, max_pages=config.COMPATIBILITY_MAX_PAGES)
-        recon = crawler.crawl()
-        urls = [p["url"] for p in recon["pages"] if _is_exact_target_url(target, p["url"])]
-        forms = recon.get("forms", [])
-        state.update(
-            stage="RECON COMPLETE",
-            detail=f"Discovered {len(urls)} pages and {len(forms)} forms.",
-            log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
-                 "message": f"Recon complete: {len(urls)} pages, {len(forms)} forms."},
-        )
-        print(f"\nDiscovered {len(urls)} pages and {len(forms)} forms.")
+    recon = {"pages": [], "forms": []}
+    discovery_result = {"pages": [], "assets": [], "routes": [], "summary": {}, "findings": []}
+    target_overview = {}
+    ui_result = {"results": [], "findings": [], "urls_tested": []}
+    header_findings = []
+    active_result = {"findings": [], "checks": [], "urls_tested": []}
+    deep_result = {"findings": [], "checks": [], "urls_tested": [], "probe_count": 0}
+    api_result = {"findings": [], "checks": [], "summary": {"specs": 0, "endpoints": 0}}
+    aggressive_result = {"findings": [], "checks": [], "probes": 0, "summary": {"candidate_points": 0}}
+    comprehensive_result = {"findings": [], "checks": [], "probes": 0, "summary": {"urls_tested": 0}}
+    stress_result = {"findings": [], "checks": [], "probes": 0, "summary": {"candidate_points": 0}}
+    validation_result = {"findings": [], "checks": [], "probes": 0, "summary": {"candidate_points": 0, "valid_cases": 0, "invalid_cases": 0, "accepted_invalid_2xx": 0}}
+    security_evidence = []
+    attack_surface = {"summary": {}, "routes": []}
+    urls = []
+    forms = []
 
-        banner("STEP 2 — Deep attack-surface discovery")
-        loader.set("Expanding crawl with route, sitemap and JavaScript discovery")
-        state.update(stage="ATTACK-SURFACE DISCOVERY", detail="Enumerating additional same-origin pages, JavaScript/API routes and assets before security testing.")
-        discovery_result = run_route_discovery(target, max_pages=config.ROUTE_DISCOVERY_MAX_PAGES, max_assets=config.ROUTE_DISCOVERY_MAX_ASSETS, max_candidates=config.ROUTE_DISCOVERY_MAX_CANDIDATES)
-        discovered_pages = [u for u in discovery_result.get("pages", []) if _is_exact_target_url(target, u)]
-        discovered_get_routes = [row.get("url") for row in discovery_result.get("routes", []) if row.get("method", "GET").upper() == "GET" and row.get("url") and _is_exact_target_url(target, row["url"])]
-        urls = list(dict.fromkeys(urls + discovered_pages + discovered_get_routes))[:config.PENTEST_MAX_DISCOVERED_URLS]
-        print(f"Expanded in-scope URL inventory: {len(urls)}")
-        print(f"Discovered JS/assets: {len(discovery_result.get('assets', []))}")
-        print(f"Discovered route candidates: {len(discovery_result.get('routes', []))}")
-
-        banner("STEP 3 — Target website visual overview")
-        loader.set("Capturing target website overview")
-        state.update(stage="TARGET OVERVIEW", detail="Opening the authorized target in Chromium and capturing the report overview.")
-        target_overview = capture_target_overview(target, headed=headed, slow_mo=slow_mo)
-        print(f"Target overview: {target_overview.get('screenshot') or 'not captured'}")
-
-        banner("STEP 3 — Chrome-only UI / responsive evidence")
-        print(f"[VISUAL] {'HEADED Chrome/Chromium window enabled' if headed else 'headless Chrome/Chromium'}")
-        if slow_mo:
-            print(f"[VISUAL] Playwright slow-motion: {slow_mo} ms")
-        ui_result = run_compatibility(
-            target,
-            urls,
-            max_pages=config.COMPATIBILITY_MAX_PAGES,
-            headed=headed,
-            slow_mo=slow_mo,
-            telemetry=telemetry,
-        )
-        all_findings.extend(ui_result["findings"])
-        print(f"\nChrome URLs tested: {len(ui_result['urls_tested'])}")
-        print(f"Chrome evidence screenshots/results: {len(ui_result['results'])}")
-        print(f"UI findings: {len(ui_result['findings'])}")
-
-        banner("STEP 3 — Passive security-header checks")
-        loader.set("Scanning security headers")
-        state.update(stage="SECURITY HEADERS", detail="Checking transport and response security headers.")
-        header_findings = []
-        for index, url in enumerate(urls[:config.COMPATIBILITY_MAX_PAGES], 1):
-            try:
-                header_result = header_scanner.scan(url)
-                header_findings.extend(header_result["findings"])
-                state.update(
-                    detail=f"Header scan {index}/{min(len(urls), config.COMPATIBILITY_MAX_PAGES)}",
-                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
-                         "message": f"Header check {index} complete."},
-                )
-            except TargetConnectionError:
-                state.update(
-                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "warn",
-                         "message": f"Header check skipped: {url}"},
-                )
-        all_findings.extend(header_findings)
-        print(f"Header findings: {len(header_findings)}")
-
-        banner("STEP 4 — Bounded active security testing")
-        loader.set("Running bounded active security controls")
-        state.update(
-            stage="ACTIVE SECURITY TESTING",
-            detail="Testing CORS, HTTP methods, input reflection, CSRF posture, error disclosure and mixed content.",
-        )
-        active_result = run_active_security(
-            target,
-            urls,
-            forms,
-            telemetry=telemetry,
-            max_urls=config.ACTIVE_SECURITY_MAX_URLS,
-        )
-        all_findings.extend(active_result["findings"])
-        print(f"Active URLs tested: {len(active_result['urls_tested'])}")
-        print(f"Active checks: {len(active_result['checks'])}")
-        print(f"Active findings: {len(active_result['findings'])}")
-
-        banner("STEP 5 — Deep security and API attack-surface assessment")
-        loader.set("Running deep non-destructive security assessment")
-        state.update(
-            stage="DEEP SECURITY TESTING",
-            detail="Running bounded same-origin reconnaissance, headers, methods, query mutations, routing and exposure checks.",
-        )
-        deep_result = run_deep_security(
-            target,
-            max_urls=config.SECURITY_MAX_URLS,
-            max_probes=config.SECURITY_MAX_PROBES,
-        )
-        all_findings.extend(deep_result["findings"])
-        print(f"Deep URLs tested: {len(deep_result['urls_tested'])}")
-        print(f"Deep HTTP probes: {deep_result['probe_count']}")
-        print(f"Deep raw findings: {len(deep_result['findings'])}")
-
-        api_result = run_api_surface(
-            target,
-            max_probes=min(config.SECURITY_MAX_PROBES, 100),
-        )
-        all_findings.extend(api_result.get("findings", []))
-        print(f"API specs discovered: {api_result['summary']['specs']}")
-        print(f"API endpoints inventoried: {api_result['summary']['endpoints']}")
-
-        banner("STEP 8 — Aggressive read-only input and differential testing")
-        loader.set("Running expanded read-only mutation matrix")
-        state.update(stage="AGGRESSIVE READ-ONLY TESTING", detail="Testing discovered URL parameters with bounded malformed, encoded, duplicate and content-negotiation variations.")
-        aggressive_result = run_aggressive_readonly(target, urls, max_urls=config.AGGRESSIVE_MAX_URLS, max_probes=config.AGGRESSIVE_MAX_PROBES)
-        all_findings.extend(aggressive_result["findings"])
-        print(f"Aggressive candidate points: {aggressive_result['summary']['candidate_points']}")
-        print(f"Aggressive probes: {aggressive_result['probes']}")
-        print(f"Aggressive findings: {len(aggressive_result['findings'])}")
-
-        banner("STEP 9 — Comprehensive configuration and exposure sweep")
-        loader.set("Running comprehensive read-only security sweep")
-        state.update(stage="COMPREHENSIVE SECURITY", detail="Checking expanded URL inventory plus common configuration, documentation, diagnostic and disclosure paths.")
-        comprehensive_result = run_comprehensive_security(target, urls=urls, max_urls=config.COMPREHENSIVE_MAX_URLS, max_probes=config.COMPREHENSIVE_MAX_PROBES)
-        all_findings.extend(comprehensive_result["findings"])
-        print(f"Comprehensive URLs tested: {comprehensive_result['summary']['urls_tested']}")
-        print(f"Comprehensive probes: {comprehensive_result['probes']}")
-        print(f"Comprehensive findings: {len(comprehensive_result['findings'])}")
-
-        attack_surface = correlate_attack_surface(
-            target,
-            recon=recon,
-            route_discovery=discovery_result,
-            api_surface=api_result,
-        )
-        print(
-            "Attack surface: "
-            f"{attack_surface['summary']['total']} unique routes | "
-            f"{attack_surface['summary']['api_like']} API-like | "
-            f"{attack_surface['summary']['state_changing_candidates']} state-changing candidates"
-        )
-
-        banner("STEP 6 — Bounded input-stress / typing fuzzing")
-        loader.set("Running bounded input stress tests")
-        state.update(
-            stage="INPUT STRESS TESTING",
-            detail="Fuzzing discovered query inputs with bounded boundary, encoding and error-handling probes; no forms are submitted.",
-        )
-        stress_result = run_input_stress(
-            target,
-            urls,
-            max_urls=config.STRESS_MAX_URLS,
-            max_probes=config.STRESS_MAX_PROBES,
-        )
-        all_findings.extend(stress_result["findings"])
-        print(f"Stress candidate input points: {stress_result['summary']['candidate_points']}")
-        print(f"Stress probes: {stress_result['probes']}")
-        print(f"Stress findings: {len(stress_result['findings'])}")
-
-        banner("STEP 7 — Valid/invalid input-validation assessment")
-        loader.set("Testing valid and invalid input classes")
-        state.update(stage="INPUT VALIDATION TESTING", detail="Comparing profile-valid values with bounded invalid values on discovered query parameters; no forms are submitted.")
-        validation_result = run_input_validation(target, urls, max_urls=config.VALIDATION_MAX_URLS, max_probes=config.VALIDATION_MAX_PROBES)
-        all_findings.extend(validation_result["findings"])
-        print(f"Validation candidate inputs: {validation_result['summary']['candidate_points']}")
-        print(f"Validation probes: {validation_result['probes']}")
-        print(f"Valid cases: {validation_result['summary']['valid_cases']}")
-        print(f"Invalid cases: {validation_result['summary']['invalid_cases']}")
-        print(f"Invalid values accepted with 2xx: {validation_result['summary']['accepted_invalid_2xx']}")
-        print(f"Validation findings: {len(validation_result['findings'])}")
-
-        banner("STEP 8 — Chrome security evidence capture")
-        loader.set("Capturing Chrome evidence for security findings")
-        state.update(
-            stage="SECURITY EVIDENCE",
-            detail="Replaying finding URLs in Chromium and capturing marked screenshots.",
-        )
-        security_evidence = capture_security_evidence(
-            target,
-            active_result["findings"] + deep_result["findings"] + api_result.get("findings", []) + aggressive_result["findings"] + comprehensive_result["findings"],
-            headed=headed,
-            slow_mo=slow_mo,
-            max_items=30,
-        )
-        print(f"Security evidence screenshots: {sum(1 for item in security_evidence if item.get('screenshot'))}")
-
-        all_findings = (ui_result["findings"] + header_findings + active_result["findings"] + deep_result["findings"] + api_result.get("findings", []) + aggressive_result["findings"] + comprehensive_result["findings"] + stress_result["findings"] + validation_result["findings"])
-
-        banner("STEP 7 — Interactive pentest report")
-        loader.set("Building interactive pentest report")
-        state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
-        elapsed = round(time.time() - start, 1)
-        metadata = {
+    def current_metadata(status="RUNNING"):
+        return {
             "profile": "pentest",
+            "status": status,
             "methodology": "OWASP WSTG-aligned bounded assessment",
+            "report_language": "plain-language-first",
             "headed": headed,
             "slow_mo_ms": slow_mo,
             "dashboard_url": dashboard_url,
-            "recon": {
-                "pages_discovered": len(urls),
-                "forms_discovered": len(forms),
-            },
+            "phase_status": phase_status,
+            "recon": {"pages_discovered": len(urls), "forms_discovered": len(forms)},
             "attack_surface_discovery": discovery_result,
             "aggressive_readonly": aggressive_result,
             "comprehensive_security": comprehensive_result,
@@ -442,36 +308,295 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "input_stress": stress_result,
             "input_validation": validation_result,
             "security_evidence": security_evidence,
-            "runtime_seconds": elapsed,
+            "runtime_seconds": round(time.time() - start, 1),
         }
-        report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
+
+    def refresh_report(stage, detail):
+        report = _refresh_live_report(target, all_findings, current_metadata("RUNNING"))
+        count = report["report"]["total_findings"] if report else len(all_findings)
+        state.update(
+            stage=stage,
+            detail=detail,
+            findings=count,
+            log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                 "message": f"Live report updated: {count} findings."},
+        )
+        return report
+
+    def finish_phase(name, stage, detail, result=None):
+        refresh_report(stage, detail)
+        return result
+
+    try:
+        banner("STEP 1 — Scope-limited reconnaissance")
+        state.update(stage="RECONNAISSANCE", detail="Discovering same-origin pages, query parameters and forms.")
+        loader.set("Crawling authorized target")
+        value = _phase_call(
+            "reconnaissance",
+            phase_status,
+            lambda: SafeCrawler(target, max_pages=config.COMPATIBILITY_MAX_PAGES).crawl(),
+        )
+        if value:
+            recon = value
+        urls = [p.get("url") for p in recon.get("pages", []) if p.get("url") and _is_exact_target_url(target, p["url"])]
+        forms = recon.get("forms", [])
+        print(f"Discovered {len(urls)} pages and {len(forms)} forms.")
+        refresh_report("RECON COMPLETE", f"Discovered {len(urls)} pages and {len(forms)} forms.")
+
+        banner("STEP 2 — Deep attack-surface discovery")
+        loader.set("Expanding route, sitemap and JavaScript discovery")
+        value = _phase_call(
+            "attack_surface_discovery",
+            phase_status,
+            lambda: run_route_discovery(
+                target,
+                max_pages=config.ROUTE_DISCOVERY_MAX_PAGES,
+                max_assets=config.ROUTE_DISCOVERY_MAX_ASSETS,
+                max_candidates=config.ROUTE_DISCOVERY_MAX_CANDIDATES,
+            ),
+        )
+        if value:
+            discovery_result = value
+            discovered_pages = [u for u in value.get("pages", []) if _is_exact_target_url(target, u)]
+            discovered_get_routes = [
+                row.get("url") for row in value.get("routes", [])
+                if row.get("method", "GET").upper() == "GET"
+                and row.get("url")
+                and _is_exact_target_url(target, row["url"])
+            ]
+            urls = list(dict.fromkeys(urls + discovered_pages + discovered_get_routes))[:config.PENTEST_MAX_DISCOVERED_URLS]
+        print(f"Expanded in-scope URL inventory: {len(urls)}")
+        print(f"Discovered JS/assets: {len(discovery_result.get('assets', []))}")
+        print(f"Discovered route candidates: {len(discovery_result.get('routes', []))}")
+        refresh_report("ATTACK-SURFACE DISCOVERY", f"Expanded inventory to {len(urls)} same-origin URLs.")
+
+        banner("STEP 3 — Target website visual overview")
+        loader.set("Capturing target website overview")
+        target_overview = _phase_call(
+            "target_overview",
+            phase_status,
+            lambda: capture_target_overview(target, headed=headed, slow_mo=slow_mo),
+        ) or {}
+        refresh_report("TARGET OVERVIEW", "Target overview evidence is available in the report.")
+
+        banner("STEP 4 — Chrome UI / responsive evidence")
+        loader.set("Running Chromium UI and responsive coverage")
+        value = _phase_call(
+            "ui_responsive",
+            phase_status,
+            lambda: run_compatibility(
+                target, urls, max_pages=config.COMPATIBILITY_MAX_PAGES,
+                headed=headed, slow_mo=slow_mo, telemetry=telemetry,
+            ),
+        )
+        if value:
+            ui_result = value
+            all_findings.extend(value.get("findings", []))
+        print(f"Chrome URLs tested: {len(ui_result.get('urls_tested', []))}")
+        print(f"UI findings: {len(ui_result.get('findings', []))}")
+        refresh_report("UI / RESPONSIVE TESTING", f"Chrome testing completed across {len(ui_result.get('urls_tested', []))} URLs.")
+
+        banner("STEP 5 — Security headers")
+        loader.set("Checking security headers")
+        header_findings = []
+        for index, url in enumerate(urls[:config.SECURITY_MAX_URLS], 1):
+            try:
+                result = header_scanner.scan(url)
+                header_findings.extend(result.get("findings", []))
+            except Exception as exc:
+                phase_status.setdefault("security_headers", {"status": "partial"})
+                print(f"[WARN] Header check skipped {url}: {type(exc).__name__}: {exc}")
+            if index % 10 == 0 or index == len(urls[:config.SECURITY_MAX_URLS]):
+                all_findings.extend(header_findings[len(all_findings):] if False else [])
+                state.update(detail=f"Security headers: {index}/{min(len(urls), config.SECURITY_MAX_URLS)}")
+        all_findings.extend(header_findings)
+        phase_status["security_headers"] = {
+            "status": "completed",
+            "urls_tested": min(len(urls), config.SECURITY_MAX_URLS),
+            "findings": len(header_findings),
+        }
+        refresh_report("SECURITY HEADERS", f"Header assessment completed for {len(header_findings)} observations.")
+
+        banner("STEP 6 — Active security")
+        loader.set("Running bounded active security controls")
+        value = _phase_call(
+            "active_security",
+            phase_status,
+            lambda: run_active_security(
+                target, urls, forms, telemetry=telemetry,
+                max_urls=config.ACTIVE_SECURITY_MAX_URLS,
+            ),
+        )
+        if value:
+            active_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("ACTIVE SECURITY", f"Active security testing completed with {len(active_result.get('findings', []))} observations.")
+
+        banner("STEP 7 — Deep security and API surface")
+        loader.set("Running deep non-destructive security assessment")
+        value = _phase_call(
+            "deep_security",
+            phase_status,
+            lambda: run_deep_security(
+                target, max_urls=config.SECURITY_MAX_URLS,
+                max_probes=config.SECURITY_MAX_PROBES,
+            ),
+        )
+        if value:
+            deep_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("DEEP SECURITY", f"Deep security engine completed with {len(deep_result.get('findings', []))} observations.")
+
+        value = _phase_call(
+            "api_surface",
+            phase_status,
+            lambda: run_api_surface(target, max_probes=min(config.SECURITY_MAX_PROBES, 250)),
+        )
+        if value:
+            api_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("API SURFACE", f"API discovery completed: {api_result.get('summary', {}).get('endpoints', 0)} endpoints inventoried.")
+
+        banner("STEP 8 — Aggressive read-only differential testing")
+        loader.set("Running expanded read-only mutation matrix")
+        value = _phase_call(
+            "aggressive_readonly",
+            phase_status,
+            lambda: run_aggressive_readonly(
+                target, urls, max_urls=config.AGGRESSIVE_MAX_URLS,
+                max_probes=config.AGGRESSIVE_MAX_PROBES,
+            ),
+        )
+        if value:
+            aggressive_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("AGGRESSIVE READ-ONLY TESTING", f"Mutation testing completed with {len(aggressive_result.get('findings', []))} observations.")
+
+        banner("STEP 9 — Comprehensive exposure/configuration testing")
+        loader.set("Running comprehensive read-only security sweep")
+        value = _phase_call(
+            "comprehensive_security",
+            phase_status,
+            lambda: run_comprehensive_security(
+                target, urls=urls, max_urls=config.COMPREHENSIVE_MAX_URLS,
+                max_probes=config.COMPREHENSIVE_MAX_PROBES,
+            ),
+        )
+        if value:
+            comprehensive_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("COMPREHENSIVE SECURITY", f"Configuration and exposure testing completed with {len(comprehensive_result.get('findings', []))} observations.")
+
+        attack_surface = _phase_call(
+            "attack_surface_correlation",
+            phase_status,
+            lambda: correlate_attack_surface(target, recon=recon, route_discovery=discovery_result, api_surface=api_result),
+        ) or attack_surface
+        refresh_report("ATTACK-SURFACE CORRELATION", "Routes and API candidates were correlated into the assessment inventory.")
+
+        banner("STEP 10 — Input stress testing")
+        loader.set("Running bounded input stress tests")
+        value = _phase_call(
+            "input_stress",
+            phase_status,
+            lambda: run_input_stress(
+                target, urls, max_urls=config.STRESS_MAX_URLS,
+                max_probes=config.STRESS_MAX_PROBES,
+            ),
+        )
+        if value:
+            stress_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("INPUT STRESS", f"Input stress testing completed with {len(stress_result.get('findings', []))} observations.")
+
+        banner("STEP 11 — Input validation")
+        loader.set("Comparing valid and invalid input behavior")
+        value = _phase_call(
+            "input_validation",
+            phase_status,
+            lambda: run_input_validation(
+                target, urls, max_urls=config.VALIDATION_MAX_URLS,
+                max_probes=config.VALIDATION_MAX_PROBES,
+            ),
+        )
+        if value:
+            validation_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("INPUT VALIDATION", f"Input validation completed with {len(validation_result.get('findings', []))} observations.")
+
+        banner("STEP 12 — Focused browser evidence")
+        loader.set("Capturing focused evidence for detected issues")
+        evidence_findings = (
+            active_result.get("findings", [])
+            + deep_result.get("findings", [])
+            + api_result.get("findings", [])
+            + aggressive_result.get("findings", [])
+            + comprehensive_result.get("findings", [])
+            + stress_result.get("findings", [])
+            + validation_result.get("findings", [])
+        )
+        value = _phase_call(
+            "security_evidence",
+            phase_status,
+            lambda: capture_security_evidence(
+                target, evidence_findings, headed=headed,
+                slow_mo=slow_mo, max_items=50,
+            ),
+        )
+        if value:
+            security_evidence = value
+        refresh_report("SECURITY EVIDENCE", f"Focused evidence captured for {sum(1 for x in security_evidence if x.get('screenshot'))} issues.")
+
+        banner("STEP 13 — Final interactive report")
+        loader.set("Finalizing HTML report")
+        phase_status["report_generation"] = {"status": "completed"}
+        report = _refresh_live_report(target, all_findings, current_metadata("COMPLETE"))
+        if not report:
+            raise RuntimeError("The assessment completed but the HTML report could not be generated.")
+
         print(f"Findings JSON: {report['json_path']}")
         print(f"Findings HTML: {report['html_path']}")
         print(f"Portable HTML: {report.get('portable_html_path', '-')}")
-        print(f"PDF report: {report.get('pdf_path') or 'not generated (open portable HTML and Print -> Save as PDF)'}")
+        print(f"PDF report: {report.get('pdf_path') or '-'}")
         print(f"XLSX report: {report.get('xlsx_path', '-')}")
+        print(f"Unique findings: {report['report']['unique_findings']}")
+        print(f"Raw observations: {report['report']['raw_findings']}")
+        print(f"Affected URLs: {report['report'].get('affected_urls', 0)}")
 
-        print(f"Total findings: {report['report']['total_findings']}")
-
-        banner("PENTEST COMPLETE")
-        for sev, count in report["report"]["severity_summary"].items():
-            if count:
-                print(f"  {sev}: {count}")
         state.update(
             status="COMPLETE",
             stage="PENTEST COMPLETE",
-            detail="Interactive pentest report and evidence are ready.",
+            detail="Assessment finished. The HTML report contains the target overview, affected pages, focused evidence and plain-language explanations.",
             progress=100,
-            findings=report["report"]["total_findings"],
-            checks=(len(ui_result["results"]) + len(active_result["checks"])),
+            findings=report["report"]["unique_findings"],
+            checks=(len(ui_result.get("results", [])) + len(active_result.get("checks", []))),
             log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
-                 "message": "Pentest complete. Open reports/report.html."},
+                 "message": "Pentest complete. Open the generated HTML report."},
         )
         loader.set("Pentest complete")
         return 0
+    except Exception as exc:
+        phase_status["assessment"] = {
+            "status": "failed",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        try:
+            partial = _refresh_live_report(target, all_findings, current_metadata("PARTIAL"))
+            count = partial["report"]["unique_findings"] if partial else len(all_findings)
+        except Exception:
+            count = len(all_findings)
+        state.update(
+            status="FAILED",
+            stage="ASSESSMENT FAILED",
+            detail=f"Assessment stopped unexpectedly, but the partial HTML report was preserved. Error: {type(exc).__name__}: {exc}",
+            findings=count,
+            log={"time": datetime.now().strftime("%H:%M:%S"), "level": "error",
+                 "message": "Assessment stopped. Partial report preserved."},
+        )
+        loader.set("Assessment failed; partial report preserved")
+        return 1
     finally:
         loader.stop()
-
 
 def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False, confirm_intrusive: bool = False, confirm_destructive: bool = False, dry_run: bool = False):
     """Run explicitly configured, reversible state-changing tests only."""
