@@ -5,7 +5,7 @@ import re
 from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from config import EVIDENCE_DIR
 from utils.scope import assert_in_scope, assert_same_target
@@ -186,6 +186,52 @@ def _annotate_focus(page, focus: dict, finding_id: str) -> None:
         {"focus":focus,"findingId":finding_id},
     )
 
+
+def _write_diagnostic_evidence_card(
+    path: str, finding: dict, url: str, status, error: str | None, reason: str
+) -> dict:
+    """Create a compact visual diagnostic artifact when no DOM failure exists."""
+    try:
+        from textwrap import wrap
+        width, height = 1400, 820
+        image = Image.new("RGB", (width, height), "#07101b")
+        draw = ImageDraw.Draw(image)
+        def line(text, y, fill=(230, 239, 248), size=24, bold=False):
+            font = None
+            try:
+                font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+                font = ImageFont.truetype(font_path, size)
+            except Exception:
+                pass
+            draw.text((48, y), str(text), fill=fill, font=font)
+        line("SENTINEL // DIAGNOSTIC EVIDENCE", 38, (56, 232, 160), 30, True)
+        line("Generated evidence artifact — not a webpage screenshot", 82, (128, 149, 171), 18)
+        draw.rounded_rectangle((40, 130, width - 40, height - 40), radius=18, outline=(29, 45, 66), width=2)
+        title = str(finding.get('title') or 'Security finding')
+        severity = str(finding.get('severity') or 'Info')
+        finding_id = str(finding.get('id') or 'security')
+        category = str(finding.get('category') or 'Web Application Security')
+        line(f"{finding_id}  |  {severity}  |  {category}", 165, (255, 200, 87), 22, True)
+        for i, chunk in enumerate(wrap(title, 82)[:3]):
+            line(chunk, 205 + i * 34, (230, 239, 248), 22, True)
+        y = 330
+        for label, value in (
+            ('URL', url),
+            ('HTTP STATUS', status if status is not None else 'n/a'),
+            ('CAPTURE SCOPE', 'diagnostic-evidence-card'),
+        ):
+            line(label, y, (128, 149, 171), 14, True)
+            for i, chunk in enumerate(wrap(str(value), 105)[:4]):
+                line(chunk, y + 22 + i * 26, (190, 208, 227), 17)
+            y += 125
+        line("REASON / EXACT ERROR", y, (128, 149, 171), 14, True)
+        combined = str(error or reason or 'No browser error text was available.')
+        for i, chunk in enumerate(wrap(combined, 105)[:7]):
+            line(chunk, y + 24 + i * 26, (255, 141, 163) if error else (190, 208, 227), 17)
+        image.save(path)
+        return {'mode': 'diagnostic-evidence-card', 'focus_found': False, 'capture_scope': 'generated-diagnostic-card', 'focus_reason': reason, 'diagnostic_artifact': True}
+    except Exception as exc:
+        return {'mode': 'diagnostic-evidence-card-failed', 'focus_found': False, 'capture_scope': 'none', 'focus_reason': reason, 'error': f'{type(exc).__name__}: {exc}'}
 
 def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
     """Capture ONLY the DOM element that contains the detected error.
@@ -402,6 +448,15 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 if capture.get("mode") == "focused-element-capture-failed":
                     error = capture.get("error") or capture.get("focus_reason")
                     error_type = "FocusedElementCaptureError"
+                    capture["diagnostic_fallback"] = _write_diagnostic_evidence_card(
+                        screenshot, finding, url, status, error,
+                        capture.get("focus_reason") or "Focused DOM capture failed.",
+                    )
+                elif capture.get("mode") == "no-focused-region":
+                    capture["diagnostic_fallback"] = _write_diagnostic_evidence_card(
+                        screenshot, finding, url, status, None,
+                        capture.get("focus_reason") or "No visible DOM failure element exists for this finding.",
+                    )
             except Exception as exc:
                 error_type = type(exc).__name__
                 error = f"{type(exc).__name__}: {exc}"
@@ -413,6 +468,13 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                     "error_type": type(exc).__name__,
                     "error_description": str(exc),
                 }
+                screenshot = os.path.join(
+                    EVIDENCE_DIR,
+                    f"security_{index:03d}_{_safe_filename(url)}_diagnostic.png",
+                )
+                capture["diagnostic_fallback"] = _write_diagnostic_evidence_card(
+                    screenshot, finding, url, status, error, capture["focus_reason"]
+                )
             finally:
                 page.close()
 
@@ -420,7 +482,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 "finding_id": finding_id,
                 "url": url,
                 "status": status,
-                "screenshot": screenshot if focus and os.path.isfile(screenshot or "") else None,
+                "screenshot": screenshot if os.path.isfile(screenshot or "") else None,
                 "capture": capture,
                 "console_errors": console_errors[:20],
                 "error": error,
