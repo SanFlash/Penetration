@@ -30,6 +30,6 @@ def test_phase3_rejects_other_origin():
 
 def test_phase3_runtime_and_probe_caps_are_clamped():
     engine = AggressiveReadonlyEngine("https://example.test", max_urls=999, max_probes=999, max_runtime=9999)
-    assert engine.max_urls == 60
-    assert engine.max_probes == 400
+    assert engine.max_urls == 120
+    assert engine.max_probes == 1000
     assert engine.max_runtime == 600
