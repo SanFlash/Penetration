@@ -253,6 +253,33 @@ def _refresh_live_report(target, findings, metadata):
         return None
 
 
+
+
+def _preflight_full_assessment(target: str) -> dict:
+    """Validate imports, Chromium availability and target reachability before a full run."""
+    parsed = urlparse(target)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Target must be an absolute http:// or https:// URL.")
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            browser.close()
+    except Exception as exc:
+        raise RuntimeError(
+            "Chromium preflight failed. Install it with "
+            "python -m playwright install chromium. "
+            f"Original error: {type(exc).__name__}: {exc}"
+        ) from exc
+    try:
+        import requests
+        response = requests.get(target, timeout=15, allow_redirects=False)
+        return {"chromium": "ok", "http_status": response.status_code, "target_reachable": True}
+    except Exception as exc:
+        raise RuntimeError(
+            f"Target preflight failed for {target}: {type(exc).__name__}: {exc}"
+        ) from exc
+
 def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, authorized: bool = False, state_override=None):
     parsed = urlparse(target)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
@@ -266,7 +293,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
 
     loader = ConsoleLoader()
-    loader.start("Initializing authorized pentest engine")
+    loader.start("Running full-assessment preflight")
     telemetry = _set_telemetry(state, loader)
     phase_status = {}
     all_findings = []
@@ -356,6 +383,13 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         return result
 
     try:
+        banner("STEP 0 — Full assessment preflight")
+        state.update(stage="PREFLIGHT", detail="Checking Chromium and target reachability.")
+        preflight = _preflight_full_assessment(target)
+        print(f"Preflight OK: Chromium ready; HTTP status={preflight.get('http_status')}.")
+        phase_status["preflight"] = {"status": "completed", "checks": preflight}
+        refresh_report("PREFLIGHT COMPLETE", "Runtime and target preflight passed.")
+
         banner("STEP 1 — Scope-limited reconnaissance")
         state.update(stage="RECONNAISSANCE", detail="Discovering same-origin pages, query parameters and forms.")
         loader.set("Crawling authorized target")
@@ -655,9 +689,10 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         print(f"Raw observations: {report['report']['raw_findings']}")
         print(f"Affected URLs: {report['report'].get('affected_urls', 0)}")
 
+        final_ui_status = "PARTIAL" if phase_failures else "COMPLETE"
         state.update(
-            status="COMPLETE",
-            stage="PENTEST COMPLETE",
+            status=final_ui_status,
+            stage="PENTEST COMPLETE" if not phase_failures else "PENTEST PARTIAL",
             detail=("Assessment finished. The HTML report contains the target overview, affected pages, focused evidence and plain-language explanations."
                     + (f" Some phases failed and are listed in the report: {', '.join(phase_failures)}." if phase_failures else "")),
             progress=100,
@@ -870,6 +905,8 @@ def main():
         help="auto selects pentest; intrusive is a legacy alias for the non-destructive full pentest; lab remains available for localhost",
     )
     parser.add_argument("--headed", action="store_true", help="show Chrome/Chromium browser windows during UI testing")
+    parser.add_argument("--full", "--all-tests", dest="full", action="store_true",
+                        help="run the complete pipeline: UI/responsive + functional + security + penetration + info-leak + evidence")
     parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
                         help="delay each Playwright action by MS milliseconds (e.g. 500)")
     parser.add_argument("--no-dashboard", action="store_true",
@@ -891,7 +928,9 @@ def main():
     host = target.lower().split("://", 1)[-1].split("/", 1)[0].split(":")[0]
     is_amwebtech = host in {"amwebtech.com", "www.amwebtech.com"}
 
-    if args.profile == "auto":
+    if args.full:
+        profile = "pentest"
+    elif args.profile == "auto":
         if is_amwebtech:
             profile = "pentest"
         elif args.confirm_authorized:
@@ -912,6 +951,9 @@ def main():
     else:
         banner("STEP 0 — Scope check")
         if profile == "pentest":
+            if args.full and not args.confirm_authorized:
+                print("[BLOCKED] --full/--all-tests requires --confirm-authorized.")
+                return 1
             if not args.confirm_authorized and not is_amwebtech:
                 print("[BLOCKED] Arbitrary pentest targets require --confirm-authorized.")
                 print("[INFO] Use only on a system you own or have explicit authorization to assess.")
