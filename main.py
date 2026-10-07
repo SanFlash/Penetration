@@ -458,9 +458,16 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
 
         jobs = {
             "deep_security": lambda: run_deep_security(
-                target, max_urls=min(config.SECURITY_MAX_URLS, url_count), max_probes=deep_budget
+                target,
+                max_urls=min(config.SECURITY_MAX_URLS, url_count),
+                max_probes=deep_budget,
+                write_report=False,
             ),
-            "api_surface": lambda: run_api_surface(target, max_probes=api_budget),
+            "api_surface": lambda: run_api_surface(
+                target,
+                max_probes=api_budget,
+                route_discovery_result=discovery_result,
+            ),
             "aggressive_readonly": lambda: run_aggressive_readonly(
                 target, scan_urls, max_urls=min(config.AGGRESSIVE_MAX_URLS, url_count), max_probes=aggressive_budget
             ),
