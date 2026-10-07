@@ -199,12 +199,24 @@ def _artifact(directory: str, filename: str):
 
     response = send_from_directory(str(base), str(full.relative_to(base)))
     # Reports are regenerated during an assessment; never let a stale cached
-    # HTML/JSON response hide the newest findings or evidence links.
+    # HTML/JSON/image response hide the newest findings or evidence links.
     if base in {Path(config.REPORT_DIR).resolve(), Path(config.EVIDENCE_DIR).resolve()}:
-        # Reports and screenshots are regenerated between runs. Do not let a
-        # browser or proxy keep an older HTML/image asset after a new scan.
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
+        # Keep artifact MIME types explicit on Render/CDN paths so PNG/JPEG
+        # evidence is rendered as an image instead of being treated as an
+        # attachment or generic binary response.
+        suffix = full.suffix.lower()
+        if suffix == ".png":
+            response.headers["Content-Type"] = "image/png"
+        elif suffix in {".jpg", ".jpeg"}:
+            response.headers["Content-Type"] = "image/jpeg"
+        elif suffix == ".webp":
+            response.headers["Content-Type"] = "image/webp"
+        elif suffix == ".json":
+            response.headers["Content-Type"] = "application/json; charset=utf-8"
+        elif suffix == ".html":
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
     return response
 
 
