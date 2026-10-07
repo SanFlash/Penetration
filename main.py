@@ -553,14 +553,20 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
 
         banner("STEP 12 — Focused browser evidence")
         loader.set("Capturing focused evidence for detected issues")
+        # Prioritize security/info-leak evidence before visual-only findings so
+        # the limited browser evidence budget demonstrates actual security issues.
         evidence_findings = (
             active_result.get("findings", [])
             + deep_result.get("findings", [])
+            + info_disclosure_result.get("findings", [])
             + api_result.get("findings", [])
-            + aggressive_result.get("findings", [])
             + comprehensive_result.get("findings", [])
+            + aggressive_result.get("findings", [])
             + stress_result.get("findings", [])
             + validation_result.get("findings", [])
+            + functional_result.get("findings", [])
+            + header_findings
+            + ui_result.get("findings", [])
         )
         def _evidence_progress(done, total, finding_id, url, status):
             state.update(
