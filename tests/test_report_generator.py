@@ -213,3 +213,40 @@ def test_finding_screenshot_uses_report_local_bundled_path(tmp_path):
     assert finding["screenshot_relative"] == "evidence/security_001_failure.png"
     assert (tmp_path / "reports" / "evidence" / "security_001_failure.png").is_file()
     assert "../" not in finding["screenshots_relative"][0]
+
+
+def test_report_exposes_report_local_evidence_contract(tmp_path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    screenshot = evidence / "security.png"
+    screenshot.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c6360606000000004000105f9d8"
+            "0000000049454e44ae426082"
+        )
+    )
+    result = generate(
+        "http://127.0.0.1:5000",
+        [{
+            "id": "SEC-LOCAL-1",
+            "title": "Evidence contract",
+            "severity": "Medium",
+            "confidence": "High",
+            "category": "Security",
+            "url": "http://127.0.0.1:5000/",
+            "screenshot": str(screenshot),
+            "evidence": "focused evidence",
+        }],
+        str(evidence),
+        out_dir=str(tmp_path / "reports"),
+        metadata={"profile": "pentest"},
+    )
+    report = result["report"]
+    assert report["evidence_integrity"]["artifact_base_url"] == "/reports/evidence/"
+    assert report["evidence_integrity"]["artifact_resolution"] == "report-local"
+    assert report["evidence_integrity"]["missing_visual_artifacts"] == []
+    html = open(result["html_path"], encoding="utf-8").read()
+    assert "function evidenceAnchor" in html
+    assert "evidence/security.png" in html
+    assert "artifactUrl" in html
