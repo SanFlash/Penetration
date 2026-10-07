@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """CLI for safe-lab and authorized website assessment profiles."""
 import argparse
+import os
 import sys
 import threading
 import time
@@ -286,6 +287,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
     stress_result = {"findings": [], "checks": [], "probes": 0, "summary": {"candidate_points": 0}}
     validation_result = {"findings": [], "checks": [], "probes": 0, "summary": {"candidate_points": 0, "valid_cases": 0, "invalid_cases": 0, "accepted_invalid_2xx": 0}}
     security_evidence = []
+    live_evidence = []
     attack_surface = {"summary": {}, "routes": []}
     urls = []
     forms = []
@@ -315,6 +317,15 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "input_stress": stress_result,
             "input_validation": validation_result,
             "security_evidence": security_evidence,
+            "live_evidence": live_evidence[-40:],
+            "coverage": {
+                "ui_responsive": phase_status.get("ui_responsive", {}).get("status", "pending"),
+                "functional": phase_status.get("functional_testing", {}).get("status", "pending"),
+                "security": "completed" if phase_status.get("security_headers", {}).get("status") == "completed" and phase_status.get("active_security", {}).get("status") == "completed" else ("running" if "SECURITY" in str(state.snapshot().get("stage", "")) else "pending"),
+                "penetration": "completed" if all(phase_status.get(k, {}).get("status") == "completed" for k in ("deep_security", "api_surface", "aggressive_readonly", "comprehensive_security", "input_stress", "input_validation")) else ("running" if "SECURITY" in str(state.snapshot().get("stage", "")) else "pending"),
+                "information_disclosure": phase_status.get("information_disclosure", {}).get("status", "pending"),
+                "evidence": "completed" if phase_status.get("security_evidence", {}).get("status") == "completed" else ("running" if phase_status.get("security_evidence") else "pending"),
+            },
             "runtime_seconds": round(time.time() - start, 1),
         }
 
@@ -568,7 +579,20 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             + header_findings
             + ui_result.get("findings", [])
         )
-        def _evidence_progress(done, total, finding_id, url, status):
+        def _evidence_progress(done, total, finding_id, url, status, item=None):
+            if item and item.get("screenshot"):
+                live_evidence.append({
+                    "finding_id": finding_id,
+                    "url": url,
+                    "status": item.get("status"),
+                    "error": item.get("error"),
+                    "capture_mode": (item.get("capture") or {}).get("mode"),
+                    "screenshot": item.get("screenshot"),
+                    "artifact_url": "/reports/evidence/" + os.path.basename(str(item.get("screenshot"))),
+                    "captured_at": datetime.now().isoformat(timespec="seconds"),
+                })
+                live_evidence[:] = live_evidence[-40:]
+                state.update(live_evidence=live_evidence[-40:])
             state.update(
                 stage="SECURITY EVIDENCE",
                 detail=f"Evidence {done}/{total}: {finding_id} — {status} — {url}",
