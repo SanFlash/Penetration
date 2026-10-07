@@ -322,11 +322,16 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     remediation = build_remediation_summary(findings_sorted)
 
     for finding in findings_sorted:
-        if finding.get("screenshot"):
-            finding["screenshot_relative"] = _safe_relative_path(finding["screenshot"], out_dir)
+        # Every finding screenshot is bundled under report/evidence. Never
+        # calculate the public URL directly from the original evidence path,
+        # because that path lives outside the report directory on Render.
+        finding["screenshot_relative"] = (
+            _bundle_evidence_path(finding.get("screenshot"), evidence_dir, out_dir)
+            if finding.get("screenshot") else None
+        )
         finding["screenshots_relative"] = [
             rel for rel in (
-                _safe_relative_path(path, out_dir)
+                _bundle_evidence_path(path, evidence_dir, out_dir)
                 for path in finding.get("screenshots", [])
             ) if rel
         ]
