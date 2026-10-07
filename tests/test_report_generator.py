@@ -179,3 +179,37 @@ def test_xlsx_report_contains_failed_issue_and_embedded_evidence(tmp_path):
         assert len(ws._images) == 1
     finally:
         wb.close()
+
+
+def test_finding_screenshot_uses_report_local_bundled_path(tmp_path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    screenshot = evidence / "security_001_failure.png"
+    screenshot.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c6360606000000004000105f9d8"
+            "0000000049454e44ae426082"
+        )
+    )
+    result = generate(
+        "http://127.0.0.1:5000",
+        [{
+            "id": "SEC-1",
+            "title": "Focused browser failure",
+            "severity": "Medium",
+            "confidence": "High",
+            "category": "Security",
+            "url": "http://127.0.0.1:5000/login",
+            "screenshot": str(screenshot),
+            "evidence": "Visible error element captured.",
+        }],
+        str(evidence),
+        out_dir=str(tmp_path / "reports"),
+        metadata={"profile": "pentest"},
+    )
+    finding = result["report"]["findings"][0]
+    assert finding["screenshots_relative"] == ["evidence/security_001_failure.png"]
+    assert finding["screenshot_relative"] == "evidence/security_001_failure.png"
+    assert (tmp_path / "reports" / "evidence" / "security_001_failure.png").is_file()
+    assert "../" not in finding["screenshots_relative"][0]
