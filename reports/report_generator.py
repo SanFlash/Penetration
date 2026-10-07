@@ -652,7 +652,7 @@ function artifactUrl(p){
 function evidenceAnchor(path, alt){
   const src=artifactUrl(path);
   if(!src) return '<div class="warn"><b>Evidence unavailable:</b> invalid report-local artifact path.</div>';
-  return '<a href="'+esc(src)+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(src)+'" alt="'+esc(alt||"Evidence screenshot")+'" style="width:100%;border:1px solid #263b55;border-radius:10px" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.insertAdjacentHTML(\'beforeend\',\'<div class=warn>Evidence file unavailable: '+esc(src)+'<\\/div>\')"></a>';
+  return '<a href="'+esc(src)+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(src)+'" alt="'+esc(alt||"Evidence screenshot")+'" style="width:100%;border:1px solid #263b55;border-radius:10px;display:block;min-height:140px;object-fit:contain;background:#03070d" loading="lazy"><span class="caption">Open evidence artifact</span></a>';
 }
 
 const phaseStatus=(meta&&meta.phase_status)||{};
