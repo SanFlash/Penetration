@@ -36,6 +36,8 @@ def _authorized() -> bool:
     supplied = request.headers.get("X-Sentinel-Token", "")
     if not supplied:
         supplied = request.args.get("token", "")
+    if not supplied:
+        supplied = request.cookies.get("sentinel_access_token", "")
     return supplied == ACCESS_TOKEN
 
 
@@ -101,7 +103,22 @@ def index():
     auth = _require_auth()
     if auth:
         return auth
-    return _HTML
+
+    # Browser navigation cannot preserve a custom X-Sentinel-Token header.
+    # When the console is opened with ?token=..., establish a short-lived
+    # HttpOnly same-origin cookie so report/evidence links and polling continue
+    # to authenticate without exposing the token in every asset URL.
+    response = app.make_response(_HTML)
+    if ACCESS_TOKEN and request.args.get("token") == ACCESS_TOKEN:
+        response.set_cookie(
+            "sentinel_access_token",
+            ACCESS_TOKEN,
+            httponly=True,
+            secure=request.is_secure,
+            samesite="Lax",
+            max_age=3600,
+        )
+    return response
 
 
 @app.get("/api/status")
@@ -183,7 +200,9 @@ def _artifact(directory: str, filename: str):
     response = send_from_directory(str(base), str(full.relative_to(base)))
     # Reports are regenerated during an assessment; never let a stale cached
     # HTML/JSON response hide the newest findings or evidence links.
-    if base == Path(config.REPORT_DIR).resolve():
+    if base in {Path(config.REPORT_DIR).resolve(), Path(config.EVIDENCE_DIR).resolve()}:
+        # Reports and screenshots are regenerated between runs. Do not let a
+        # browser or proxy keep an older HTML/image asset after a new scan.
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
     return response
