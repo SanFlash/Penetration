@@ -285,38 +285,26 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     browser_results = compatibility.get("results", [])
     security_evidence = meta.get("security_evidence", [])
     for item in security_evidence:
-        if item.get("screenshot"):
-            source = os.path.abspath(str(item["screenshot"]))
-            try:
-                rel_source = os.path.relpath(source, os.path.abspath(evidence_dir))
-                bundled = os.path.join(out_dir, "evidence", rel_source)
-                item["screenshot_relative"] = _safe_relative_path(bundled, out_dir)
-            except ValueError:
-                item["screenshot_relative"] = None
+        item["screenshot_relative"] = (
+            _bundle_evidence_path(item.get("screenshot"), evidence_dir, out_dir)
+            if item.get("screenshot") else None
+        )
 
     coverage_results = []
     for row in browser_results:
         copy = dict(row)
-        if copy.get("screenshot"):
-            source = os.path.abspath(str(copy["screenshot"]))
-            try:
-                rel_source = os.path.relpath(source, os.path.abspath(evidence_dir))
-                bundled = os.path.join(out_dir, "evidence", rel_source)
-                copy["screenshot_relative"] = _safe_relative_path(bundled, out_dir)
-            except ValueError:
-                copy["screenshot_relative"] = None
+        copy["screenshot_relative"] = (
+            _bundle_evidence_path(copy.get("screenshot"), evidence_dir, out_dir)
+            if copy.get("screenshot") else None
+        )
         coverage_results.append(copy)
 
     target_overview = dict(meta.get("target_overview") or {})
-    if target_overview.get("screenshot"):
-        source = os.path.abspath(str(target_overview["screenshot"]))
-        try:
-            rel_source = os.path.relpath(source, os.path.abspath(evidence_dir))
-            bundled = os.path.join(out_dir, "evidence", rel_source)
-            target_overview["screenshot_relative"] = _safe_relative_path(bundled, out_dir)
-        except ValueError:
-            target_overview["screenshot_relative"] = None
-        meta["target_overview"] = target_overview
+    target_overview["screenshot_relative"] = (
+        _bundle_evidence_path(target_overview.get("screenshot"), evidence_dir, out_dir)
+        if target_overview.get("screenshot") else None
+    )
+    meta["target_overview"] = target_overview
 
     gallery = _collect_gallery(evidence_dir, out_dir, findings_sorted)
     remediation = build_remediation_summary(findings_sorted)
@@ -335,6 +323,28 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
                 for path in finding.get("screenshots", [])
             ) if rel
         ]
+
+    evidence_paths = []
+    for finding in findings_sorted:
+        evidence_paths.extend(finding.get("screenshots_relative") or [])
+    evidence_paths.extend(
+        item.get("screenshot_relative")
+        for item in security_evidence
+        if item.get("screenshot_relative")
+    )
+    evidence_paths.extend(
+        row.get("screenshot_relative")
+        for row in coverage_results
+        if row.get("screenshot_relative")
+    )
+    if target_overview.get("screenshot_relative"):
+        evidence_paths.append(target_overview["screenshot_relative"])
+
+    unique_evidence_paths = list(dict.fromkeys(p for p in evidence_paths if p))
+    missing_evidence = [
+        p for p in unique_evidence_paths
+        if not os.path.isfile(os.path.join(out_dir, p.replace("/", os.sep)))
+    ]
 
     report = {
         "schema_version": "3.0",
@@ -365,6 +375,12 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "marked": sum(1 for r in browser_results if r.get("evidence_marked")),
         },
         "security_evidence": security_evidence,
+        "evidence_integrity": {
+            "expected_visual_artifacts": len(unique_evidence_paths),
+            "resolvable_visual_artifacts": len(unique_evidence_paths) - len(missing_evidence),
+            "missing_visual_artifacts": missing_evidence,
+            "all_links_report_local": all(not p.startswith("../") and not p.startswith("..\\") for p in unique_evidence_paths),
+        },
         "remediation": remediation,
         "metadata": meta,
     }
@@ -386,26 +402,46 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     with open(html_path, "w", encoding="utf-8") as handle:
         handle.write(_render_html(report))
 
-    portable_html_path = make_portable_html(
-        html_path,
-        os.path.join(out_dir, "report_portable.html"),
-    )
-    pdf_path = make_pdf(
-        portable_html_path,
-        os.path.join(out_dir, "report.pdf"),
-    )
-    xlsx_path = generate_xlsx(
-        report,
-        os.path.join(out_dir, "penetration_report.xlsx"),
-    )
+    # HTML/JSON are the canonical report. Optional exports must never be
+    # allowed to make the assessment appear stuck or erase the usable report.
+    portable_html_path = None
+    pdf_path = None
+    xlsx_path = None
+    export_errors = {}
+
+    try:
+        portable_html_path = make_portable_html(
+            html_path,
+            os.path.join(out_dir, "report_portable.html"),
+        )
+    except Exception as exc:
+        export_errors["portable_html"] = f"{type(exc).__name__}: {exc}"
+
+    if portable_html_path:
+        try:
+            pdf_path = make_pdf(
+                portable_html_path,
+                os.path.join(out_dir, "report.pdf"),
+            )
+        except Exception as exc:
+            export_errors["pdf"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        xlsx_path = generate_xlsx(
+            report,
+            os.path.join(out_dir, "penetration_report.xlsx"),
+        )
+    except Exception as exc:
+        export_errors["xlsx"] = f"{type(exc).__name__}: {exc}"
     report["exports"] = {
         "html_path": html_path,
         "portable_html_path": portable_html_path,
         "pdf_path": pdf_path,
         "xlsx_path": xlsx_path,
-        "portable": True,
+        "portable": bool(portable_html_path),
         "pdf_generated": bool(pdf_path),
         "xlsx_generated": bool(xlsx_path),
+        "errors": export_errors,
     }
 
     return {
@@ -621,7 +657,7 @@ function renderFindings(){
  list.innerHTML=filtered.map(function(f){
   const color=colors[f.severity]||colors.Info;
   const shots=f.screenshots_relative||[];
-  const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return '<a href="'+esc(p)+'" target="_blank" rel="noopener"><img src="'+esc(p)+'" alt="Security evidence screenshot" style="width:100%;border:1px solid #263b55;border-radius:10px"></a>'}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
+  const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return '<a href="'+esc(p)+'" target="_blank" rel="noopener"><img src="'+esc(p)+'" alt="Security evidence screenshot" style="width:100%;border:1px solid #263b55;border-radius:10px" onerror="this.style.display=\'none\';this.parentElement.insertAdjacentHTML(\'beforeend\',\'<div class=warn>Evidence file unavailable</div>\')"></a>'}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
   return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>What failed / evidence / how to fix</summary><p><b>What this means:</b> '+esc(f.plain_language_summary)+'</p><p><b>Why it matters:</b> '+esc(f.why_it_matters)+'</p><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Recommended action:</b> '+esc(f.recommended_action)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
  }).join("");
 }
