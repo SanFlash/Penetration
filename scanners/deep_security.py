@@ -31,7 +31,8 @@ UA = "Sentinel-DeepSecurity/1.0 (authorized security assessment)"
 TIMEOUT = getattr(config, "SECURITY_TIMEOUT", 10)
 MAX_URLS = getattr(config, "SECURITY_MAX_URLS", 40)
 MAX_PROBES = getattr(config, "SECURITY_MAX_PROBES", 180)
-RATE_RPS = max(float(getattr(config, "SECURITY_RATE_RPS", 2)), 0.2)
+MAX_RUNTIME = max(60, min(int(getattr(config, "SECURITY_MAX_RUNTIME", 180)), 240))
+RATE_RPS = min(max(float(getattr(config, "SECURITY_RATE_RPS", 2)), 0.2), 4.0)
 PROGRESS_INTERVAL = max(int(getattr(config, "SECURITY_PROGRESS_INTERVAL", 10)), 1)
 SENTINEL = "SENTINEL-" + uuid.uuid4().hex[:12]
 EXTERNAL = "https://sentinel-invalid-origin.invalid"
@@ -76,8 +77,8 @@ class DeepSecurityEngine:
             raise ValueError("Target must be an absolute http:// or https:// URL.")
         self.target = target
         self.origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-        self.max_urls = max_urls
-        self.max_probes = max_probes
+        self.max_urls = max(1, min(int(max_urls), 120))
+        self.max_probes = max(1, min(int(max_probes), 600))
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": UA, "Accept": "*/*"})
         self.findings: list[dict] = []
@@ -96,6 +97,8 @@ class DeepSecurityEngine:
         if not self._same_origin(url):
             raise ValueError(f"Out-of-origin URL blocked: {url}")
         if self._probe_count >= self.max_probes:
+            raise RuntimeError("probe budget exhausted")
+        if time.monotonic() - self._started >= MAX_RUNTIME:
             raise RuntimeError("probe budget exhausted")
         self._pace()
         started = time.monotonic()
