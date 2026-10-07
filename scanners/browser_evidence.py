@@ -432,7 +432,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 break
 
             if progress_callback:
-                progress_callback(index - 1, total, finding_id, url, "starting")
+                notify(index - 1, total, finding_id, url, "starting", None)
 
             page = context.new_page()
             console_errors = []
