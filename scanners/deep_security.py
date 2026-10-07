@@ -726,5 +726,31 @@ class DeepSecurityEngine:
         return result
 
 
-def run_deep_security(target: str, max_urls: int = MAX_URLS, max_probes: int = MAX_PROBES):
-    return DeepSecurityEngine(target, max_urls=max_urls, max_probes=max_probes).run()
+def run_deep_security(
+    target: str,
+    max_urls: int = MAX_URLS,
+    max_probes: int = MAX_PROBES,
+    write_report: bool = True,
+):
+    """Run the deep engine.
+
+    Standalone CLI usage keeps its historical report generation. The unified
+    pentest profile can disable it because the orchestrator owns the single
+    canonical report and regenerates it after the parallel phase. This avoids
+    concurrent scanners overwriting the shared report directory.
+    """
+    engine = DeepSecurityEngine(target, max_urls=max_urls, max_probes=max_probes)
+    if not write_report:
+        # Run the engine body while preserving its persisted JSON evidence, but
+        # do not let this worker generate a second competing HTML/PDF/XLSX report.
+        original = generate
+        try:
+            globals()["generate"] = lambda *args, **kwargs: {
+                "html_path": os.path.join(config.REPORT_DIR, "report.html"),
+                "json_path": os.path.join(config.REPORT_DIR, "findings.json"),
+                "report": {"total_findings": len(engine.findings)},
+            }
+            return engine.run()
+        finally:
+            globals()["generate"] = original
+    return engine.run()
