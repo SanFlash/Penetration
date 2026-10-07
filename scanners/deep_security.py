@@ -631,7 +631,7 @@ class DeepSecurityEngine:
                 method="GET", owasp="WSTG-ERRH-02",
             )
 
-    def run(self):
+    def run(self, write_report: bool = True):
         started = time.time()
         self._started = time.monotonic()
         print("[DEEP] Starting deep security engine...", flush=True)
@@ -701,26 +701,27 @@ class DeepSecurityEngine:
         with open(os.path.join(config.EVIDENCE_DIR, "deep_security.json"), "w", encoding="utf-8") as handle:
             json.dump(result, handle, indent=2, ensure_ascii=False)
 
-        report = generate(
-            self.target,
-            self.findings,
-            config.EVIDENCE_DIR,
-            metadata={
-                "profile": "security",
-                "methodology": "OWASP WSTG-aligned deep security-only assessment",
-                "deep_security": result,
-                "headed": False,
-                "browser_ui": False,
-            },
-        )
-        result["report"] = {
-            "html_path": report["html_path"],
-            "json_path": report["json_path"],
-            "total_findings": report["report"]["total_findings"],
-        }
-        # Keep persisted scanner counts authoritative even if report presentation
-        # deduplicates repeated observations into fewer report rows.
-        result["summary"]["report_findings"] = report["report"]["total_findings"]
+        if write_report:
+            report = generate(
+                self.target,
+                self.findings,
+                config.EVIDENCE_DIR,
+                metadata={
+                    "profile": "security",
+                    "methodology": "OWASP WSTG-aligned deep security-only assessment",
+                    "deep_security": result,
+                    "headed": False,
+                    "browser_ui": False,
+                },
+            )
+            result["report"] = {
+                "html_path": report["html_path"],
+                "json_path": report["json_path"],
+                "total_findings": report["report"]["total_findings"],
+            }
+            # Keep persisted scanner counts authoritative even if report presentation
+            # deduplicates repeated observations into fewer report rows.
+            result["summary"]["report_findings"] = report["report"]["total_findings"]
         with open(os.path.join(config.EVIDENCE_DIR, "deep_security.json"), "w", encoding="utf-8") as handle:
             json.dump(result, handle, indent=2, ensure_ascii=False)
         return result
@@ -740,17 +741,4 @@ def run_deep_security(
     concurrent scanners overwriting the shared report directory.
     """
     engine = DeepSecurityEngine(target, max_urls=max_urls, max_probes=max_probes)
-    if not write_report:
-        # Run the engine body while preserving its persisted JSON evidence, but
-        # do not let this worker generate a second competing HTML/PDF/XLSX report.
-        original = generate
-        try:
-            globals()["generate"] = lambda *args, **kwargs: {
-                "html_path": os.path.join(config.REPORT_DIR, "report.html"),
-                "json_path": os.path.join(config.REPORT_DIR, "findings.json"),
-                "report": {"total_findings": len(engine.findings)},
-            }
-            return engine.run()
-        finally:
-            globals()["generate"] = original
-    return engine.run()
+    return engine.run(write_report=write_report)
