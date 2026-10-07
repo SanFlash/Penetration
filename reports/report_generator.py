@@ -522,7 +522,7 @@ def _render_html(report: dict) -> str:
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#132a44 0,#050810 42%,#02040a 100%);color:var(--text);font:14px/1.5 Inter,Segoe UI,Arial,sans-serif}
 a{color:#8fc5ff}.shell{max-width:1500px;margin:auto;padding:22px}.hero{border:1px solid var(--line);border-radius:22px;background:linear-gradient(135deg,#0b1727f2,#07101bf2);padding:26px;position:relative;overflow:hidden}.hero:after{content:"";position:absolute;width:360px;height:360px;border:1px solid #38e8a022;border-radius:50%;right:-120px;top:-180px;box-shadow:0 0 90px #38e8a015}
 .eyebrow{color:var(--accent);font-weight:800;letter-spacing:.14em;font-size:11px;text-transform:uppercase}h1{font-size:clamp(26px,4vw,46px);margin:7px 0}.sub{color:var(--muted);max-width:980px}.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.chip{border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#07101b;color:#b9c9d9}
-.nav{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.nav button{background:#08111d;color:#a9bdd1;border:1px solid var(--line);border-radius:9px;padding:9px 12px}.nav button.active{color:#06110d;background:var(--accent);border-color:var(--accent);font-weight:800}
+.nav{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;position:sticky;top:8px;z-index:20;padding:4px;background:#050810ee;backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:12px}.nav a{display:inline-flex;align-items:center;justify-content:center;background:#08111d;color:#a9bdd1;border:1px solid var(--line);border-radius:9px;padding:9px 12px;text-decoration:none;font-weight:700;cursor:pointer;min-height:40px}.nav a:hover,.nav a:focus-visible{color:#06110d;background:var(--accent);border-color:var(--accent);outline:2px solid #38e8a055;outline-offset:2px}.tab{display:none}.tab:target{display:block}.shell:has(.tab:target) #overview{display:none}
 .panel{background:#09111ddd;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 14px 50px #0005;margin-bottom:14px}.section-title{font-size:12px;color:#9bb0c6;letter-spacing:.12em;text-transform:uppercase;margin:0 0 13px}
 .grid{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.riskgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.risk-card{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:13px;overflow:hidden}.risk-card span{position:absolute;left:0;top:0;width:4px;height:100%;background:var(--c)}.risk-card small{display:block;color:var(--muted)}.risk-card b{font-size:26px}
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.kpi{padding:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px}.kpi b{display:block;font-size:25px}.kpi span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
@@ -565,15 +565,16 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 </div>
 </header>
 
-<nav class="nav">
-<button class="active" data-tab="overview">Overview</button>
-<button data-tab="findings">Findings</button>
-<button data-tab="coverage">Coverage</button>
-<button data-tab="evidence">Evidence</button>
-<button data-tab="remediation">Remediation</button><button data-tab="execution">Execution</button>
+<nav class="nav" aria-label="Report sections">
+<a href="#overview">Overview</a>
+<a href="#findings">Findings</a>
+<a href="#coverage">Coverage</a>
+<a href="#evidence">Evidence</a>
+<a href="#remediation">Remediation</a>
+<a href="#execution">Execution</a>
 </nav>
 
-<section id="overview" class="tab">
+<section id="overview" class="tab" style="display:block">
 <div class="panel"><div class="section-title">Severity distribution</div><div class="riskgrid">__CARDS__</div></div>
 <div class="grid">
 <div class="panel"><div class="section-title">Assessment metrics</div><div class="kpis">
@@ -595,7 +596,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
 </section>
 
-<section id="findings" class="tab" hidden>
+<section id="findings" class="tab">
 <div class="panel"><div class="section-title">Findings explorer</div>
 <div class="controls"><input id="search" placeholder="Search title, URL, category, evidence..."><select id="sev"><option value="">All severities</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option><option>Info</option></select><select id="cat"><option value="">All categories</option></select></div>
 <div id="list"></div></div>
@@ -649,7 +650,8 @@ function artifactUrl(p){
   if(!p) return "";
   const raw=String(p).replace(/\\/g,"/");
   if(raw.startsWith("../") || raw.startsWith("/evidence/") || raw.includes("://")) return "";
-  return raw.startsWith("evidence/") ? raw : ("evidence/"+raw.replace(/^\\/+/,""));
+  const clean=raw.startsWith("evidence/") ? raw.slice("evidence/".length) : raw.replace(/^\\/+/,"");
+  return "/reports/evidence/"+clean;
 }
 function evidenceAnchor(path, alt){
   const src=artifactUrl(path);
@@ -662,8 +664,7 @@ const phaseEntries=Object.keys(phaseStatus);
 document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
  ? '<div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=p.status==="failed";return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds||"-")+' s</td><td>'+esc(p.error||"Completed")+'</td></tr>'}).join("")+'</tbody></table></div>'
  : '<div class="empty">Assessment phase status will appear as the report is updated.</div>';
-const tabs=document.querySelectorAll(".nav button");
-tabs.forEach(function(b){b.addEventListener("click",function(){tabs.forEach(function(x){x.classList.remove("active")});b.classList.add("active");document.querySelectorAll(".tab").forEach(function(x){x.hidden=x.id!==b.dataset.tab})})});
+
 const cat=document.getElementById("cat");
 Object.keys(__CATEGORY_JSON__).sort().forEach(function(c){const o=document.createElement("option");o.value=c;o.textContent=c;cat.appendChild(o)});
 function renderFindings(){
