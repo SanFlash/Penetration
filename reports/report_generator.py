@@ -641,6 +641,20 @@ const colors=__COLORS__;
 // being registered.
 const esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
 
+// All report visuals are intentionally resolved relative to /reports/evidence.
+// This avoids parent-directory links and keeps <img> + open links identical.
+function artifactUrl(p){
+  if(!p) return "";
+  const raw=String(p).replace(/\\/g,"/");
+  if(raw.startsWith("../") || raw.startsWith("/evidence/") || raw.includes("://")) return "";
+  return raw.startsWith("evidence/") ? raw : ("evidence/"+raw.replace(/^\\/+/,""));
+}
+function evidenceAnchor(path, alt){
+  const src=artifactUrl(path);
+  if(!src) return '<div class="warn"><b>Evidence unavailable:</b> invalid report-local artifact path.</div>';
+  return '<a href="'+esc(src)+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(src)+'" alt="'+esc(alt||"Evidence screenshot")+'" style="width:100%;border:1px solid #263b55;border-radius:10px" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.insertAdjacentHTML(\'beforeend\',\'<div class=warn>Evidence file unavailable: '+esc(src)+'<\\/div>\')"></a>';
+}
+
 const phaseStatus=(meta&&meta.phase_status)||{};
 const phaseEntries=Object.keys(phaseStatus);
 document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
@@ -657,7 +671,7 @@ function renderFindings(){
  list.innerHTML=filtered.map(function(f){
   const color=colors[f.severity]||colors.Info;
   const shots=f.screenshots_relative||[];
-  const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return '<a href="'+esc(p)+'" target="_blank" rel="noopener"><img src="'+esc(p)+'" alt="Security evidence screenshot" style="width:100%;border:1px solid #263b55;border-radius:10px" onerror="this.style.display=\'none\';this.parentElement.insertAdjacentHTML(\'beforeend\',\'<div class=warn>Evidence file unavailable</div>\')"></a>'}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
+  const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return evidenceAnchor(p,"Security evidence screenshot")}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
   return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>What failed / evidence / how to fix</summary><p><b>What this means:</b> '+esc(f.plain_language_summary)+'</p><p><b>Why it matters:</b> '+esc(f.why_it_matters)+'</p><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Recommended action:</b> '+esc(f.recommended_action)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
  }).join("");
 }
@@ -665,15 +679,15 @@ function renderFindings(){
 cat.addEventListener("change",renderFindings);renderFindings();
 
 const rows=coverage.results||[];
-document.getElementById("matrix").innerHTML=rows.length?'<table><thead><tr><th>Browser</th><th>Viewport</th><th>URL</th><th>Status</th><th>Load</th><th>Console</th><th>Network</th><th>Overflow</th><th>Evidence</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td>'+esc(r.browser)+'</td><td>'+esc(r.viewport)+'</td><td>'+esc(r.url)+'</td><td class="'+((r.status||0)>=400?"fail":"ok")+'">'+esc(r.status||"-")+'</td><td>'+esc(r.load_ms||0)+' ms</td><td>'+r.console_errors.length+'</td><td>'+r.request_failures.length+'</td><td>'+((r.horizontal_overflow)?"YES":"NO")+'</td><td>'+(r.screenshot_relative?'<a href="'+esc(r.screenshot_relative)+'" target="_blank">open</a>':"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No Chrome coverage metadata recorded.</div>';
+document.getElementById("matrix").innerHTML=rows.length?'<table><thead><tr><th>Browser</th><th>Viewport</th><th>URL</th><th>Status</th><th>Load</th><th>Console</th><th>Network</th><th>Overflow</th><th>Evidence</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td>'+esc(r.browser)+'</td><td>'+esc(r.viewport)+'</td><td>'+esc(r.url)+'</td><td class="'+((r.status||0)>=400?"fail":"ok")+'">'+esc(r.status||"-")+'</td><td>'+esc(r.load_ms||0)+' ms</td><td>'+r.console_errors.length+'</td><td>'+r.request_failures.length+'</td><td>'+((r.horizontal_overflow)?"YES":"NO")+'</td><td>'+(r.screenshot_relative?evidenceAnchor(r.screenshot_relative,"Chrome evidence"):"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No Chrome coverage metadata recorded.</div>';
 
 document.getElementById("targetOverview").innerHTML=targetOverview.screenshot_relative
- ? '<div class="shot"><span class="tag">TARGET OVERVIEW</span><a href="'+esc(targetOverview.screenshot_relative)+'" target="_blank" rel="noopener"><img src="'+esc(targetOverview.screenshot_relative)+'" alt="Target website overview"></a><div class="caption"><a href="'+esc(targetOverview.target||"")+'" target="_blank" rel="noopener">Open target website</a><br>'+esc(targetOverview.title||"")+' · HTTP '+esc(targetOverview.status||"-")+'</div></div>'
+ ? '<div class="shot"><span class="tag">TARGET OVERVIEW</span>'+evidenceAnchor(targetOverview.screenshot_relative,"Target website overview")+'<div class="caption"><a href="'+esc(targetOverview.target||"")+'" target="_blank" rel="noopener">Open target website</a><br>'+esc(targetOverview.title||"")+' · HTTP '+esc(targetOverview.status||"-")+'</div></div>'
  : '<div class="empty">Target overview could not be captured: '+esc(targetOverview.error||"unknown error")+'</div>';
 
-document.getElementById("gallery").innerHTML=gallery.length?gallery.map(function(g){return '<article class="shot '+(g.kind==="failure"?"failure":"")+'"><span class="tag '+(g.kind==="failure"?"failure":"")+'">'+esc(g.kind.toUpperCase())+'</span><a href="'+esc(g.path)+'" target="_blank" rel="noopener"><img src="'+esc(g.path)+'" alt="'+esc(g.name)+'"></a><div class="caption">'+esc(g.name)+'<br>'+esc(Math.round((g.size||0)/1024))+' KB</div></article>'}).join(""):'<div class="empty">No screenshots were generated.</div>';
+document.getElementById("gallery").innerHTML=gallery.length?gallery.map(function(g){return '<article class="shot '+(g.kind==="failure"?"failure":"")+'"><span class="tag '+(g.kind==="failure"?"failure":"")+'">'+esc(g.kind.toUpperCase())+'</span>evidenceAnchor(g.path,g.name)<div class="caption">'+esc(g.name)+'<br>'+esc(Math.round((g.size||0)/1024))+' KB</div></article>'}).join(""):'<div class="empty">No screenshots were generated.</div>';
 
-document.getElementById("securityEvidence").innerHTML=securityEvidence.length?'<table><thead><tr><th>Finding</th><th>URL</th><th>Status</th><th>Console errors</th><th>Screenshot</th><th>Failure type</th><th>Exact error</th></tr></thead><tbody>'+securityEvidence.map(function(x){return '<tr><td>'+esc(x.finding_id)+'</td><td>'+esc(x.url)+'</td><td>'+esc(x.status||"-")+'</td><td>'+((x.console_errors||[]).length)+'</td><td>'+(x.screenshot_relative?'<a href="'+esc(x.screenshot_relative)+'" target="_blank">open</a>':"-")+'</td><td>'+esc(x.error_type||x.capture?.mode||"-")+'</td><td>'+esc(x.error_description||x.error||x.capture?.focus_reason||"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No security browser captures were required.</div>';
+document.getElementById("securityEvidence").innerHTML=securityEvidence.length?'<table><thead><tr><th>Finding</th><th>URL</th><th>Status</th><th>Console errors</th><th>Screenshot</th><th>Failure type</th><th>Exact error</th></tr></thead><tbody>'+securityEvidence.map(function(x){return '<tr><td>'+esc(x.finding_id)+'</td><td>'+esc(x.url)+'</td><td>'+esc(x.status||"-")+'</td><td>'+((x.console_errors||[]).length)+'</td><td>'+(x.screenshot_relative?evidenceAnchor(x.screenshot_relative,"Security evidence"):"-")+'</td><td>'+esc(x.error_type||x.capture?.mode||"-")+'</td><td>'+esc(x.error_description||x.error||x.capture?.focus_reason||"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No security browser captures were required.</div>';
 
 
 document.getElementById("remediationList").innerHTML=(remediation.actions||[]).length?(remediation.actions||[]).map(function(a){return '<article class="finding"><div class="fh"><span class="badge" style="background:'+((colors[a.severity]||colors.Info))+'">'+esc(a.severity)+'</span><span class="fid">'+esc(a.category)+'</span><span class="fid">'+esc(a.affected_urls)+' affected URL(s)</span></div><h3>'+esc(a.title)+'</h3><p><b>Impact:</b> '+esc(a.impact)+'</p><p><b>How to solve:</b> '+esc(a.fix)+'</p><p><b>How to validate:</b> '+esc(a.validation)+'</p></article>'}).join(""):'<div class="empty">No remediation actions were generated.</div>';
