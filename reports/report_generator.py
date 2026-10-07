@@ -380,6 +380,8 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "resolvable_visual_artifacts": len(unique_evidence_paths) - len(missing_evidence),
             "missing_visual_artifacts": missing_evidence,
             "all_links_report_local": all(not p.startswith("../") and not p.startswith("..\\") for p in unique_evidence_paths),
+            "artifact_base_url": "/reports/evidence/",
+            "artifact_resolution": "report-local",
         },
         "remediation": remediation,
         "metadata": meta,
