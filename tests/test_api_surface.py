@@ -75,3 +75,13 @@ def test_api_surface_includes_passive_route_discovery(monkeypatch):
 
     assert result["route_discovery"]["schema"] == "route-discovery-1.0"
     assert result["route_discovery"]["summary"]["state_changing_candidates"] == 1
+
+
+def test_api_engine_can_reuse_existing_route_discovery():
+    from scanners.api_surface import ApiSurfaceEngine
+    engine = ApiSurfaceEngine("https://example.com", max_probes=1)
+    inventory = {"routes": [{"url": "https://example.com/api", "method": "GET"}]}
+    engine.run = engine.run  # keep the public method available
+    # The optional inventory is accepted by the engine without forcing another crawl.
+    result = engine.run(route_discovery_result=inventory)
+    assert result["route_discovery"] is inventory
