@@ -78,3 +78,9 @@ def test_report_aggregation_is_separate_from_raw_engine_observations():
         },
     ]
     assert len(engine.findings) == 2
+
+
+def test_deep_run_supports_orchestrator_without_report_generation():
+    import inspect
+    from scanners.deep_security import DeepSecurityEngine
+    assert "write_report" in inspect.signature(DeepSecurityEngine.run).parameters
