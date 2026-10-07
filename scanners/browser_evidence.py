@@ -493,7 +493,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             }
             captured.append(item)
             if progress_callback:
-                progress_callback(index, total, finding_id, url, "completed" if not error else "failed")
+                progress_callback(index, total, finding_id, url, "completed" if not error else "failed", item)
 
         context.close()
         browser.close()
