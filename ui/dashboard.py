@@ -59,7 +59,7 @@ class DashboardState:
         self.lock=threading.Lock()
         self.data={"status":"INITIALIZING","stage":"STARTING","detail":"","target":target,"profile":profile,
                    "browser":"-","viewport":"-","progress":0,"pages_tested":0,"checks":0,"findings":0,"errors":0,
-                   "logs":[],"matrix":[],"started_at":time.time(),"finished_at":None}
+                   "logs":[],"matrix":[],"live_evidence":[],"coverage":{},"started_at":time.time(),"finished_at":None}
 
     def update(self, **kwargs):
         with self.lock:
