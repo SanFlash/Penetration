@@ -142,23 +142,71 @@ Failure screenshots use `chromium_failure_<viewport>_<page>.png`. Normal marked 
 
 ### 8. Run the complete authorized assessment
 
-Headless:
+**Recommended single command — runs every automated scenario:**
 
 ```powershell
-python main.py --target https://amwebtech.com --profile pentest
+python main.py --target https://amwebtech.com --full --confirm-authorized
 ```
 
-Visible Chrome:
+The `--full` / `--all-tests` command is the canonical full pipeline. It runs:
+
+```text
+Preflight
+  ↓
+Reconnaissance
+  ↓
+Deep route / JS / API discovery
+  ↓
+Chrome UI + responsive
+  ↓
+Functional read-only testing
+  ↓
+Information disclosure / info-leak testing
+  ↓
+Security headers
+  ↓
+Active security
+  ↓
+Deep security
+  ↓
+API surface
+  ↓
+Aggressive read-only security
+  ↓
+Comprehensive security
+  ↓
+Input stress
+  ↓
+Input validation
+  ↓
+Attack-surface correlation
+  ↓
+Focused Chromium evidence
+  ↓
+Final HTML / JSON / PDF / XLSX report
+```
+
+Headless full run:
 
 ```powershell
-python main.py --target https://amwebtech.com --profile pentest --headed
+python main.py --target https://amwebtech.com --full --confirm-authorized
 ```
 
-Training/debug run:
+Visible Chromium full run:
 
 ```powershell
-python main.py --target https://amwebtech.com --profile pentest --headed --slow-mo 250
+python main.py --target https://amwebtech.com --full --confirm-authorized --headed
 ```
+
+Debug full run:
+
+```powershell
+python main.py --target https://amwebtech.com --full --confirm-authorized --headed --slow-mo 250
+```
+
+Before a full run, Sentinel now performs a preflight check for Chromium and target reachability. If Chromium is missing it stops immediately with the exact install command instead of failing halfway through the assessment.
+
+`--profile pentest` remains supported for compatibility, but `--full --confirm-authorized` is the preferred command when you want every automated scenario explicitly enabled.
 
 The pentest profile is fail-closed to the exact configured AM Webtech origin.
 
