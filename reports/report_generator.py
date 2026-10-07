@@ -511,6 +511,48 @@ def _render_html(report: dict) -> str:
     else:
         attack_html += '<div class="empty" style="margin-top:14px">No correlated attack-surface inventory was recorded for this run.</div>'
     failed_screens = sum(1 for x in report["evidence_gallery"] if x["kind"] == "failure")
+
+    # Render core evidence directly into HTML as a fallback. This keeps the
+    # Evidence tab useful even if optional report JavaScript fails.
+    def _report_artifact_url(path):
+        raw = str(path or "").replace("\\", "/")
+        if raw.startswith("evidence/"):
+            raw = raw[len("evidence/"):]
+        raw = raw.lstrip("/")
+        return "/reports/evidence/" + raw if raw and ".." not in raw.split("/") else ""
+
+    gallery_html = []
+    for item in report.get("evidence_gallery", []):
+        src = _report_artifact_url(item.get("path"))
+        if not src:
+            continue
+        kind = html.escape(str(item.get("kind", "evidence")).upper())
+        name = html.escape(str(item.get("name", os.path.basename(str(item.get("path", ""))))))
+        size = round((item.get("size") or 0) / 1024)
+        failure = "failure" if item.get("kind") == "failure" else ""
+        gallery_html.append(
+            '<article class="shot %s"><span class="tag %s">%s</span>'
+            '<a href="%s" target="_blank" rel="noopener noreferrer"><img src="%s" alt="%s" loading="lazy"></a>'
+            '<div class="caption">%s<br>%s KB · <a href="%s" target="_blank" rel="noopener noreferrer">Open evidence</a></div></article>'
+            % (failure, failure, kind, html.escape(src, quote=True), html.escape(src, quote=True),
+               name, name, size, html.escape(src, quote=True))
+        )
+    gallery_html_text = "".join(gallery_html) or '<div class="empty">No visual artifacts were bundled into this report.</div>'
+
+    target_overview_html = '<div class="empty">Target overview was not captured.</div>'
+    overview = report.get("metadata", {}).get("target_overview") or {}
+    overview_src = _report_artifact_url(overview.get("screenshot_relative"))
+    if overview_src:
+        target_overview_html = (
+            '<div class="shot"><span class="tag">TARGET OVERVIEW</span>'
+            '<a href="%s" target="_blank" rel="noopener noreferrer"><img src="%s" alt="Target website overview" loading="lazy"></a>'
+            '<div class="caption"><a href="%s" target="_blank" rel="noopener noreferrer">Open target website</a><br>%s · HTTP %s</div></div>'
+            % (html.escape(overview_src, quote=True), html.escape(overview_src, quote=True),
+               html.escape(str(overview.get("target") or target), quote=True),
+               html.escape(str(overview.get("title") or "")),
+               html.escape(str(overview.get("status") or "-")))
+        )
+
     template = r'''<!doctype html>
 <html lang="en">
 <head>
@@ -585,7 +627,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 </div></div>
 <div class="panel"><div class="section-title">Category distribution</div>__CATEGORIES_HTML__</div>
 </div>
-<div class="panel"><div class="section-title">Target website overview</div><p class="sub">Chromium opened the authorized target before assessment. This is a viewport overview only; failure evidence remains focused on the responsible DOM element.</p><div id="targetOverview"></div></div>
+<div class="panel"><div class="section-title">Target website overview</div><p class="sub">Chromium opened the authorized target before assessment. This is a viewport overview only; failure evidence remains focused on the responsible DOM element.</p><div id="targetOverview">__TARGET_OVERVIEW_HTML__</div></div>
 <div class="panel"><div class="section-title">Assessment health</div><div id="assessmentHealth"></div></div>
 <div class="panel"><div class="section-title">Evidence health</div><div class="summary-strip">
 <div class="summary-item"><b>__SCREENSHOTS__</b><span>Evidence screenshots</span></div>
@@ -611,7 +653,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <section id="evidence" class="tab" hidden>
 <div class="panel"><div class="section-title">Visual evidence gallery</div>
 <p class="sub">Failure screenshots are marked in red. Finding screenshots are captured with Chromium using GET-only requests and are linked directly to the originating finding.</p>
-<div id="gallery" class="gallery"></div></div>
+<div id="gallery" class="gallery">__GALLERY_HTML__</div></div>
 <div class="panel"><div class="section-title">Security evidence capture log</div><div class="matrix" id="securityEvidence"></div></div>
 </section>
 
@@ -728,6 +770,8 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__GALLERY__": gallery_json,
         "__SECURITY__": security_json,
         "__TARGET_OVERVIEW__": json.dumps(report.get("metadata", {}).get("target_overview") or {}, ensure_ascii=False).replace("</", "<\\/"),
+        "__TARGET_OVERVIEW_HTML__": target_overview_html,
+        "__GALLERY_HTML__": gallery_html_text,
         "__REMEDIATION__": json.dumps(report.get("remediation", {}), ensure_ascii=False).replace("</", "<\\/"),
         "__IMMEDIATE__": str(report.get("remediation", {}).get("priority_counts", {}).get("Immediate", 0)),
         "__HIGH__": str(report.get("remediation", {}).get("priority_counts", {}).get("High", 0)),
