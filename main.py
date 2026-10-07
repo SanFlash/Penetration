@@ -491,8 +491,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         jobs = {
             "deep_security": lambda: run_deep_security(
                 target,
-                max_urls=min(config.SECURITY_MAX_URLS, url_count),
-                max_probes=deep_budget,
+                max_urls=min(config.SECURITY_MAX_URLS, 120, url_count),
+                max_probes=min(deep_budget, 600),
                 write_report=False,
             ),
             "api_surface": lambda: run_api_surface(
