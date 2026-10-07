@@ -50,7 +50,7 @@ class ApiSurfaceEngine:
             raise ValueError("Target must be an absolute http:// or https:// URL.")
         self.target = target
         self.origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-        self.max_probes = max(1, min(int(max_probes), 100))
+        self.max_probes = max(1, min(int(max_probes), 250))
         self.probes = 0
         self.last_request = 0.0
         self.session = requests.Session()
@@ -288,16 +288,20 @@ class ApiSurfaceEngine:
                 potentially_public_count=len(securityless),
             )
 
-    def run(self):
+    def run(self, route_discovery_result=None):
         started = time.time()
         print("[API] Starting API attack-surface inventory...", flush=True)
-        # Passive route discovery uses GET only and never submits discovered forms.
-        self.route_discovery = run_route_discovery(
-            self.target,
-            max_pages=min(getattr(config, "ROUTE_DISCOVERY_MAX_PAGES", 8), 20),
-            max_assets=min(getattr(config, "ROUTE_DISCOVERY_MAX_ASSETS", 20), 50),
-            max_candidates=min(getattr(config, "ROUTE_DISCOVERY_MAX_CANDIDATES", 200), 500),
-        )
+        # Reuse the orchestrator's passive route inventory when supplied. This
+        # prevents the full pentest from crawling the same origin twice.
+        if route_discovery_result is not None:
+            self.route_discovery = route_discovery_result
+        else:
+            self.route_discovery = run_route_discovery(
+                self.target,
+                max_pages=min(getattr(config, "ROUTE_DISCOVERY_MAX_PAGES", 8), 20),
+                max_assets=min(getattr(config, "ROUTE_DISCOVERY_MAX_ASSETS", 20), 50),
+                max_candidates=min(getattr(config, "ROUTE_DISCOVERY_MAX_CANDIDATES", 200), 500),
+            )
         candidates = self.candidate_urls()
         for url in candidates:
             if self.probes >= self.max_probes:
@@ -349,5 +353,7 @@ class ApiSurfaceEngine:
         return result
 
 
-def run_api_surface(target: str, max_probes: int = 40):
-    return ApiSurfaceEngine(target, max_probes=max_probes).run()
+def run_api_surface(target: str, max_probes: int = 40, route_discovery_result=None):
+    return ApiSurfaceEngine(target, max_probes=max_probes).run(
+        route_discovery_result=route_discovery_result
+    )
