@@ -391,6 +391,15 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         if len(candidates) >= max_items:
             break
 
+    def notify(done, total, finding_id, url, status, item=None):
+        if not progress_callback:
+            return
+        try:
+            progress_callback(done, total, finding_id, url, status, item)
+        except TypeError:
+            # Preserve compatibility with older five-argument callbacks.
+            progress_callback(done, total, finding_id, url, status)
+
     captured = []
     if not candidates:
         with open(os.path.join(EVIDENCE_DIR, "security_browser_evidence.json"), "w", encoding="utf-8") as f:
@@ -493,7 +502,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             }
             captured.append(item)
             if progress_callback:
-                progress_callback(index, total, finding_id, url, "completed" if not error else "failed", item)
+                notify(index, total, finding_id, url, "completed" if not error else "failed", item)
 
         context.close()
         browser.close()
