@@ -25,6 +25,8 @@ from scanners.input_validation import run_input_validation
 from scanners.aggressive_readonly import run_aggressive_readonly
 from scanners.comprehensive_security import run_comprehensive_security
 from scanners.route_discovery import run_route_discovery
+from scanners.functional_readonly import run_functional_readonly
+from scanners.information_disclosure import run_information_disclosure
 from scanners.attack_surface import correlate_attack_surface
 from scanners.intrusive import run_intrusive
 from auth.session import login
@@ -273,6 +275,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
     discovery_result = {"pages": [], "assets": [], "routes": [], "summary": {}, "findings": []}
     target_overview = {}
     ui_result = {"results": [], "findings": [], "urls_tested": []}
+    functional_result = {"findings": [], "checks": [], "probes": 0, "summary": {}}
+    info_disclosure_result = {"findings": [], "checks": [], "probes": 0, "summary": {}}
     header_findings = []
     active_result = {"findings": [], "checks": [], "urls_tested": []}
     deep_result = {"findings": [], "checks": [], "urls_tested": [], "probe_count": 0}
@@ -302,6 +306,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "comprehensive_security": comprehensive_result,
             "target_overview": target_overview,
             "ui_responsive": ui_result,
+            "functional": functional_result,
+            "information_disclosure": info_disclosure_result,
             "active_security": active_result,
             "deep_security": deep_result,
             "api_surface": api_result,
@@ -407,7 +413,33 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         print(f"UI findings: {len(ui_result.get('findings', []))}")
         refresh_report("UI / RESPONSIVE TESTING", f"Chrome testing completed across {len(ui_result.get('urls_tested', []))} URLs.")
 
-        banner("STEP 5 — Security headers")
+        banner("STEP 5 — Functional smoke testing")
+        loader.set("Running read-only functional and navigation checks")
+        value = _phase_call(
+            "functional_testing",
+            phase_status,
+            lambda: run_functional_readonly(
+                target, urls, max_urls=min(80, max(1, len(urls))), max_links=220
+            ),
+        )
+        if value:
+            functional_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("FUNCTIONAL TESTING", f"Checked {functional_result.get('summary', {}).get('navigation_links_checked', 0)} navigation targets without submitting forms.")
+
+        banner("STEP 6 — Information disclosure / info-leak testing")
+        loader.set("Checking public information exposure")
+        value = _phase_call(
+            "information_disclosure",
+            phase_status,
+            lambda: run_information_disclosure(target, urls, max_probes=80),
+        )
+        if value:
+            info_disclosure_result = value
+            all_findings.extend(value.get("findings", []))
+        refresh_report("INFORMATION DISCLOSURE", f"Checked {info_disclosure_result.get('probes', 0)} disclosure candidates.")
+
+        banner("STEP 7 — Security headers")
         loader.set("Checking security headers")
         header_findings = []
         for index, url in enumerate(urls[:config.SECURITY_MAX_URLS], 1):
@@ -427,7 +459,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         }
         refresh_report("SECURITY HEADERS", f"Header assessment completed for {len(header_findings)} observations.")
 
-        banner("STEP 6 — Active security")
+        banner("STEP 8 — Active security")
         loader.set("Running bounded active security controls")
         value = _phase_call(
             "active_security",
@@ -442,7 +474,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             all_findings.extend(value.get("findings", []))
         refresh_report("ACTIVE SECURITY", f"Active security testing completed with {len(active_result.get('findings', []))} observations.")
 
-        banner("STEP 7 — Parallel read-only security engines")
+        banner("STEP 9 — Parallel deep security engines")
         loader.set("Running parallel bounded security engines")
         scan_urls = urls[:config.PENTEST_MAX_DISCOVERED_URLS]
         url_count = max(1, len(scan_urls))
@@ -519,7 +551,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         ) or attack_surface
         refresh_report("ATTACK-SURFACE CORRELATION", "Routes and API candidates were correlated into the assessment inventory.")
 
-        banner("STEP 10 — Focused browser evidence")
+        banner("STEP 12 — Focused browser evidence")
         loader.set("Capturing focused evidence for detected issues")
         evidence_findings = (
             active_result.get("findings", [])
@@ -559,9 +591,22 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         if value:
             security_evidence = value
+            # Attach captured browser artifacts back to their originating findings.
+            # Previously the capture phase produced PNGs but the finding objects
+            # were never linked to those files, so the report could show an
+            # evidence table while the finding itself still said "no screenshot".
+            by_id = {str(item.get("finding_id")): item for item in security_evidence if item.get("finding_id")}
+            for finding in all_findings:
+                item = by_id.get(str(finding.get("id")))
+                if not item or not item.get("screenshot"):
+                    continue
+                finding["screenshot"] = item["screenshot"]
+                finding.setdefault("screenshots", [])
+                if item["screenshot"] not in finding["screenshots"]:
+                    finding["screenshots"].append(item["screenshot"])
         refresh_report("SECURITY EVIDENCE", f"Focused evidence captured for {sum(1 for x in security_evidence if x.get('screenshot'))} issues.")
 
-        banner("STEP 11 — Final interactive report")
+        banner("STEP 13 — Final interactive report")
         loader.set("Finalizing HTML report")
         phase_status["report_generation"] = {"status": "completed"}
         phase_failures = [name for name, info in phase_status.items() if info.get("status") == "failed"]
