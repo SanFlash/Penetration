@@ -508,6 +508,15 @@ def _render_html(report: dict) -> str:
     security_json = json.dumps(report.get("security_evidence", []), ensure_ascii=False).replace("</", "<\\/")
     meta_json = json.dumps(report.get("metadata", {}), ensure_ascii=False).replace("</", "<\\/")
 
+    findings_sorted = sorted(
+        report.get("findings", []),
+        key=lambda f: (
+            SEVERITY_ORDER.get(f.get("severity", "Info"), 5),
+            f.get("category", ""),
+            f.get("title", ""),
+        ),
+    )
+
     cards = []
     for severity, count in report["severity_summary"].items():
         cards.append(
