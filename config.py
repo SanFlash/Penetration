@@ -57,9 +57,9 @@ VALIDATION_TIMEOUT = 10
 
 # Passive route/API discovery. Network activity remains GET-only; discovered
 # state-changing methods are inventory candidates and are never submitted.
-ROUTE_DISCOVERY_MAX_PAGES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_PAGES", "40"))
+ROUTE_DISCOVERY_MAX_PAGES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_PAGES", "100"))
 ROUTE_DISCOVERY_MAX_ASSETS = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_ASSETS", "80"))
-ROUTE_DISCOVERY_MAX_CANDIDATES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_CANDIDATES", "600"))
+ROUTE_DISCOVERY_MAX_CANDIDATES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_CANDIDATES", "1200"))
 ROUTE_DISCOVERY_TIMEOUT = 8
 ROUTE_DISCOVERY_MAX_RUNTIME = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_RUNTIME", "300"))
 
@@ -72,7 +72,7 @@ LIVE_REPORT_MIN_INTERVAL = float(os.getenv("SENTINEL_LIVE_REPORT_MIN_INTERVAL", 
 # Unified deep-pentest coverage controls. These defaults favor breadth while
 # remaining bounded and read-only; environment variables allow larger staging
 # assessments without changing source code.
-PENTEST_MAX_DISCOVERED_URLS = int(os.getenv("SENTINEL_PENTEST_MAX_DISCOVERED_URLS", "180"))
+PENTEST_MAX_DISCOVERED_URLS = int(os.getenv("SENTINEL_PENTEST_MAX_DISCOVERED_URLS", "300"))
 AGGRESSIVE_MAX_URLS = int(os.getenv("SENTINEL_AGGRESSIVE_MAX_URLS", "100"))
 AGGRESSIVE_MAX_PROBES = int(os.getenv("SENTINEL_AGGRESSIVE_MAX_PROBES", "700"))
 COMPREHENSIVE_MAX_URLS = int(os.getenv("SENTINEL_COMPREHENSIVE_MAX_URLS", "120"))
