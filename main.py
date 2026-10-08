@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -561,12 +561,55 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
 
         results = {}
         # Three concurrent workers reduce wall-clock time while avoiding an
-        # uncontrolled request burst against the authorized target.
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="sentinel-scan") as pool:
-            futures = {pool.submit(_phase_call, name, phase_status, fn): name for name, fn in jobs.items()}
-            for future in as_completed(futures):
+        # uncontrolled request burst. Unlike a context-manager executor, this
+        # loop has a hard phase deadline and a heartbeat, so one scanner can
+        # never make the hosted dashboard look frozen forever.
+        pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sentinel-scan")
+        futures = {pool.submit(_phase_call, name, phase_status, fn): name for name, fn in jobs.items()}
+        pending = set(futures)
+        parallel_started = time.monotonic()
+        parallel_timeout = max(180, min(int(getattr(config, "SECURITY_MAX_RUNTIME", 180)) + 60, 300))
+        while pending:
+            done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
+            elapsed_parallel = time.monotonic() - parallel_started
+            completed_count = len(futures) - len(pending)
+            progress = 52 + int((completed_count / max(len(futures), 1)) * 20)
+            state.update(
+                stage="PARALLEL DEEP SECURITY",
+                detail=f"Security engines: {completed_count}/{len(futures)} complete; {len(pending)} still running; elapsed={elapsed_parallel:.0f}s",
+                progress=min(74, progress),
+                findings=len(all_findings),
+                log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
+                     "message": f"Deep security heartbeat: {completed_count}/{len(futures)} engines complete; {len(pending)} pending."},
+            )
+            if elapsed_parallel >= parallel_timeout:
+                for future in list(pending):
+                    name = futures[future]
+                    future.cancel()
+                    phase_status[name] = {
+                        "status": "timed_out",
+                        "duration_seconds": round(elapsed_parallel, 2),
+                        "error": f"PhaseTimeout: parallel security engine exceeded {parallel_timeout}s wall-clock budget.",
+                    }
+                state.update(
+                    stage="PARALLEL SECURITY TIMEOUT",
+                    detail=f"Stopped waiting after {parallel_timeout}s. Completed engines were preserved; timed-out engines are marked in the report.",
+                    progress=74,
+                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "warn",
+                         "message": f"Parallel security wall-clock budget {parallel_timeout}s reached; preserving completed results."},
+                )
+                break
+            for future in done:
                 name = futures[future]
-                value = future.result()
+                try:
+                    value = future.result(timeout=1)
+                except Exception as exc:
+                    phase_status[name] = {
+                        "status": "failed",
+                        "duration_seconds": 0,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                    value = None
                 results[name] = value
                 if value:
                     if name == "deep_security":
@@ -582,7 +625,13 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                     elif name == "input_validation":
                         validation_result = value
                     all_findings.extend(value.get("findings", []))
-                state.update(detail=f"{name.replace('_', ' ').title()} finished")
+                state.update(
+                    detail=f"{name.replace('_', ' ').title()} finished ({completed_count}/{len(futures)})",
+                    progress=min(74, 52 + int((completed_count / max(len(futures), 1)) * 20)),
+                )
+        # Never wait forever on a scanner thread. A timed-out scanner is
+        # isolated and its completed findings remain in the canonical report.
+        pool.shutdown(wait=False, cancel_futures=True)
 
         refresh_report(
             "PARALLEL SECURITY TESTING",
