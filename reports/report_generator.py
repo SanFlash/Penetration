@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -55,6 +56,21 @@ def _normalize_finding(finding: dict) -> dict:
     item.setdefault("references", [])
     item.update(_friendly_fields(item))
     return item
+
+
+def _finding_location(item: dict) -> dict:
+    """Build explicit, non-speculative location metadata for every finding."""
+    url = str(item.get("url") or "").strip()
+    method = str(item.get("method") or "GET").upper()
+    parameter = str(item.get("parameter") or "").strip()
+    selector = str(item.get("selector") or item.get("element") or "").strip()
+    return {
+        "url": url,
+        "method": method,
+        "parameter": parameter or None,
+        "element": selector or None,
+        "location": url or "Target origin",
+    }
 
 
 def _compatibility_meta(metadata: dict) -> dict:
@@ -263,6 +279,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             ) if rel
         ]
         item["affected_urls"] = list(dict.fromkeys(item.get("affected_urls", []) or ([item["url"]] if item.get("url") else [])))
+        item["location"] = _finding_location(item)
         item["observation_count"] = item.get("occurrences", 1)
         item["viewports"] = sorted(set(item.get("viewports", [])))
 
@@ -539,6 +556,33 @@ def _render_html(report: dict) -> str:
         )
     gallery_html_text = "".join(gallery_html) or '<div class="empty">No visual artifacts were bundled into this report.</div>'
 
+    server_finding_cards = []
+    for finding in findings_sorted:
+        sev = html.escape(str(finding.get("severity", "Info")))
+        color = SEVERITY_COLOR.get(str(finding.get("severity", "Info")), SEVERITY_COLOR["Info"])
+        shots = finding.get("screenshots_relative") or []
+        shot_html = "".join(evidenceAnchor(p, "Finding evidence") for p in shots) if shots else '<div class="warn">No visual screenshot was required or successfully captured. Structured evidence is shown above.</div>'
+        server_finding_cards.append(
+            '<article class="finding"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s</span></div>'
+            '<h3>%s</h3>'
+            '<div class="finding-grid"><div><b>WHERE FOUND</b><div class="url">%s</div></div><div><b>METHOD</b><div>%s</div></div><div><b>PARAMETER / ELEMENT</b><div>%s</div></div><div><b>CATEGORY / CWE / OWASP</b><div>%s / %s / %s</div></div></div>'
+            '<div class="finding-section"><b>WHAT IS THE ISSUE?</b><p>%s</p></div>'
+            '<div class="finding-section"><b>OBSERVED EVIDENCE</b><pre>%s</pre></div>'
+            '<div class="finding-section"><b>IMPACT</b><p>%s</p></div>'
+            '<div class="finding-section"><b>HOW TO FIX</b><p>%s</p><p><b>Validation:</b> %s</p></div>'
+            '<div class="finding-section"><b>VISUAL EVIDENCE</b><div class="finding-evidence-grid">%s</div></div></article>' % (
+                color, sev, html.escape(str(finding.get("id",""))), html.escape(str(finding.get("confidence","Medium"))),
+                html.escape(str(finding.get("observation_count",1))), html.escape(str(finding.get("title","Untitled finding"))),
+                html.escape(str(finding.get("url") or "Target origin")), html.escape(str(finding.get("method","GET"))),
+                html.escape(str(finding.get("parameter") or finding.get("element") or "-")),
+                html.escape(str(finding.get("category") or "-")), html.escape(str(finding.get("cwe") or "-")), html.escape(str(finding.get("owasp") or "-")),
+                html.escape(str(finding.get("plain_language_summary") or finding.get("detail") or "-")),
+                html.escape(str(finding.get("evidence") or finding.get("detail") or "-")),
+                html.escape(str(finding.get("impact") or finding.get("why_it_matters") or "-")),
+                html.escape(str(finding.get("recommended_action") or finding.get("fix_summary") or finding.get("remediation") or "-")),
+                html.escape(str(finding.get("validation_steps") or "-")), shot_html))
+    findings_html_text = "".join(server_finding_cards) or '<div class="empty">No findings were recorded.</div>'
+
     target_overview_html = '<div class="empty">Target overview was not captured.</div>'
     overview = report.get("metadata", {}).get("target_overview") or {}
     overview_src = _report_artifact_url(overview.get("screenshot_relative"))
@@ -570,6 +614,7 @@ a{color:#8fc5ff}.shell{max-width:1500px;margin:auto;padding:22px}.hero{border:1p
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.kpi{padding:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px}.kpi b{display:block;font-size:25px}.kpi span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
 .cat{padding:9px 0;border-bottom:1px solid #162438}.cat>div:first-child{display:flex;justify-content:space-between;gap:10px}.cat span{color:var(--muted)}.catbar{height:7px;background:#132033;border-radius:99px;overflow:hidden;margin-top:7px}.catbar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--accent))}
 .controls{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px}input,select{background:#07101b;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 10px;min-height:40px}input{flex:1;min-width:220px}
+.finding-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.finding-grid>div{border:1px solid var(--line);border-radius:10px;padding:10px;background:#07111d}.finding-grid b,.finding-section>b{font-size:10px;letter-spacing:.08em;color:var(--muted)}.finding-section{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#07111d}.finding-section pre{margin:8px 0;max-height:280px;overflow:auto}.finding-evidence-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px}
 .finding{border:1px solid var(--line);border-radius:13px;background:#08101b;padding:15px;margin:10px 0}.fh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.badge{border-radius:999px;padding:4px 8px;color:#06110d;font-weight:800;font-size:11px}.fid{color:var(--muted);font-family:Consolas,monospace;font-size:11px}.finding h3{margin:9px 0 4px;font-size:16px}.finding .url{color:#8aa1b8;word-break:break-all;font-size:12px}details{margin-top:10px}summary{cursor:pointer;color:#9fc1df}pre{background:#03070d;border:1px solid #142238;border-radius:9px;padding:11px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#bdd0e3}.empty{padding:35px;text-align:center;color:var(--muted)}
 .matrix{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:9px;border-bottom:1px solid #17253a;text-align:left;vertical-align:top}th{color:var(--muted);font-size:11px;text-transform:uppercase}.ok{color:var(--accent)}.fail{color:var(--danger)}.warn{color:var(--warn)}
 .gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.shot{border:1px solid var(--line);background:#07101b;border-radius:12px;padding:9px}.shot img{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px;border:1px solid #1a2a40}.shot .caption{font-size:12px;margin-top:7px;word-break:break-word}.shot.failure{border-color:#6b2436}.shot.failure .caption{color:#ff8da3}.tag{display:inline-block;border-radius:99px;padding:3px 7px;font-size:10px;font-weight:800;background:#142237;color:#a9bdd1;margin-bottom:5px}.tag.failure{background:#45182a;color:#ff9ab0}
@@ -641,7 +686,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <section id="findings" class="tab">
 <div class="panel"><div class="section-title">Findings explorer</div>
 <div class="controls"><input id="search" placeholder="Search title, URL, category, evidence..."><select id="sev"><option value="">All severities</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option><option>Info</option></select><select id="cat"><option value="">All categories</option></select></div>
-<div id="list"></div></div>
+<div id="list">__FINDINGS_HTML__</div></div>
 </section>
 
 <section id="coverage" class="tab" hidden>
@@ -771,6 +816,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__SECURITY__": security_json,
         "__TARGET_OVERVIEW__": json.dumps(report.get("metadata", {}).get("target_overview") or {}, ensure_ascii=False).replace("</", "<\\/"),
         "__TARGET_OVERVIEW_HTML__": target_overview_html,
+        "__FINDINGS_HTML__": findings_html_text,
         "__GALLERY_HTML__": gallery_html_text,
         "__REMEDIATION__": json.dumps(report.get("remediation", {}), ensure_ascii=False).replace("</", "<\\/"),
         "__IMMEDIATE__": str(report.get("remediation", {}).get("priority_counts", {}).get("Immediate", 0)),
