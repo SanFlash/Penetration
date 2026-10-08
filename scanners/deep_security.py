@@ -77,8 +77,8 @@ class DeepSecurityEngine:
             raise ValueError("Target must be an absolute http:// or https:// URL.")
         self.target = target
         self.origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-        self.max_urls = max(1, min(int(max_urls), 120))
-        self.max_probes = max(1, min(int(max_probes), 600))
+        self.max_urls = max(1, min(int(max_urls), 180))
+        self.max_probes = max(1, min(int(max_probes), 900))
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": UA, "Accept": "*/*"})
         self.findings: list[dict] = []
