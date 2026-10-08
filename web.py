@@ -137,6 +137,7 @@ def status():
         "xlsx": "/reports/penetration_report.xlsx",
         "findings_json": "/reports/findings.json",
         "manifest": "/reports/evidence_manifest.json",
+        "bundle": "/reports/sentinel_full_report_bundle.zip",
     }
     return jsonify(payload)
 
@@ -251,7 +252,7 @@ _HTML = r"""<!doctype html>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
-<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.</div>
+<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a><a href="/reports/sentinel_full_report_bundle.zip" target="_blank">⬇ Complete report bundle (all exports + evidence)</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.</div>
 </aside></div>
 <section class="panel evidence"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
 <section class="coverage">
