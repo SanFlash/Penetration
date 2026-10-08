@@ -218,6 +218,9 @@ def _artifact(directory: str, filename: str):
             response.headers["Content-Type"] = "application/json; charset=utf-8"
         elif suffix == ".html":
             response.headers["Content-Type"] = "text/html; charset=utf-8"
+        elif suffix == ".zip":
+            response.headers["Content-Type"] = "application/zip"
+            response.headers["Content-Disposition"] = 'attachment; filename="sentinel_full_report_bundle.zip"'
     return response
 
 
