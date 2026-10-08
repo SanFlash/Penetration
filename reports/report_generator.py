@@ -399,6 +399,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "all_links_report_local": all(not p.startswith("../") and not p.startswith("..\\") for p in unique_evidence_paths),
             "artifact_base_url": "/reports/evidence/",
             "artifact_resolution": "report-local",
+            "download_bundle": "sentinel_full_report_bundle.zip",
         },
         "remediation": remediation,
         "metadata": meta,
@@ -700,7 +701,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 </div>
 <div class="panel"><div class="section-title">Target website overview</div><p class="sub">Chromium opened the authorized target before assessment. This is a viewport overview only; failure evidence remains focused on the responsible DOM element.</p><div id="targetOverview">__TARGET_OVERVIEW_HTML__</div></div>
 <div class="panel"><div class="section-title">Assessment health</div><div id="assessmentHealth"></div></div>
-<div class="panel"><div class="section-title">Evidence health</div><div class="summary-strip">
+<div class="panel"><div class="section-title">Evidence health &amp; downloads</div><p class="sub"><a class="download" href="/reports/sentinel_full_report_bundle.zip">⬇ Download complete report bundle — HTML + PDF + XLSX + JSON + all evidence</a></p><div class="summary-strip">
 <div class="summary-item"><b>__SCREENSHOTS__</b><span>Evidence screenshots</span></div>
 <div class="summary-item"><b>__FAILSCREENS__</b><span>Failure screenshots</span></div>
 <div class="summary-item"><b>__MARKED__</b><span>Marked Chrome checks</span></div>
