@@ -463,6 +463,32 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "errors": export_errors,
     }
 
+    # Complete offline package: HTML/PDF/XLSX/JSON/manifest plus every
+    # report-local evidence artifact.
+    bundle_path = os.path.join(out_dir, "sentinel_full_report_bundle.zip")
+    bundle_error = None
+    try:
+        with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for candidate in (html_path, portable_html_path, pdf_path, xlsx_path, json_path, manifest_path):
+                if candidate and os.path.isfile(candidate):
+                    archive.write(candidate, os.path.basename(candidate))
+            bundled_evidence = os.path.join(out_dir, "evidence")
+            if os.path.isdir(bundled_evidence):
+                for root, _, names in os.walk(bundled_evidence):
+                    for name in names:
+                        path = os.path.join(root, name)
+                        archive.write(path, os.path.relpath(path, out_dir))
+    except Exception as exc:
+        bundle_error = f"{type(exc).__name__}: {exc}"
+    report["exports"]["bundle_path"] = bundle_path if os.path.isfile(bundle_path) else None
+    report["exports"]["bundle_generated"] = os.path.isfile(bundle_path)
+    if bundle_error:
+        report["exports"]["bundle_error"] = bundle_error
+
+    # Persist the final export inventory into findings.json.
+    with open(json_path, "w", encoding="utf-8") as handle:
+        json.dump(report, handle, indent=2, ensure_ascii=False)
+
     return {
         "json_path": json_path,
         "html_path": html_path,
