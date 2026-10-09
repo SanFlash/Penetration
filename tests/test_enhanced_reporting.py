@@ -64,6 +64,7 @@ def test_pentest_report_renders_coverage_and_evidence(tmp_path):
     assert "Failure screenshots" in report_html
     assert "Chrome checks" in report_html
     assert "securityEvidence" in report_html
+    assert "Open marked-up evidence" in report_html
 
 
 def test_report_exposes_unrun_phases_in_explicit_coverage_matrix(tmp_path):
