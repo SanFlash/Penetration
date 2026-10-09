@@ -14,7 +14,7 @@ def test_coverage_registry_never_marks_missing_phases_as_complete():
     assert by_id["WSTG-CONF"]["status"] == "partial_or_failed"
     assert by_id["API-MISCONFIG"]["status"] == "partial_or_failed"
     assert by_id["LOGGING"]["status"] == "manual_review"
-    assert by_id["WSTG-ATHZ"]["status"] == "not_run"
+    assert by_id["WSTG-ATHZ"]["status"] == "partial"
     assert "not proof" in by_id["WSTG-CONF"]["execution_note"]
 
 
