@@ -74,11 +74,43 @@ class RouteDiscoveryEngine:
         delay = interval - (time.monotonic() - self.last_request)
         if delay > 0:
             time.sleep(delay)
-        response = self.session.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=False, verify=True)
+        # Stream and cap response bodies. A slow-trickling, very large JavaScript
+        # bundle can otherwise keep requests.get() occupied far beyond its read
+        # timeout and stall the whole hosted assessment.
+        response = self.session.get(
+            url, timeout=(3.0, 5.0), allow_redirects=False, verify=True, stream=True
+        )
+        chunks = []
+        size = 0
+        body_started = time.monotonic()
+        max_body_bytes = 512 * 1024
+        body_budget_seconds = 4.0
+        try:
+            for chunk in response.iter_content(chunk_size=16384):
+                if not chunk:
+                    continue
+                remaining = max_body_bytes - size
+                if remaining <= 0:
+                    break
+                chunks.append(chunk[:remaining])
+                size += min(len(chunk), remaining)
+                if size >= max_body_bytes or time.monotonic() - body_started >= body_budget_seconds:
+                    break
+        except requests.RequestException:
+            if not chunks:
+                response.close()
+                raise
+        response._content = b"".join(chunks)
+        response._content_consumed = True
+        response.close()
         self.last_request = time.monotonic()
         self.probes += 1
         elapsed = time.monotonic() - self.started
-        print(f"[DISCOVERY] GET {self.probes:02d} | {response.status_code} | {url} | {elapsed:.1f}s", flush=True)
+        print(
+            f"[DISCOVERY] GET {self.probes:02d} | {response.status_code} | {url} | "
+            f"{elapsed:.1f}s | body={size} bytes",
+            flush=True,
+        )
         return response
 
     def _add_route(self, raw_url: str, method: str, source: str, discovered_from: str, evidence: str):
