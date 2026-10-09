@@ -574,6 +574,21 @@ def _render_html(report: dict) -> str:
         raw = raw.lstrip("/")
         return "/reports/evidence/" + raw if raw and ".." not in raw.split("/") else ""
 
+    def evidenceAnchor(path, label):
+        """Render a report-local image preview and a safe link to the evidence file."""
+        src = _report_artifact_url(path)
+        if not src:
+            return ""
+        safe_src = html.escape(src, quote=True)
+        safe_label = html.escape(str(label or "Evidence"), quote=True)
+        return (
+            '<a class="finding-evidence-link" href="%s" target="_blank" rel="noopener noreferrer" '
+            'aria-label="%s"><img src="%s" alt="%s" loading="lazy" '
+            'style="display:block;max-width:100%%;max-height:280px;object-fit:contain;'
+            'border:2px solid #ff1744;border-radius:8px;background:#07101b">'
+            '<span>%s</span></a>'
+        ) % (safe_src, safe_label, safe_src, safe_label, safe_label)
+
     gallery_html = []
     for item in report.get("evidence_gallery", []):
         src = _report_artifact_url(item.get("path"))
