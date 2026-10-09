@@ -190,48 +190,89 @@ def _annotate_focus(page, focus: dict, finding_id: str) -> None:
 def _write_diagnostic_evidence_card(
     path: str, finding: dict, url: str, status, error: str | None, reason: str
 ) -> dict:
-    """Create a compact visual diagnostic artifact when no DOM failure exists."""
+    """Create a clearly marked, readable evidence card when no DOM region is identifiable."""
     try:
         from textwrap import wrap
-        width, height = 1400, 820
+
+        def safe_text(value, limit=900):
+            text = str(value or "Not provided").replace("\\r", " ").replace("\\n", " ").strip()
+            text = re.sub(
+                r"(?i)\\b(authorization|cookie|set-cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\\b\\s*[:=]\\s*[^\\s,;]+",
+                r"\\1=<redacted>",
+                text,
+            )
+            return text[:limit] or "Not provided"
+
+        finding_id = safe_text(finding.get("id") or "SECURITY-FINDING", 120)
+        title = safe_text(finding.get("title") or "Security finding", 220)
+        severity = safe_text(finding.get("severity") or "Info", 32).upper()
+        method = safe_text(finding.get("method") or "GET", 16).upper()
+        parameter = safe_text(finding.get("parameter") or "None", 180)
+        evidence = safe_text(finding.get("evidence") or finding.get("detail") or "No response excerpt recorded.", 900)
+        impact = safe_text(finding.get("impact") or "Review and validate this signal.", 650)
+        remediation = safe_text(finding.get("remediation") or "Manually validate the issue and apply the appropriate control.", 650)
+        reason_text = safe_text(error or reason or "No browser error text was available.", 900)
+        sections = [
+            ("TARGET URL", safe_text(url, 500)),
+            ("HTTP RESPONSE", f"Status: {status if status is not None else 'n/a'}  |  Method: {method}"),
+            ("TEST CONTEXT", f"Parameter/vector: {parameter}"),
+            ("OBSERVED EVIDENCE", evidence),
+            ("POTENTIAL IMPACT", impact),
+            ("RECOMMENDED ACTION", remediation),
+            ("CAPTURE NOTE / EXACT ERROR", reason_text),
+        ]
+        wrapped = [(label, wrap(value, 108)[:6] or ["Not provided"]) for label, value in sections]
+        height = 205 + sum(42 + 25 * len(lines) for _, lines in wrapped) + 36
+        width = 1400
         image = Image.new("RGB", (width, height), "#07101b")
         draw = ImageDraw.Draw(image)
-        def line(text, y, fill=(230, 239, 248), size=24, bold=False):
-            font = None
+
+        def font(size, bold=False):
             try:
-                font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
-                font = ImageFont.truetype(font_path, size)
+                font_path = (
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+                    if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+                )
+                return ImageFont.truetype(font_path, size)
             except Exception:
-                pass
-            draw.text((48, y), str(text), fill=fill, font=font)
-        line("SENTINEL // DIAGNOSTIC EVIDENCE", 38, (56, 232, 160), 30, True)
-        line("Generated evidence artifact — not a webpage screenshot", 82, (128, 149, 171), 18)
-        draw.rounded_rectangle((40, 130, width - 40, height - 40), radius=18, outline=(29, 45, 66), width=2)
-        title = str(finding.get('title') or 'Security finding')
-        severity = str(finding.get('severity') or 'Info')
-        finding_id = str(finding.get('id') or 'security')
-        category = str(finding.get('category') or 'Web Application Security')
-        line(f"{finding_id}  |  {severity}  |  {category}", 165, (255, 200, 87), 22, True)
-        for i, chunk in enumerate(wrap(title, 82)[:3]):
-            line(chunk, 205 + i * 34, (230, 239, 248), 22, True)
-        y = 330
-        for label, value in (
-            ('URL', url),
-            ('HTTP STATUS', status if status is not None else 'n/a'),
-            ('CAPTURE SCOPE', 'diagnostic-evidence-card'),
-        ):
-            line(label, y, (128, 149, 171), 14, True)
-            for i, chunk in enumerate(wrap(str(value), 105)[:4]):
-                line(chunk, y + 22 + i * 26, (190, 208, 227), 17)
-            y += 125
-        line("REASON / EXACT ERROR", y, (128, 149, 171), 14, True)
-        combined = str(error or reason or 'No browser error text was available.')
-        for i, chunk in enumerate(wrap(combined, 105)[:7]):
-            line(chunk, y + 24 + i * 26, (255, 141, 163) if error else (190, 208, 227), 17)
+                return ImageFont.load_default()
+
+        draw.text((44, 30), "SENTINEL // DIAGNOSTIC EVIDENCE", fill="#38e8a0", font=font(29, True))
+        draw.text((44, 72), "Generated diagnostic artifact — not a webpage screenshot", fill="#8095ab", font=font(17))
+        draw.rounded_rectangle((36, 112, width - 36, height - 24), radius=16, outline="#1d2d42", width=2)
+        severity_color = {
+            "CRITICAL": "#ff4d6d", "HIGH": "#ff8a4c", "MEDIUM": "#ffc857",
+            "LOW": "#38e8a0", "INFO": "#7d93ad",
+        }.get(severity, "#7d93ad")
+        draw.text((60, 132), f"{finding_id}  |  {severity}  |  {title}", fill=severity_color, font=font(20, True))
+        y = 174
+        for label, lines in wrapped:
+            draw.text((60, y), label, fill="#8095ab", font=font(14, True))
+            y += 24
+            for line_text in lines:
+                draw.text((60, y), line_text, fill="#e6eff8", font=font(17))
+                y += 25
+            y += 16
+
         image.save(path)
-        return {'mode': 'diagnostic-evidence-card', 'focus_found': False, 'capture_scope': 'generated-diagnostic-card', 'focus_reason': reason, 'diagnostic_artifact': True}
+        return {
+            "mode": "diagnostic-evidence-card",
+            "focus_found": False,
+            "capture_scope": "generated-diagnostic-card",
+            "focus_reason": reason,
+            "diagnostic_artifact": True,
+            "annotated": True,
+            "finding_id": finding_id,
+        }
     except Exception as exc:
-        return {'mode': 'diagnostic-evidence-card-failed', 'focus_found': False, 'capture_scope': 'none', 'focus_reason': reason, 'error': f'{type(exc).__name__}: {exc}'}
+        return {
+            "mode": "diagnostic-evidence-card-failed",
+            "focus_found": False,
+            "capture_scope": "none",
+            "focus_reason": reason,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
 
 def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
     """Capture ONLY the DOM element that contains the detected error.
@@ -361,6 +402,37 @@ def capture_target_overview(target: str, headed: bool = False, slow_mo: int = 0)
     }
 
 
+def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30) -> list[tuple[str, str, dict]]:
+    """Select distinct findings, not just distinct URLs, for individual evidence capture."""
+    candidates = []
+    seen = set()
+    priority = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+    ordered_findings = sorted(
+        findings,
+        key=lambda item: (
+            priority.get(str(item.get("severity") or "Info"), 5),
+            str(item.get("title") or ""),
+            str(item.get("url") or ""),
+        ),
+    )
+    for finding in ordered_findings:
+        url = finding.get("evidence_url") or finding.get("url")
+        finding_id = str(finding.get("id") or finding.get("title") or "security")
+        key = (url, finding_id)
+        if not url or key in seen:
+            continue
+        try:
+            assert_same_target(target, url)
+        except Exception:
+            continue
+        if finding.get("severity") in {"Critical", "High", "Medium"} or finding.get("evidence_url"):
+            candidates.append((url, finding_id, finding))
+            seen.add(key)
+        if len(candidates) >= max(1, int(max_items)):
+            break
+    return candidates
+
+
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
                               slow_mo: int = 0, max_items: int = 30,
                               progress_callback=None, max_seconds: int = 120,
@@ -369,27 +441,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
     assert_in_scope(target)
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
 
-    candidates = []
-    seen = set()
-    priority = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
-    ordered_findings = sorted(
-        findings,
-        key=lambda item: (priority.get(str(item.get("severity") or "Info"), 5),
-                          str(item.get("title") or ""), str(item.get("url") or "")),
-    )
-    for finding in ordered_findings:
-        url = finding.get("evidence_url") or finding.get("url")
-        if not url or url in seen:
-            continue
-        try:
-            assert_same_target(target, url)
-        except Exception:
-            continue
-        if finding.get("severity") in {"Critical", "High", "Medium"} or finding.get("evidence_url"):
-            candidates.append((url, finding.get("id", "security"), finding))
-            seen.add(url)
-        if len(candidates) >= max_items:
-            break
+    candidates = _evidence_candidates(target, findings, max_items)
 
     def notify(done, total, finding_id, url, status, item=None):
         if not progress_callback:
@@ -510,9 +562,11 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
     with open(os.path.join(EVIDENCE_DIR, "security_browser_evidence.json"), "w", encoding="utf-8") as f:
         json.dump(captured, f, indent=2, ensure_ascii=False)
 
-    by_id = {item["finding_id"]: item for item in captured}
+    by_key = {(item["finding_id"], item["url"]): item for item in captured}
     for finding in findings:
-        item = by_id.get(finding.get("id"))
+        url = finding.get("evidence_url") or finding.get("url")
+        finding_id = str(finding.get("id") or finding.get("title") or "security")
+        item = by_key.get((finding_id, url))
         if item and item.get("screenshot"):
             finding["screenshot"] = item["screenshot"]
             finding["evidence_capture"] = item
