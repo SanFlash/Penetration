@@ -74,3 +74,24 @@ def test_evidence_candidate_limit_is_respected():
     candidates = _evidence_candidates(url, findings, max_items=3)
 
     assert len(candidates) == 3
+
+
+def test_network_filter_ignores_aborted_google_analytics_beacon():
+    from scanners.compatibility import _request_failure_is_actionable
+
+    page = "https://example.com/contact"
+    assert not _request_failure_is_actionable(
+        "POST https://www.google.com/ccm/collect?tid=abc: net::ERR_ABORTED", page
+    )
+    assert not _request_failure_is_actionable(
+        "POST https://www.google-analytics.com/g/collect?v=2: net::ERR_FAILED", page
+    )
+
+
+def test_network_filter_keeps_first_party_api_failure():
+    from scanners.compatibility import _request_failure_is_actionable
+
+    assert _request_failure_is_actionable(
+        "GET https://example.com/api/profile: net::ERR_CONNECTION_RESET",
+        "https://example.com/dashboard",
+    )
