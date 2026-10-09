@@ -292,7 +292,7 @@ hr{border-top-color:#27364d!important}
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
-<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip">⬇ Download complete report bundle (HTML + PDF + XLSX + JSON + all evidence)</a><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a><a href="/reports/sentinel_full_report_bundle.zip" target="_blank">⬇ Complete report bundle (all exports + evidence)</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.</div>
+<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><div id="completionDownloads" style="display:none;border:1px solid var(--green);border-radius:10px;padding:12px;background:#06150f"><strong style="color:var(--green)">ASSESSMENT COMPLETE — REPORTS READY</strong><p class="muted" style="margin:6px 0 10px">The final report bundle includes the reports, findings, manifest and captured evidence files.</p><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip" style="display:block;text-align:center;background:var(--green);color:#03110b;font-weight:900">⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)</a></div><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The download button appears only after the assessment reaches its final status. Reports are not downloaded during a running assessment.</div>
 </aside></div>
 <section class="panel evidence"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
 <section class="coverage">
@@ -411,40 +411,27 @@ function renderStatus(s) {
   if (reportLink) {
     reportLink.href = (s.reports && s.reports.html ? s.reports.html : "/reports/report.html") + "?ts=" + Date.now();
   }
-  if (reportNotice) {
-    if (running) reportNotice.textContent = "Live report is being refreshed as phases finish. You can open it while the assessment is running.";
-    else if (s.status === "FAILED") reportNotice.textContent = "The assessment stopped, but the partial HTML report and evidence have been preserved for review.";
-    else if (s.status === "COMPLETE") reportNotice.textContent = "Assessment complete. Opening the HTML report with preserved evidence...";
-    else reportNotice.textContent = "The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.";
+  const completionDownloads = el("completionDownloads");
+  const downloadBundle = el("downloadBundle");
+  const finalStatus = ["COMPLETE", "PARTIAL", "FAILED"].indexOf(String(s.status || "").toUpperCase()) >= 0;
+  if (completionDownloads) {
+    // Never expose the final bundle action while phases are still running.
+    completionDownloads.style.display = finalStatus ? "block" : "none";
   }
-
-  if ((s.status === "COMPLETE" || s.status === "PARTIAL" || s.status === "FAILED")
-      && !window.__sentinelCompletionHandled) {
-    window.__sentinelCompletionHandled = true;
+  if (downloadBundle) {
     const reports = s.reports || {};
-    const bundleUrl = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?download=1&ts=" + Date.now();
-    const reportUrl = (reports.html || "/reports/report.html") + "?ts=" + Date.now();
-
-    // Trigger the complete bundle download automatically after the assessment.
-    // Keep the console open so the user can inspect coverage/evidence and retry
-    // the download if the browser blocks automatic downloads.
-    const download = document.createElement("a");
-    download.href = bundleUrl;
-    download.download = "sentinel_full_report_bundle.zip";
-    download.style.display = "none";
-    document.body.appendChild(download);
-    try { download.click(); } catch (_) {}
-    setTimeout(function() { download.remove(); }, 1500);
-
-    // Open the report in a separate tab rather than replacing the dashboard.
-    setTimeout(function() {
-      try { window.open(reportUrl, "_blank", "noopener"); } catch (_) {}
-    }, 350);
-
-    if (reportNotice) {
-      const statusText = s.status === "COMPLETE" ? "completed" : (s.status === "PARTIAL" ? "finished with incomplete phases" : "stopped with an error");
-      reportNotice.textContent = "Assessment " + statusText + ". Downloading the full report bundle (HTML, PDF, XLSX, JSON and evidence). If your browser blocks it, use the Complete report bundle link below.";
-    }
+    downloadBundle.href = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?ts=" + Date.now();
+    downloadBundle.setAttribute("download", "sentinel_full_report_bundle.zip");
+    downloadBundle.textContent = s.status === "COMPLETE"
+      ? "⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)"
+      : "⬇ DOWNLOAD PARTIAL REPORT + AVAILABLE EVIDENCE (ZIP)";
+  }
+  if (reportNotice) {
+    if (running) reportNotice.textContent = "Assessment is running. No final download is triggered; the report bundle button appears only when execution ends.";
+    else if (s.status === "FAILED") reportNotice.textContent = "Assessment stopped with an error. A partial report bundle is available below; review failed phases before relying on its coverage.";
+    else if (s.status === "PARTIAL") reportNotice.textContent = "Assessment finished with incomplete phases. Download the partial bundle below; timed-out or failed checks are not considered passed.";
+    else if (s.status === "COMPLETE") reportNotice.textContent = "Assessment complete. Your final report and captured evidence are ready to download below.";
+    else reportNotice.textContent = "Start an authorized assessment. The final report download will appear after it ends.";
   }
   if (running) {
     setButton(true, "PENTEST RUNNING");
