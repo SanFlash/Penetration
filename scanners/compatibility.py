@@ -417,7 +417,15 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
     assert_same_target(target, target)
     urls = [u for u in list(dict.fromkeys(urls)) if _same_target(target, u)][:max_pages]
     results, findings, unavailable = [], [], []
-    total = max(1, len(urls) * len(BROWSERS) * len(VIEWPORTS))
+    # Test all six viewport sizes on the first three representative pages, then
+    # keep mobile + laptop coverage on every remaining discovered page. This
+    # avoids multiplying every slow third-party asset load by six.
+    representative_urls = set(urls[:3])
+    total_cases = sum(
+        len(VIEWPORTS) if url in representative_urls else 2
+        for url in urls
+    )
+    total = max(1, total_cases * len(BROWSERS))
     completed = 0
 
     def emit(**payload):
@@ -446,8 +454,14 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                 continue
 
             for viewport_name, viewport in VIEWPORTS.items():
+                # Keep full matrix for representative routes; every discovered
+                # URL still receives mobile-small and laptop checks.
+                if viewport_name not in {"mobile-small", "laptop"}:
+                    viewport_urls = urls[:3]
+                else:
+                    viewport_urls = urls
                 context = browser.new_context(viewport=viewport)
-                for url in urls:
+                for url in viewport_urls:
                     assert_same_target(target, url)
                     page = context.new_page()
                     console_errors, request_failures = [], []
@@ -475,12 +489,11 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                         response = page.goto(
                             url,
                             wait_until="domcontentloaded",
-                            timeout=30000,
+                            timeout=12000,
                         )
-                        try:
-                            page.wait_for_load_state("networkidle", timeout=5000)
-                        except PlaywrightTimeoutError:
-                            pass
+                        # DOMContentLoaded is enough for layout/DOM checks. Waiting
+                        # for networkidle made sites with analytics and streaming
+                        # assets spend five extra seconds on every viewport.
 
                         metrics = page.evaluate(
                             """() => ({
