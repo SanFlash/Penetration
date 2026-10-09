@@ -12,6 +12,7 @@ from reports.remediation import build_remediation_summary, enrich_finding
 from reports.exporter import make_portable_html, make_pdf
 from reports.xlsx_exporter import generate_xlsx
 from scanners.coverage_registry import build_coverage_registry
+from reports.sarif_exporter import write_sarif
 
 
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
@@ -515,6 +516,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     portable_html_path = None
     pdf_path = None
     xlsx_path = None
+    sarif_path = None
     export_errors = {}
 
     try:
@@ -541,11 +543,17 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         )
     except Exception as exc:
         export_errors["xlsx"] = f"{type(exc).__name__}: {exc}"
+    try:
+        sarif_path = write_sarif(report, os.path.join(out_dir, "sentinel.sarif"))
+    except Exception as exc:
+        export_errors["sarif"] = f"{type(exc).__name__}: {exc}"
     report["exports"] = {
         "html_path": html_path,
         "portable_html_path": portable_html_path,
         "pdf_path": pdf_path,
         "xlsx_path": xlsx_path,
+        "sarif_path": sarif_path,
+        "sarif_generated": bool(sarif_path),
         "portable": bool(portable_html_path),
         "pdf_generated": bool(pdf_path),
         "xlsx_generated": bool(xlsx_path),
@@ -562,7 +570,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         json.dump(report, handle, indent=2, ensure_ascii=False)
     try:
         with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for candidate in (html_path, portable_html_path, pdf_path, xlsx_path, json_path, manifest_path):
+            for candidate in (html_path, portable_html_path, pdf_path, xlsx_path, sarif_path, json_path, manifest_path):
                 if candidate and os.path.isfile(candidate):
                     archive.write(candidate, os.path.basename(candidate))
             bundled_evidence = os.path.join(out_dir, "evidence")
@@ -584,6 +592,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "portable_html_path": portable_html_path,
         "pdf_path": pdf_path,
         "xlsx_path": xlsx_path,
+        "sarif_path": sarif_path,
         "manifest_path": manifest_path,
         "report": report,
     }
