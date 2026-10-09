@@ -152,3 +152,30 @@ def test_report_exposes_wstg_and_api_coverage_registry(tmp_path):
     assert "WSTG and API coverage registry" in html_report
     assert "API-BOLA" in html_report
     assert "Manual limitation:" in html_report
+
+
+def test_report_generates_sarif_and_includes_it_in_bundle(tmp_path):
+    result = generate(
+        "https://example.com",
+        [{
+            "id": "SENTINEL-TEST-1",
+            "title": "Missing security header",
+            "description": "A recommended header was not observed.",
+            "remediation": "Configure the response header.",
+            "severity": "Medium",
+            "category": "Security Headers",
+            "url": "https://example.com/",
+        }],
+        str(tmp_path / "evidence"),
+        out_dir=str(tmp_path / "reports"),
+        metadata={"profile": "pentest"},
+    )
+    sarif_path = Path(result["sarif_path"])
+    sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
+    assert sarif["version"] == "2.1.0"
+    assert sarif["runs"][0]["results"][0]["level"] == "warning"
+    assert result["report"]["exports"]["sarif_generated"] is True
+
+    import zipfile
+    with zipfile.ZipFile(result["report"]["exports"]["bundle_path"]) as bundle:
+        assert "sentinel.sarif" in bundle.namelist()
