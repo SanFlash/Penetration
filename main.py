@@ -447,7 +447,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "ui_responsive",
             phase_status,
             lambda: run_compatibility(
-                target, urls, max_pages=config.COMPATIBILITY_MAX_PAGES,
+                target, urls, max_pages=min(config.COMPATIBILITY_MAX_PAGES, 18),
                 headed=headed, slow_mo=slow_mo, telemetry=telemetry,
             ),
         )
@@ -487,7 +487,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         banner("STEP 7 — Security headers")
         loader.set("Checking security headers")
         header_findings = []
-        for index, url in enumerate(urls[:config.SECURITY_MAX_URLS], 1):
+        for index, url in enumerate(urls[:min(config.SECURITY_MAX_URLS, 40)], 1):
             try:
                 result = header_scanner.scan(url)
                 header_findings.extend(result.get("findings", []))
@@ -536,8 +536,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         jobs = {
             "deep_security": lambda: run_deep_security(
                 target,
-                max_urls=min(config.SECURITY_MAX_URLS, 120, url_count),
-                max_probes=min(deep_budget, 600),
+                max_urls=min(config.SECURITY_MAX_URLS, 60, url_count),
+                max_probes=min(deep_budget, 400),
                 write_report=False,
             ),
             "api_surface": lambda: run_api_surface(
@@ -568,7 +568,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         futures = {pool.submit(_phase_call, name, phase_status, fn): name for name, fn in jobs.items()}
         pending = set(futures)
         parallel_started = time.monotonic()
-        parallel_timeout = max(180, min(int(getattr(config, "SECURITY_MAX_RUNTIME", 180)) + 60, 300))
+        parallel_timeout = max(90, min(int(getattr(config, "SECURITY_MAX_RUNTIME", 120)), 150))
         while pending:
             done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
             elapsed_parallel = time.monotonic() - parallel_started
@@ -696,9 +696,9 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 evidence_findings,
                 headed=headed,
                 slow_mo=slow_mo,
-                max_items=30,
-                max_seconds=120,
-                navigation_timeout_ms=12000,
+                max_items=15,
+                max_seconds=60,
+                navigation_timeout_ms=8000,
                 progress_callback=_evidence_progress,
             ),
         )
@@ -722,7 +722,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         banner("STEP 13 — Final interactive report")
         loader.set("Finalizing HTML report")
         phase_status["report_generation"] = {"status": "completed"}
-        phase_failures = [name for name, info in phase_status.items() if info.get("status") == "failed"]
+        phase_failures = [name for name, info in phase_status.items() if info.get("status") in {"failed", "timed_out"}]
         final_status = "PARTIAL" if phase_failures else "COMPLETE"
         report = _refresh_live_report(target, all_findings, current_metadata(final_status))
         last_report_refresh = time.monotonic()
