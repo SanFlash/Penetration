@@ -719,9 +719,9 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 evidence_findings,
                 headed=headed,
                 slow_mo=slow_mo,
-                max_items=15,
-                max_seconds=60,
-                navigation_timeout_ms=8000,
+                max_items=30,
+                max_seconds=240,
+                navigation_timeout_ms=10000,
                 progress_callback=_evidence_progress,
             ),
         )
