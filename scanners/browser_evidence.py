@@ -407,10 +407,13 @@ def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30)
     candidates = []
     seen = set()
     priority = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+    # Build category queues first so a flood of accessibility/overflow signals
+    # cannot crowd out functional, security, penetration, or information-leak evidence.
+    queues = {}
     ordered_findings = sorted(
         findings,
         key=lambda item: (
-            priority.get(str(item.get("severity") or "Info"), 5),
+            priority.get(str(item.get("severity") or "Info").title(), 5),
             str(item.get("title") or ""),
             str(item.get("url") or ""),
         ),
@@ -425,11 +428,20 @@ def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30)
             assert_same_target(target, url)
         except Exception:
             continue
-        if finding.get("severity") in {"Critical", "High", "Medium"} or finding.get("evidence_url"):
-            candidates.append((url, finding_id, finding))
-            seen.add(key)
-        if len(candidates) >= max(1, int(max_items)):
-            break
+        seen.add(key)
+        category = str(finding.get("category") or "Other").strip() or "Other"
+        queues.setdefault(category, []).append((url, finding_id, finding))
+
+    # Round-robin across categories: every discovered coverage area gets a
+    # chance to attach concrete evidence, including Low and Info observations.
+    limit = max(1, int(max_items))
+    while queues and len(candidates) < limit:
+        for category in list(queues):
+            queue = queues[category]
+            if queue and len(candidates) < limit:
+                candidates.append(queue.pop(0))
+            if not queue:
+                del queues[category]
     return candidates
 
 
