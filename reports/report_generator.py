@@ -653,8 +653,23 @@ def _render_html(report: dict) -> str:
     for finding in findings_sorted:
         sev = html.escape(str(finding.get("severity", "Info")))
         color = SEVERITY_COLOR.get(str(finding.get("severity", "Info")), SEVERITY_COLOR["Info"])
+        # Prefer all attached evidence images; fall back to the singular screenshot
+        # when older scanner versions only populate "screenshot".
         shots = finding.get("screenshots_relative") or []
-        shot_html = "".join(evidenceAnchor(p, "Finding evidence") for p in shots) if shots else '<div class="warn">No visual screenshot was required or successfully captured. Structured evidence is shown above.</div>'
+        if not shots and finding.get("screenshot_relative"):
+            shots = [finding.get("screenshot_relative")]
+        if not shots and finding.get("screenshot"):
+            candidate = _bundle_evidence_path(finding.get("screenshot"), evidence_dir, out_dir)
+            if candidate:
+                shots = [candidate]
+        capture_meta = finding.get("evidence_capture") or {}
+        capture_mode = ((capture_meta.get("capture") or {}).get("mode")
+                        if isinstance(capture_meta.get("capture"), dict) else None)
+        shot_html = "".join(evidenceAnchor(p, "Open marked-up evidence") for p in shots)
+        if not shot_html:
+            shot_html = '<div class="warn">No screenshot file was attached. Structured evidence is shown above; inspect the evidence manifest for the capture failure reason.</div>'
+        elif capture_mode == "diagnostic-evidence-card":
+            shot_html += '<p class="warn">This is a labelled diagnostic evidence card, not a browser screenshot.</p>'
         server_finding_cards.append(
             '<article class="finding"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s</span></div>'
             '<h3>%s</h3>'
