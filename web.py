@@ -456,11 +456,16 @@ function renderStatus(s) {
   el("logs").scrollTop = el("logs").scrollHeight;
 }
 
+let connectionFailures = 0;
+let lastGoodState = null;
+let statusPollDelay = 1000;
+
 async function poll() {
   try {
     const response = await fetch("/api/status?ts=" + Date.now(), {
       cache: "no-store",
-      headers: {"Cache-Control": "no-cache"}
+      credentials: "same-origin",
+      headers: {"Cache-Control": "no-cache", "Accept": "application/json"}
     });
 
     if (!response.ok) {
@@ -468,12 +473,22 @@ async function poll() {
     }
 
     const data = await response.json();
+    lastGoodState = data;
+    connectionFailures = 0;
+    statusPollDelay = 1000;
     renderStatus(data);
   } catch (error) {
-    showState("ERROR", "STATUS CONNECTION FAILED",
-      error && error.message ? error.message : "Cannot reach the status endpoint.");
+    connectionFailures += 1;
+    // Preserve the latest assessment state during transient Render restarts
+    // instead of replacing useful progress with a false failure state.
+    if (connectionFailures >= 4) {
+      el("status").textContent = "RECONNECTING";
+      el("detail").textContent = "Dashboard connection interrupted. Retrying automatically; the assessment may still be running.";
+      if (lastGoodState && lastGoodState.stage) el("stage").textContent = lastGoodState.stage;
+    }
+    statusPollDelay = Math.min(10000, 1000 * Math.pow(1.5, Math.min(connectionFailures, 6)));
   } finally {
-    pollTimer = setTimeout(poll, 1000);
+    pollTimer = setTimeout(poll, statusPollDelay);
   }
 }
 
