@@ -120,7 +120,7 @@ def test_report_includes_owasp_top10_engine_coverage_and_limitations(tmp_path):
     data = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
     owasp = {row["code"]: row for row in data["owasp_coverage"]}
     assert len(owasp) == 10
-    assert owasp["A01:2021"]["status"] == "engines_completed"
+    assert owasp["A01:2021"]["status"] == "partial"\n    assert owasp["A02:2021"]["status"] == "engines_completed"
     assert owasp["A03:2021"]["status"] == "partial"
     assert owasp["A09:2021"]["status"] == "not_run"
     assert "does not prove" in owasp["A01:2021"]["limitation"]
