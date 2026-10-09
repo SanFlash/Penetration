@@ -197,8 +197,8 @@ def _write_diagnostic_evidence_card(
         def safe_text(value, limit=900):
             text = str(value or "Not provided").replace("\r", " ").replace("\n", " ").strip()
             text = re.sub(
-                r"(?i)\\b(authorization|cookie|set-cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\\b\\s*[:=]\\s*[^\\s,;]+",
-                r"\\1=<redacted>",
+                r"(?i)\b(authorization|cookie|set-cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\b\s*[:=]\s*[^\s,;]+",
+                r"\1=<redacted>",
                 text,
             )
             return text[:limit] or "Not provided"
