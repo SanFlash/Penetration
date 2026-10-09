@@ -243,6 +243,43 @@ _HTML = r"""<!doctype html>
 <style>
 :root{--bg:#03060b;--panel:#0a111b;--line:#193149;--text:#e7f1fb;--muted:#7891a9;--green:#38e8a0;--blue:#4ea1ff;--red:#ff3864;--yellow:#ffc857}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 0,#123047 0,#04070d 45%,#020307 100%);color:var(--text);font:14px/1.5 Inter,Segoe UI,Arial,sans-serif;min-height:100vh}.wrap{max-width:1250px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}.brand{font-weight:900;letter-spacing:.12em}.badge{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--green);background:#06150f}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.panel{background:#07101bf2;border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 70px #0008;overflow:hidden}.pad{padding:18px}h2,h3{margin-top:0}.muted{color:var(--muted)}label{display:block;color:var(--muted);font-size:12px;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.08em}input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#03070d;color:var(--text)}button{margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:linear-gradient(90deg,var(--blue),var(--green));color:#02100b;font-weight:900;cursor:pointer}.hero{min-height:390px;position:relative;display:flex;align-items:center;justify-content:center;text-align:center}.ring{width:210px;height:210px;border:1px solid #38e8a066;border-radius:50%;box-shadow:0 0 70px #38e8a01a,inset 0 0 50px #38e8a01a;animation:pulse 2.2s ease-in-out infinite}.core{position:absolute;width:72px;height:72px;border-radius:50%;border:1px solid var(--green);box-shadow:0 0 45px #38e8a055;background:#38e8a014}.center{position:absolute;padding:0 30px}.stage{font-size:20px;font-weight:900;letter-spacing:.08em;margin-top:18px}.detail{color:var(--muted);margin-top:6px}@keyframes pulse{50%{transform:scale(1.08);opacity:.72}}.bar{height:9px;background:#101b29;border-radius:99px;overflow:hidden;margin:10px 0}.fill{height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .35s}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.metric{border:1px solid var(--line);border-radius:10px;padding:10px;background:#08121e}.metric b{display:block;font-size:21px}.metric span{color:var(--muted);font-size:10px;text-transform:uppercase}.evidence{margin-top:14px}.evidencebox{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px;max-height:560px;overflow:auto}.e-card{border:1px solid var(--line);border-radius:12px;background:#03070d;overflow:hidden}.e-card img{width:100%;height:145px;object-fit:contain;background:#02050a;display:block}.e-body{padding:9px}.e-id{font-weight:900;color:var(--green);font-size:11px}.e-url{font-size:10px;color:var(--muted);word-break:break-all;margin-top:4px}.e-body a{display:inline-block;margin-top:7px;color:var(--blue);text-decoration:none;font-size:11px}.coverage{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:14px}.cov{border:1px solid var(--line);border-radius:10px;padding:10px;background:#08121e}.cov b{display:block;font-size:11px}.cov span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;margin-top:4px}.links{display:grid;gap:8px;margin-top:14px}.links a{color:var(--green);text-decoration:none;border:1px solid var(--line);padding:9px;border-radius:9px}.logs{margin-top:14px;height:220px;overflow:auto;background:#02050a;border-top:1px solid var(--line);padding:12px;font:12px/1.6 Consolas,monospace}.ok{color:var(--green)}.err{color:var(--red)}.warn{color:var(--yellow)}@media(max-width:1050px){.coverage{grid-template-columns:repeat(3,1fr)}.evidencebox{grid-template-columns:repeat(2,1fr)}}@media(max-width:900px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.coverage{grid-template-columns:repeat(2,1fr)}.evidencebox{grid-template-columns:1fr}.wrap{padding:12px}}
+
+/* Sentinel Professional Console v2 */
+:root{color-scheme:dark;--bg:#0b1120;--panel:#111a2b;--line:#27364d;--text:#edf3fc;--muted:#91a2ba;--green:#55e6ad;--blue:#76a9ff;--red:#ff7188;--yellow:#f6c96b}
+body{background:#0b1120;color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:0}
+.wrap{max-width:1480px;padding:28px 30px}
+.top{padding:8px 0 22px;border-bottom:1px solid #263349;margin-bottom:24px}
+.brand{font-size:16px;letter-spacing:.04em;display:flex;align-items:center;gap:12px}
+.brand:before{content:"S";display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#173c3b;color:#65f0bd;border:1px solid #28665b;font-size:19px}
+.badge{background:#102d27;border-color:#285c50;color:#6cebb7;font-size:12px;font-weight:700}
+.grid{grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr);gap:18px}
+.panel{background:#111a2b;border:1px solid #27364d;border-radius:14px;box-shadow:0 10px 28px #02061735}
+.pad{padding:22px}
+h2{font-size:18px;letter-spacing:-.02em}h3{font-size:12px;color:#a7b7ce;letter-spacing:.09em}
+.muted,.detail{color:#91a2ba}
+input{background:#0b1220;border:1px solid #34435a;border-radius:9px;padding:13px 14px;outline:none}
+input:focus{border-color:#76a9ff;box-shadow:0 0 0 3px #76a9ff22}
+button{background:#4bd5a2;color:#06261d;border-radius:9px;font-size:13px;letter-spacing:.01em;box-shadow:none;transition:filter .15s,transform .15s}
+button:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.hero{min-height:370px;background:radial-gradient(ellipse at 50% 38%,#183747 0,#111a2b 60%)}
+.ring{border-color:#55e6ad65;box-shadow:0 0 55px #55e6ad15,inset 0 0 40px #55e6ad0c}
+.core{border-color:#55e6ad;background:#55e6ad12}
+.bar{background:#273449;height:8px}
+.fill{background:linear-gradient(90deg,#76a9ff,#55e6ad);border-radius:99px}
+.metric{background:#0d1626;border:1px solid #27364d;border-radius:11px;padding:14px}
+.metric b{font-size:24px;font-weight:650;letter-spacing:-.04em}
+.metric span{font-size:10px;letter-spacing:.1em;color:#91a2ba}
+.coverage-card{background:#0d1626;border-color:#27364d;border-radius:10px;padding:13px}
+.evidencebox{padding:16px;gap:14px}
+.e-card{background:#0b1220;border-color:#2a3b53;border-radius:10px}
+.e-card img{height:170px}
+.e-id{color:#69e8b5}
+.logs{margin-top:18px}
+.logbox{background:#080e19;border-top-color:#27364d;height:230px}
+table{font-size:12px}th,td{padding:11px 10px;border-bottom-color:#25344a}th{font-weight:650}
+hr{border-top-color:#27364d!important}
+@media(max-width:900px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.hero{min-height:330px}.top{align-items:flex-start}.brand{font-size:13px}.panel{border-radius:12px}}
+
 </style></head>
 <body><main class="wrap">
 <header class="top"><div class="brand">SENTINEL // HOSTED PENTEST CONSOLE</div><div id="status" class="badge">IDLE</div></header>
