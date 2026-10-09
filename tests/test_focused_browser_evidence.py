@@ -95,3 +95,26 @@ def test_network_filter_keeps_first_party_api_failure():
         "GET https://example.com/api/profile: net::ERR_CONNECTION_RESET",
         "https://example.com/dashboard",
     )
+
+
+def test_evidence_candidates_round_robin_all_coverage_categories():
+    from scanners.browser_evidence import _evidence_candidates
+
+    url = "https://example.com/"
+    findings = [
+        {"id": f"UI-{i}", "title": f"UI issue {i}", "severity": "Low", "category": "Accessibility", "url": url}
+        for i in range(12)
+    ] + [
+        {"id": "FUNC-1", "title": "Broken form", "severity": "Low", "category": "Functional Testing", "url": url},
+        {"id": "SEC-1", "title": "Weak header", "severity": "Info", "category": "Security Configuration", "url": url},
+        {"id": "PENTEST-1", "title": "Input validation signal", "severity": "Medium", "category": "Penetration Testing", "url": url},
+        {"id": "INFO-1", "title": "Public debug artifact", "severity": "Low", "category": "Information Disclosure", "url": url},
+    ]
+
+    candidates = _evidence_candidates(url, findings, max_items=10)
+    categories = {candidate[2]["category"] for candidate in candidates}
+    assert "Functional Testing" in categories
+    assert "Security Configuration" in categories
+    assert "Penetration Testing" in categories
+    assert "Information Disclosure" in categories
+    assert len(candidates) == 10
