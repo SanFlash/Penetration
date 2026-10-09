@@ -130,6 +130,14 @@ def status():
     payload["running"] = _run_lock.locked()
     payload["last_result"] = _last_result
     payload["last_error"] = _last_error
+    bundle_path = Path(config.REPORT_DIR) / "sentinel_full_report_bundle.zip"
+    report_path = Path(config.REPORT_DIR) / "report.html"
+    # Render may restart the web worker after a scan. The in-memory dashboard
+    # state then resets to INITIALIZING even though report artifacts remain on
+    # the persistent disk. Publish artifact readiness independently of the
+    # transient worker status so users can still download the completed report.
+    bundle_ready = bundle_path.is_file() and bundle_path.stat().st_size > 0
+    report_ready = report_path.is_file() and report_path.stat().st_size > 0
     payload["reports"] = {
         "html": "/reports/report.html",
         "portable_html": "/reports/report_portable.html",
@@ -138,6 +146,10 @@ def status():
         "findings_json": "/reports/findings.json",
         "manifest": "/reports/evidence_manifest.json",
         "bundle": "/reports/sentinel_full_report_bundle.zip",
+        "bundle_ready": bundle_ready,
+        "report_ready": report_ready,
+        "bundle_size_bytes": bundle_path.stat().st_size if bundle_ready else 0,
+        "bundle_modified_at": bundle_path.stat().st_mtime if bundle_ready else None,
     }
     return jsonify(payload)
 
@@ -413,24 +425,32 @@ function renderStatus(s) {
   }
   const completionDownloads = el("completionDownloads");
   const downloadBundle = el("downloadBundle");
+  const reports = s.reports || {};
   const finalStatus = ["COMPLETE", "PARTIAL", "FAILED"].indexOf(String(s.status || "").toUpperCase()) >= 0;
+  // Show the action only when a run has ended OR a complete bundle already
+  // exists on persistent storage after a worker restart. Never show it during
+  // an active scan. This avoids the stuck INITIALIZING screen hiding a report
+  // that was already generated successfully.
+  const bundleReady = reports.bundle_ready === true;
+  const downloadReady = !running && (finalStatus || bundleReady);
   if (completionDownloads) {
-    // Never expose the final bundle action while phases are still running.
-    completionDownloads.style.display = finalStatus ? "block" : "none";
+    completionDownloads.style.display = downloadReady ? "block" : "none";
   }
   if (downloadBundle) {
-    const reports = s.reports || {};
-    downloadBundle.href = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?ts=" + Date.now();
+    downloadBundle.href = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?download=1&ts=" + Date.now();
     downloadBundle.setAttribute("download", "sentinel_full_report_bundle.zip");
-    downloadBundle.textContent = s.status === "COMPLETE"
+    downloadBundle.textContent = finalStatus && s.status === "COMPLETE"
       ? "⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)"
-      : "⬇ DOWNLOAD PARTIAL REPORT + AVAILABLE EVIDENCE (ZIP)";
+      : (bundleReady && !finalStatus
+        ? "⬇ DOWNLOAD LAST COMPLETED REPORT + EVIDENCE (ZIP)"
+        : "⬇ DOWNLOAD PARTIAL REPORT + AVAILABLE EVIDENCE (ZIP)");
   }
   if (reportNotice) {
     if (running) reportNotice.textContent = "Assessment is running. No final download is triggered; the report bundle button appears only when execution ends.";
     else if (s.status === "FAILED") reportNotice.textContent = "Assessment stopped with an error. A partial report bundle is available below; review failed phases before relying on its coverage.";
     else if (s.status === "PARTIAL") reportNotice.textContent = "Assessment finished with incomplete phases. Download the partial bundle below; timed-out or failed checks are not considered passed.";
     else if (s.status === "COMPLETE") reportNotice.textContent = "Assessment complete. Your final report and captured evidence are ready to download below.";
+    else if (reports.bundle_ready === true) reportNotice.textContent = "A previously completed report bundle is available. It remains downloadable even if the web worker restarted.";
     else reportNotice.textContent = "Start an authorized assessment. The final report download will appear after it ends.";
   }
   if (running) {
