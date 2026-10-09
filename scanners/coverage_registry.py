@@ -74,7 +74,7 @@ def build_coverage_registry(phase_status: dict[str, Any] | None) -> list[dict[st
                 if status == "engines_completed" else
                 "No mapped automated phase is configured for this category; manual review is required."
                 if status == "manual_review" else
-                "At least one mapped phase failed, timed out, or was blocked."
+                "At least one mapped phase failed, timed out, or was blocked; this is not proof that the category is secure."
                 if status == "partial_or_failed" else
                 "Mapped phases were not executed in this assessment."
                 if status == "not_run" else
