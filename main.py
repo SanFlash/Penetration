@@ -575,7 +575,14 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         futures = {pool.submit(_phase_call, name, phase_status, fn): name for name, fn in jobs.items()}
         pending = set(futures)
         parallel_started = time.monotonic()
-        parallel_timeout = max(90, min(int(getattr(config, "SECURITY_MAX_RUNTIME", 120)), 150))
+        # The deep engines each perform bounded multi-route checks. A 120s
+        # aggregate deadline prematurely marks input-stress/validation as timed out
+        # on content-heavy sites. Allow a configurable, bounded window while still
+        # publishing explicit timeout status rather than pretending tests passed.
+        parallel_timeout = max(
+            240,
+            min(int(os.getenv("SENTINEL_SECURITY_PHASE_TIMEOUT", "300")), 360),
+        )
         while pending:
             done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
             elapsed_parallel = time.monotonic() - parallel_started
@@ -640,9 +647,18 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         # isolated and its completed findings remain in the canonical report.
         pool.shutdown(wait=False, cancel_futures=True)
 
+        finished_engines = sum(
+            1 for name in jobs
+            if phase_status.get(name, {}).get("status") == "completed"
+        )
+        timed_out_engines = [
+            name for name in jobs
+            if phase_status.get(name, {}).get("status") == "timed_out"
+        ]
         refresh_report(
             "PARALLEL SECURITY TESTING",
-            f"Completed six read-only security engines across {url_count} discovered URLs."
+            f"{finished_engines}/6 security engines completed across {url_count} discovered URLs."
+            + (f" Timed out: {', '.join(timed_out_engines)}." if timed_out_engines else "")
         )
 
         attack_surface = _phase_call(
