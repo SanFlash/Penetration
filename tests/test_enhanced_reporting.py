@@ -130,3 +130,25 @@ def test_report_includes_owasp_top10_engine_coverage_and_limitations(tmp_path):
     assert "OWASP Top 10:2021" in html_report
     assert "Mapped engines and limitations" in html_report
     assert "NOT RUN" in html_report
+
+
+def test_report_exposes_wstg_and_api_coverage_registry(tmp_path):
+    result = generate(
+        "https://example.com",
+        [],
+        str(tmp_path / "evidence"),
+        out_dir=str(tmp_path / "reports"),
+        metadata={"profile": "pentest", "phase_status": {
+            "security_headers": {"status": "completed"},
+            "active_security": {"status": "timed_out"},
+        }},
+    )
+    data = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
+    coverage = {row["id"]: row for row in data["framework_coverage"]}
+    assert len(coverage) >= 20
+    assert coverage["WSTG-CONF"]["status"] == "partial_or_failed"
+    assert coverage["LOGGING"]["status"] == "manual_review"
+    html_report = Path(result["html_path"]).read_text(encoding="utf-8")
+    assert "WSTG and API coverage registry" in html_report
+    assert "API-BOLA" in html_report
+    assert "Manual limitation:" in html_report
