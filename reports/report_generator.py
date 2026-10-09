@@ -363,6 +363,47 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         if not os.path.isfile(os.path.join(out_dir, p.replace("/", os.sep)))
     ]
 
+    # Explicit phase coverage prevents the report from implying that unexecuted
+    # phases passed. Statuses are sourced from the orchestrator's phase ledger.
+    phase_status = meta.get("phase_status") or {}
+    phase_groups = {
+        "UI & Responsive": ["ui_responsive"],
+        "Functional": ["functional_testing"],
+        "Security Controls": ["security_headers", "active_security"],
+        "Deep Security": ["deep_security", "comprehensive_security", "api_surface"],
+        "Penetration Testing": ["aggressive_readonly", "input_stress", "input_validation"],
+        "Information Disclosure": ["information_disclosure"],
+        "Evidence Capture": ["security_evidence"],
+    }
+    coverage_matrix = []
+    for label, phase_names in phase_groups.items():
+        phases = [phase_status.get(name) for name in phase_names]
+        present = [phase for phase in phases if isinstance(phase, dict)]
+        statuses = [str(phase.get("status", "pending")).lower() for phase in present]
+        if not present or not statuses:
+            status = "not_run"
+        elif any(value in {"failed", "timed_out"} for value in statuses):
+            status = "failed_or_timed_out"
+        elif any(value in {"partial", "skipped"} for value in statuses) or len(present) < len(phase_names):
+            status = "partial"
+        elif all(value == "completed" for value in statuses):
+            status = "completed"
+        else:
+            status = "in_progress"
+        coverage_matrix.append({
+            "area": label,
+            "status": status,
+            "phases": [
+                {
+                    "name": name,
+                    "status": str((phase_status.get(name) or {}).get("status", "not_run")),
+                    "checks": (phase_status.get(name) or {}).get("checks"),
+                    "error": (phase_status.get(name) or {}).get("error"),
+                }
+                for name in phase_names
+            ],
+        })
+
     report = {
         "schema_version": "3.0",
         "target": target,
@@ -377,6 +418,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             if url
         }),
         "total_findings": len(findings_sorted),
+        "coverage_matrix": coverage_matrix,
         "severity_summary": summary,
         "category_summary": dict(categories),
         "confidence_summary": dict(confidence),
@@ -633,6 +675,27 @@ def _render_html(report: dict) -> str:
                 html.escape(str(finding.get("recommended_action") or finding.get("fix_summary") or finding.get("remediation") or "-")),
                 html.escape(str(finding.get("validation_steps") or "-")), shot_html))
     findings_html_text = "".join(server_finding_cards) or '<div class="empty">No findings were recorded.</div>'
+    coverage_status_class = {
+        "completed": "ok", "partial": "warn", "in_progress": "warn",
+        "failed_or_timed_out": "fail", "not_run": "fail",
+    }
+    coverage_matrix_html = []
+    for row in report.get("coverage_matrix", []):
+        details = []
+        for phase in row.get("phases", []):
+            phase_status_text = html.escape(str(phase.get("status", "not_run")))
+            phase_name = html.escape(str(phase.get("name", "")))
+            extra = ""
+            if phase.get("error"):
+                extra = " — " + html.escape(str(phase["error"])[:300])
+            details.append(f"<div><b>{phase_name}</b>: <span class='{coverage_status_class.get(str(phase.get('status','not_run')).lower(), 'warn')}'>{phase_status_text}</span>{extra}</div>")
+        coverage_matrix_html.append(
+            "<tr><td>" + html.escape(str(row.get("area", ""))) + "</td>"
+            + "<td class='" + coverage_status_class.get(str(row.get("status", "not_run")), "warn") + "'>"
+            + html.escape(str(row.get("status", "not_run")).replace("_", " ").upper()) + "</td>"
+            + "<td>" + ("".join(details) or "No phase details were recorded.") + "</td></tr>"
+        )
+    coverage_matrix_html_text = "".join(coverage_matrix_html) or "<tr><td colspan='3'>No phase coverage metadata was recorded.</td></tr>"
 
     target_overview_html = '<div class="empty">Target overview was not captured.</div>'
     overview = report.get("metadata", {}).get("target_overview") or {}
@@ -732,6 +795,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="summary-item"><b>__SECURITYCAPS__</b><span>Security captures</span></div>
 </div></div>
 <div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
+<div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
 </section>
 
 <section id="findings" class="tab">
@@ -857,6 +921,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__MARKED__": str(browser["marked"]),
         "__SECURITYCAPS__": str(len(report.get("security_evidence", []))),
         "__ATTACK_SURFACE__": attack_html,
+        "__COVERAGE_MATRIX_HTML__": coverage_matrix_html_text,
         "__URLS__": str(browser["urls"]),
         "__VIEWPORTS__": str(browser["viewports"]),
         "__COVERFAILS__": str(browser["failures"]),
