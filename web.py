@@ -347,21 +347,24 @@ async function startRun() {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    const response = await fetch("/api/run?ts=" + Date.now(), {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Cache-Control": "no-cache"
-      },
-      body: JSON.stringify({ target: target, authorized: true }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    let response;
+    try {
+      response = await fetch("/api/run?ts=" + Date.now(), {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Cache-Control": "no-cache"
+        },
+        body: JSON.stringify({ target: target, authorized: true }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const bodyText = await response.text();
     let data = {};
@@ -379,8 +382,10 @@ async function startRun() {
     setButton(true, "PENTEST RUNNING");
   } catch (error) {
     const message = error && error.name === "AbortError"
-      ? "The server did not respond within 15 seconds."
-      : (error && error.message ? error.message : "Unable to start the assessment.");
+      ? "The server did not respond within 25 seconds. Check Render health/logs before retrying."
+      : (error && error.message === "Failed to fetch"
+        ? "Render disconnected before returning a response. The service may be restarting or overloaded; status polling will retry automatically."
+        : (error && error.message ? error.message : "Unable to start the assessment."));
 
     showState("ERROR", "START FAILED", message);
     setButton(false, "START PENTEST");
