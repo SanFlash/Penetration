@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from reports.remediation import build_remediation_summary, enrich_finding
 from reports.exporter import make_portable_html, make_pdf
 from reports.xlsx_exporter import generate_xlsx
+from scanners.coverage_registry import build_coverage_registry
 
 
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
@@ -463,6 +464,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "total_findings": len(findings_sorted),
         "coverage_matrix": coverage_matrix,
         "owasp_coverage": owasp_coverage,
+        "framework_coverage": build_coverage_registry(phase_status),
         "severity_summary": summary,
         "category_summary": dict(categories),
         "confidence_summary": dict(confidence),
@@ -770,6 +772,26 @@ def _render_html(report: dict) -> str:
             + details + "<p>" + html.escape(item["limitation"]) + "</p></td></tr>"
         )
     owasp_coverage_html = "".join(owasp_rows) or "<tr><td colspan='4'>No OWASP mapping available.</td></tr>"
+    registry_state_class = {
+        "engines_completed": "warn", "partial": "warn", "partial_or_failed": "fail",
+        "not_run": "fail", "manual_review": "warn",
+    }
+    registry_rows = []
+    for item in report.get("framework_coverage", []):
+        phase_details = ", ".join(
+            html.escape(str(p["name"])) + ": " + html.escape(str(p["status"]))
+            for p in item.get("phase_results", [])
+        ) or "Manual review only"
+        registry_rows.append(
+            "<tr><td>" + html.escape(str(item["id"])) + "</td>"
+            + "<td>" + html.escape(str(item["standard"])) + "</td>"
+            + "<td>" + html.escape(str(item["name"])) + "</td>"
+            + "<td class='" + registry_state_class.get(str(item["status"]), "warn") + "'>"
+            + html.escape(str(item["status"]).replace("_", " ").upper()) + "</td>"
+            + "<td>" + phase_details + "<p>" + html.escape(str(item["execution_note"])) + "</p>"
+            + "<p><b>Manual limitation:</b> " + html.escape(str(item["manual"])) + "</p></td></tr>"
+        )
+    framework_coverage_html = "".join(registry_rows) or "<tr><td colspan='5'>No framework coverage registry available.</td></tr>"
 
     target_overview_html = '<div class="empty">Target overview was not captured.</div>'
     overview = report.get("metadata", {}).get("target_overview") or {}
@@ -871,6 +893,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
 <div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">OWASP Top 10:2021 — engine coverage</div><p class="sub">This matrix shows which automated engines ran for each OWASP category. “Engines completed” is not a declaration that the category is secure; review individual findings and perform authenticated/manual tests where required.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_COVERAGE_HTML__</tbody></table></div></div>
+<div class="panel"><div class="section-title">WSTG and API coverage registry</div><p class="sub">Coverage is resolved from the actual phase ledger. Manual-only, unavailable, blocked, timed-out, and not-run categories remain visible and are never counted as passing.</p><div class="matrix"><table><thead><tr><th>Test ID</th><th>Standard</th><th>Area</th><th>Execution status</th><th>Phase results and limitations</th></tr></thead><tbody>__FRAMEWORK_COVERAGE_HTML__</tbody></table></div></div>
 </section>
 
 <section id="findings" class="tab">
@@ -999,6 +1022,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__ATTACK_SURFACE__": attack_html,
         "__COVERAGE_MATRIX_HTML__": coverage_matrix_html_text,
         "__OWASP_COVERAGE_HTML__": owasp_coverage_html,
+        "__FRAMEWORK_COVERAGE_HTML__": framework_coverage_html,
         "__URLS__": str(browser["urls"]),
         "__VIEWPORTS__": str(browser["viewports"]),
         "__COVERFAILS__": str(browser["failures"]),
