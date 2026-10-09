@@ -292,7 +292,7 @@ hr{border-top-color:#27364d!important}
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
-<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a><a href="/reports/sentinel_full_report_bundle.zip" target="_blank">⬇ Complete report bundle (all exports + evidence)</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.</div>
+<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip">⬇ Download complete report bundle (HTML + PDF + XLSX + JSON + all evidence)</a><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a><a href="/reports/sentinel_full_report_bundle.zip" target="_blank">⬇ Complete report bundle (all exports + evidence)</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.</div>
 </aside></div>
 <section class="panel evidence"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
 <section class="coverage">
@@ -418,16 +418,33 @@ function renderStatus(s) {
     else reportNotice.textContent = "The HTML report is refreshed during the assessment and preserves partial evidence if a later phase fails.";
   }
 
-  if (s.status === "COMPLETE" && !window.__sentinelReportOpened) {
-    window.__sentinelReportOpened = true;
-    const reportUrl = (s.reports && s.reports.html ? s.reports.html : "/reports/report.html") + "?ts=" + Date.now();
+  if ((s.status === "COMPLETE" || s.status === "PARTIAL" || s.status === "FAILED")
+      && !window.__sentinelCompletionHandled) {
+    window.__sentinelCompletionHandled = true;
+    const reports = s.reports || {};
+    const bundleUrl = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?download=1&ts=" + Date.now();
+    const reportUrl = (reports.html || "/reports/report.html") + "?ts=" + Date.now();
+
+    // Trigger the complete bundle download automatically after the assessment.
+    // Keep the console open so the user can inspect coverage/evidence and retry
+    // the download if the browser blocks automatic downloads.
+    const download = document.createElement("a");
+    download.href = bundleUrl;
+    download.download = "sentinel_full_report_bundle.zip";
+    download.style.display = "none";
+    document.body.appendChild(download);
+    try { download.click(); } catch (_) {}
+    setTimeout(function() { download.remove(); }, 1500);
+
+    // Open the report in a separate tab rather than replacing the dashboard.
     setTimeout(function() {
-      try {
-        window.location.href = reportUrl;
-      } catch (_) {
-        window.open(reportUrl, "_blank", "noopener");
-      }
-    }, 250);
+      try { window.open(reportUrl, "_blank", "noopener"); } catch (_) {}
+    }, 350);
+
+    if (reportNotice) {
+      const statusText = s.status === "COMPLETE" ? "completed" : (s.status === "PARTIAL" ? "finished with incomplete phases" : "stopped with an error");
+      reportNotice.textContent = "Assessment " + statusText + ". Downloading the full report bundle (HTML, PDF, XLSX, JSON and evidence). If your browser blocks it, use the Complete report bundle link below.";
+    }
   }
   if (running) {
     setButton(true, "PENTEST RUNNING");
