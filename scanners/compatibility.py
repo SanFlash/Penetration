@@ -55,6 +55,43 @@ def _safe_filename(url: str) -> str:
     ).strip("_")[:120] or "page"
 
 
+def _request_failure_is_actionable(failure: str, page_url: str) -> bool:
+    """Ignore browser cancellations and noisy third-party telemetry failures."""
+    value = str(failure or "")
+    lower = value.lower()
+    if any(token in lower for token in (
+        "err_aborted", "err_blocked_by_client", "err_canceled",
+        "net::err_aborted", "net::err_blocked_by_client",
+    )):
+        return False
+    try:
+        from urllib.parse import urlparse
+        request_url = value.split(" ", 2)[1].split(":", 1)[0] if value.split(" ", 2) else ""
+        # Extract the URL from strings like "POST https://host/path: net::ERR_*".
+        if "://" in value:
+            request_url = value[value.find("://") - (value[:value.find("://")].rfind(" ") + 1):].split(" ", 1)[0]
+            request_url = request_url.rstrip(":")
+        page_host = (urlparse(page_url).hostname or "").lower()
+        request_host = (urlparse(request_url).hostname or "").lower()
+    except Exception:
+        page_host, request_host = "", ""
+    # A failed analytics/advertising beacon is not evidence that the target app is broken.
+    telemetry_hosts = (
+        "google-analytics.com", "googletagmanager.com", "google.com",
+        "doubleclick.net", "googlesyndication.com", "facebook.net",
+        "facebook.com", "hotjar.com", "clarity.ms", "segment.io",
+        "segment.com", "mixpanel.com", "amplitude.com",
+    )
+    if request_host and any(
+        request_host == host or request_host.endswith("." + host)
+        for host in telemetry_hosts
+    ):
+        return False
+    # Keep first-party failures and other actionable resources. Third-party
+    # failures may still matter when they are not known telemetry.
+    return True
+
+
 def _page_findings(url, browser_name, viewport_name, data):
     """Create findings and attach only the focused evidence for each failed case."""
     findings = []
@@ -97,19 +134,21 @@ def _page_findings(url, browser_name, viewport_name, data):
         })
 
     for failure in data["request_failures"]:
+        if not _request_failure_is_actionable(failure, url):
+            continue
         findings.append({
             "id": f"COMP-NET-{abs(hash((url, failure))) % 100000:05d}",
             "title": "Failed browser network request",
             "severity": "Medium",
-            "confidence": "High",
-            "category": "Compatibility",
-            "method": "GET",
+            "confidence": "Medium",
+            "category": "Compatibility / Network",
+            "method": failure.split(" ", 1)[0] if " " in failure else "GET",
             "url": url,
-            "evidence": f"{prefix}: {failure}",
+            "evidence": f"Page: {url}\\nFailed request: {failure}\\nViewport: {viewport_name}\\nBrowser: {browser_name}",
             "screenshot": evidence_path("network"),
-            "detail": "A browser resource request failed while loading the page.",
-            "impact": "Failed assets or API requests can produce broken UI, missing content, or incomplete user workflows.",
-            "remediation": "Inspect the failed resource, HTTP status, CORS policy, DNS/TLS configuration, and deployment path.",
+            "detail": "A browser request failed during page load. This finding is limited to a reproducible, non-telemetry request; browser cancellations and common analytics beacons are excluded.",
+            "impact": "If the failed request belongs to the application, its script, stylesheet, image, or API response may be unavailable. The actual user impact depends on whether the resource is required for the affected workflow.",
+            "remediation": "Open the exact failed request in the browser Network panel; verify DNS/TLS, response status, CORS headers, authentication, cache/CDN behavior, and server logs. Fix the underlying request only after confirming that it is first-party or required by the application.",
         })
 
     if data["horizontal_overflow"]:
