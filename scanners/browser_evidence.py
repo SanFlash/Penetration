@@ -195,7 +195,7 @@ def _write_diagnostic_evidence_card(
         from textwrap import wrap
 
         def safe_text(value, limit=900):
-            text = str(value or "Not provided").replace("\\r", " ").replace("\\n", " ").strip()
+            text = str(value or "Not provided").replace("\r", " ").replace("\n", " ").strip()
             text = re.sub(
                 r"(?i)\\b(authorization|cookie|set-cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\\b\\s*[:=]\\s*[^\\s,;]+",
                 r"\\1=<redacted>",
@@ -203,8 +203,8 @@ def _write_diagnostic_evidence_card(
             )
             return text[:limit] or "Not provided"
 
-        finding_id = safe_text(finding.get("id") or "SECURITY-FINDING", 120)
-        title = safe_text(finding.get("title") or "Security finding", 220)
+        finding_id = safe_text(finding.get("id") or "SECURITY-FINDING", 60)
+        title = safe_text(finding.get("title") or "Security finding", 95)
         severity = safe_text(finding.get("severity") or "Info", 32).upper()
         method = safe_text(finding.get("method") or "GET", 16).upper()
         parameter = safe_text(finding.get("parameter") or "None", 180)
