@@ -27,7 +27,7 @@ def test_coverage_registry_preserves_per_phase_execution_status():
     by_id = {row["id"]: row for row in rows}
 
     config = by_id["WSTG-CONF"]
-    assert config["status"] == "engines_completed"
+    assert config["status"] == "partial"
     assert [phase["status"] for phase in config["phase_results"]] == ["completed", "completed", "not_run"]
     assert config["phase_results"][0]["checks"] == 4
-    assert "not proof" in config["execution_note"]
+    assert "incomplete" in config["execution_note"]
