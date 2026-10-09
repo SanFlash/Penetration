@@ -66,7 +66,7 @@ def _page_findings(url, browser_name, viewport_name, data):
 
     for error in data["console_errors"]:
         findings.append({
-            "id": f"COMP-CONSOLE-{abs(hash((url, prefix, error))) % 100000:05d}",
+            "id": f"COMP-CONSOLE-{abs(hash((url, error))) % 100000:05d}",
             "title": "Browser console error",
             "severity": "Low",
             "confidence": "High",
@@ -98,7 +98,7 @@ def _page_findings(url, browser_name, viewport_name, data):
 
     for failure in data["request_failures"]:
         findings.append({
-            "id": f"COMP-NET-{abs(hash((url, prefix, failure))) % 100000:05d}",
+            "id": f"COMP-NET-{abs(hash((url, failure))) % 100000:05d}",
             "title": "Failed browser network request",
             "severity": "Medium",
             "confidence": "High",
@@ -573,10 +573,14 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                             pages_tested=len({r["url"] for r in results}),
                             checks=completed,
                             findings=len(findings),
-                            errors=sum(
-                                len(r["console_errors"]) + len(r["request_failures"])
-                                for r in results
-                            ),
+                            errors=len({
+                                (r["url"], "console", error)
+                                for r in results for error in r["console_errors"]
+                            } | {
+                                (r["url"], "network", failure)
+                                for r in results for failure in r["request_failures"]
+                                if "ERR_ABORTED" not in failure and "ERR_BLOCKED_BY_CLIENT" not in failure
+                            }),
                             progress=progress,
                             stage="CHECK COMPLETE",
                             detail=f"HTTP {data['status']} • {data['load_ms']} ms",
