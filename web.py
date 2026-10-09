@@ -145,6 +145,7 @@ def status():
         "xlsx": "/reports/penetration_report.xlsx",
         "findings_json": "/reports/findings.json",
         "manifest": "/reports/evidence_manifest.json",
+        "sarif": "/reports/sentinel.sarif",
         "bundle": "/reports/sentinel_full_report_bundle.zip",
         "bundle_ready": bundle_ready,
         "report_ready": report_ready,
@@ -226,8 +227,8 @@ def _artifact(directory: str, filename: str):
             response.headers["Content-Type"] = "image/jpeg"
         elif suffix == ".webp":
             response.headers["Content-Type"] = "image/webp"
-        elif suffix == ".json":
-            response.headers["Content-Type"] = "application/json; charset=utf-8"
+        elif suffix in {".json", ".sarif"}:
+            response.headers["Content-Type"] = "application/sarif+json; charset=utf-8" if suffix == ".sarif" else "application/json; charset=utf-8"
         elif suffix == ".html":
             response.headers["Content-Type"] = "text/html; charset=utf-8"
         elif suffix == ".zip":
@@ -304,7 +305,7 @@ hr{border-top-color:#27364d!important}
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
-<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><div id="completionDownloads" style="display:none;border:1px solid var(--green);border-radius:10px;padding:12px;background:#06150f"><strong style="color:var(--green)">ASSESSMENT COMPLETE — REPORTS READY</strong><p class="muted" style="margin:6px 0 10px">The final report bundle includes the reports, findings, manifest and captured evidence files.</p><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip" style="display:block;text-align:center;background:var(--green);color:#03110b;font-weight:900">⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)</a></div><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The download button appears only after the assessment reaches its final status. Reports are not downloaded during a running assessment.</div>
+<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><div id="completionDownloads" style="display:none;border:1px solid var(--green);border-radius:10px;padding:12px;background:#06150f"><strong style="color:var(--green)">ASSESSMENT COMPLETE — REPORTS READY</strong><p class="muted" style="margin:6px 0 10px">The final report bundle includes the reports, findings, manifest and captured evidence files.</p><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip" style="display:block;text-align:center;background:var(--green);color:#03110b;font-weight:900">⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)</a></div><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/sentinel.sarif" target="_blank">SARIF for CI tools</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The download button appears only after the assessment reaches its final status. Reports are not downloaded during a running assessment.</div>
 </aside></div>
 <section class="panel evidence"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
 <section class="coverage">
