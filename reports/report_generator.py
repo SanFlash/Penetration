@@ -404,6 +404,49 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             ],
         })
 
+    # OWASP Top 10:2021 coverage is reported as execution coverage, not as
+    # proof that a category is secure. The mapped engines are bounded automated
+    # checks; categories requiring authenticated roles, business rules, or
+    # manual validation remain explicitly limited.
+    owasp_map = [
+        ("A01:2021", "Broken Access Control", ["api_surface", "aggressive_readonly", "input_validation"]),
+        ("A02:2021", "Cryptographic Failures", ["security_headers", "active_security"]),
+        ("A03:2021", "Injection", ["deep_security", "input_validation", "input_stress"]),
+        ("A04:2021", "Insecure Design", ["functional_testing", "input_validation"]),
+        ("A05:2021", "Security Misconfiguration", ["security_headers", "active_security", "deep_security"]),
+        ("A06:2021", "Vulnerable and Outdated Components", ["deep_security", "information_disclosure"]),
+        ("A07:2021", "Identification and Authentication Failures", ["active_security", "input_validation"]),
+        ("A08:2021", "Software and Data Integrity Failures", ["deep_security", "information_disclosure"]),
+        ("A09:2021", "Security Logging and Monitoring Failures", []),
+        ("A10:2021", "Server-Side Request Forgery (SSRF)", ["input_validation", "input_stress"]),
+    ]
+    owasp_coverage = []
+    for code, name, phase_names in owasp_map:
+        phases = [phase_status.get(name) for name in phase_names]
+        existing = [p for p in phases if isinstance(p, dict)]
+        states = [str(p.get("status", "not_run")).lower() for p in existing]
+        if not phase_names or not existing:
+            state = "not_run"
+        elif any(value in {"failed", "timed_out", "skipped"} for value in states) or len(existing) < len(phase_names):
+            state = "partial"
+        elif all(value == "completed" for value in states):
+            state = "engines_completed"
+        else:
+            state = "in_progress"
+        owasp_coverage.append({
+            "code": code,
+            "name": name,
+            "status": state,
+            "phases": [{"name": phase_name,
+                        "status": str((phase_status.get(phase_name) or {}).get("status", "not_run"))}
+                       for phase_name in phase_names],
+            "limitation": (
+                "No automated engine is mapped in this profile; manual review and dedicated tests are required."
+                if not phase_names else
+                "Engine execution does not prove the category is secure. Validate findings and run role-aware/manual tests where applicable."
+            ),
+        })
+
     report = {
         "schema_version": "3.0",
         "target": target,
@@ -419,6 +462,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         }),
         "total_findings": len(findings_sorted),
         "coverage_matrix": coverage_matrix,
+        "owasp_coverage": owasp_coverage,
         "severity_summary": summary,
         "category_summary": dict(categories),
         "confidence_summary": dict(confidence),
@@ -626,6 +670,7 @@ def _render_html(report: dict) -> str:
         return (
             '<a class="finding-evidence-link" href="%s" target="_blank" rel="noopener noreferrer" '
             'aria-label="%s"><img src="%s" alt="%s" loading="lazy" '
+            'onerror="this.onerror=null;this.src=this.src.replace(\'/reports/evidence/\',\'/evidence/\');" '
             'style="display:block;max-width:100%%;max-height:280px;object-fit:contain;'
             'border:2px solid #ff1744;border-radius:8px;background:#07101b">'
             '<span>%s</span></a>'
@@ -711,6 +756,20 @@ def _render_html(report: dict) -> str:
             + "<td>" + ("".join(details) or "No phase details were recorded.") + "</td></tr>"
         )
     coverage_matrix_html_text = "".join(coverage_matrix_html) or "<tr><td colspan='3'>No phase coverage metadata was recorded.</td></tr>"
+    owasp_state_class = {"engines_completed": "warn", "partial": "warn", "in_progress": "warn", "not_run": "fail"}
+    owasp_rows = []
+    for item in report.get("owasp_coverage", []):
+        details = ", ".join(
+            html.escape(p["name"]) + ": " + html.escape(p["status"])
+            for p in item.get("phases", [])
+        ) or "No mapped automated phase"
+        owasp_rows.append(
+            "<tr><td>" + html.escape(item["code"]) + "</td><td>" + html.escape(item["name"]) + "</td>"
+            + "<td class='" + owasp_state_class.get(item["status"], "warn") + "'>"
+            + html.escape(item["status"].replace("_", " ").upper()) + "</td><td>"
+            + details + "<p>" + html.escape(item["limitation"]) + "</p></td></tr>"
+        )
+    owasp_coverage_html = "".join(owasp_rows) or "<tr><td colspan='4'>No OWASP mapping available.</td></tr>"
 
     target_overview_html = '<div class="empty">Target overview was not captured.</div>'
     overview = report.get("metadata", {}).get("target_overview") or {}
@@ -811,6 +870,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 </div></div>
 <div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
 <div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
+<div class="panel"><div class="section-title">OWASP Top 10:2021 — engine coverage</div><p class="sub">This matrix shows which automated engines ran for each OWASP category. “Engines completed” is not a declaration that the category is secure; review individual findings and perform authenticated/manual tests where required.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_COVERAGE_HTML__</tbody></table></div></div>
 </section>
 
 <section id="findings" class="tab">
@@ -873,7 +933,8 @@ function artifactUrl(p){
 function evidenceAnchor(path, alt){
   const src=artifactUrl(path);
   if(!src) return '<div class="warn"><b>Evidence unavailable:</b> invalid report-local artifact path.</div>';
-  return '<a href="'+esc(src)+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(src)+'" alt="'+esc(alt||"Evidence screenshot")+'" style="width:100%;border:1px solid #263b55;border-radius:10px;display:block;min-height:140px;object-fit:contain;background:#03070d" loading="lazy"><span class="caption">Open evidence artifact</span></a>';
+  const fallback=src.replace('/reports/evidence/','/evidence/');
+  return '<a href="'+esc(src)+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(src)+'" alt="'+esc(alt||"Evidence screenshot")+'" onerror="if(this.dataset.fallbackTried!==\'1\'){this.dataset.fallbackTried=\'1\';this.src=\''+esc(fallback)+'\';}else{this.style.display=\'none\';this.parentNode.insertAdjacentHTML(\'beforeend\',\'<span class=caption>Screenshot unavailable at the report path; open the evidence manifest to inspect capture status.</span>\');}" style="width:100%;border:1px solid #263b55;border-radius:10px;display:block;min-height:140px;object-fit:contain;background:#03070d" loading="lazy"><span class="caption">Open evidence artifact</span></a>';
 }
 
 const phaseStatus=(meta&&meta.phase_status)||{};
@@ -937,6 +998,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__SECURITYCAPS__": str(len(report.get("security_evidence", []))),
         "__ATTACK_SURFACE__": attack_html,
         "__COVERAGE_MATRIX_HTML__": coverage_matrix_html_text,
+        "__OWASP_COVERAGE_HTML__": owasp_coverage_html,
         "__URLS__": str(browser["urls"]),
         "__VIEWPORTS__": str(browser["viewports"]),
         "__COVERFAILS__": str(browser["failures"]),
