@@ -125,11 +125,46 @@ def make_pdf(report_html_path: str, output_path: str | None = None) -> str | Non
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(source.as_uri(), wait_until="networkidle")
+            # Force a readable, high-contrast print stylesheet. The interactive
+            # report is dark-themed; Chromium may omit dark backgrounds in PDF,
+            # leaving light text on white paper. Override all theme colors for
+            # print and make every report tab visible in the PDF.
+            page.add_style_tag(content=""" 
+                @page { size: A4; margin: 10mm 8mm; }
+                html, body, .shell, .tab, .panel, .hero, .finding, .shot,
+                .kpi, .summary-item, .risk-card, .matrix, table, thead, tbody,
+                tr, td, th, pre, code, .nav, .chip, .tag, .badge, .section-title,
+                .sub, .meta, footer {
+                    background: #ffffff !important;
+                    background-image: none !important;
+                    color: #111111 !important;
+                    box-shadow: none !important;
+                    text-shadow: none !important;
+                }
+                *, *::before, *::after {
+                    color: #111111 !important;
+                    border-color: #b7b7b7 !important;
+                    text-shadow: none !important;
+                    -webkit-print-color-adjust: economy !important;
+                    print-color-adjust: economy !important;
+                }
+                a, a:visited { color: #111111 !important; text-decoration: underline !important; }
+                .nav { display: none !important; }
+                .tab, .tab[hidden], .tab:target { display: block !important; visibility: visible !important; }
+                .tab { break-before: page !important; }
+                #overview { break-before: auto !important; }
+                .panel, .finding, .shot, .summary-item, .risk-card { break-inside: avoid-page; }
+                img { max-width: 100% !important; height: auto !important; }
+                table { width: 100% !important; border-collapse: collapse !important; }
+                th, td { padding: 5px !important; vertical-align: top !important; }
+                pre, code { white-space: pre-wrap !important; overflow-wrap: anywhere !important; }
+            """)
             page.emulate_media(media="print")
             page.pdf(
                 path=str(output),
                 format="A4",
-                print_background=True,
+                print_background=False,
+                prefer_css_page_size=True,
                 margin={"top": "10mm", "right": "8mm", "bottom": "10mm", "left": "8mm"},
             )
             browser.close()
