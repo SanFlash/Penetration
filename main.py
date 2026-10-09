@@ -36,13 +36,16 @@ from ui.dashboard import DashboardState, start_dashboard
 
 
 class ConsoleLoader:
-    def __init__(self):
+    def __init__(self, enabled=True):
+        self.enabled = enabled
         self.running = False
         self.thread = None
         self.message = "Working"
 
     def start(self, message="Working"):
         self.message = message
+        if not self.enabled:
+            return
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -54,7 +57,8 @@ class ConsoleLoader:
         self.running = False
         if self.thread:
             self.thread.join(timeout=1)
-        print("\r" + " " * 100 + "\r", end="", flush=True)
+        if self.enabled:
+            print("\r" + " " * 100 + "\r", end="", flush=True)
 
     def _run(self):
         frames = "|/-\\"
@@ -292,7 +296,10 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
     else:
         state, dashboard_url = _build_dashboard(target, "pentest", dashboard)
 
-    loader = ConsoleLoader()
+    # Hosted progress is already streamed through /api/status. Disable the
+    # terminal spinner there; its 8 Hz carriage-return output flooded Render
+    # logs and wasted I/O during long scans.
+    loader = ConsoleLoader(enabled=state_override is None)
     loader.start("Running full-assessment preflight")
     telemetry = _set_telemetry(state, loader)
     phase_status = {}
