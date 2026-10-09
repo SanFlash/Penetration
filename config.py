@@ -57,11 +57,11 @@ VALIDATION_TIMEOUT = 10
 
 # Passive route/API discovery. Network activity remains GET-only; discovered
 # state-changing methods are inventory candidates and are never submitted.
-ROUTE_DISCOVERY_MAX_PAGES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_PAGES", "40"))
-ROUTE_DISCOVERY_MAX_ASSETS = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_ASSETS", "80"))
-ROUTE_DISCOVERY_MAX_CANDIDATES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_CANDIDATES", "500"))
-ROUTE_DISCOVERY_TIMEOUT = 8
-ROUTE_DISCOVERY_MAX_RUNTIME = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_RUNTIME", "300"))
+ROUTE_DISCOVERY_MAX_PAGES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_PAGES", "20"))
+ROUTE_DISCOVERY_MAX_ASSETS = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_ASSETS", "25"))
+ROUTE_DISCOVERY_MAX_CANDIDATES = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_CANDIDATES", "350"))
+ROUTE_DISCOVERY_TIMEOUT = 5
+ROUTE_DISCOVERY_MAX_RUNTIME = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_RUNTIME", "90"))
 
 # Live report rendering can be expensive on large finding sets. Keep the report
 # genuinely live, but avoid rebuilding the complete HTML document after every
