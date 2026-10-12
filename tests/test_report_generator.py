@@ -250,3 +250,41 @@ def test_report_exposes_report_local_evidence_contract(tmp_path):
     assert "function evidenceAnchor" in html
     assert "evidence/security.png" in html
     assert "artifactUrl" in html
+
+def test_creator_attribution_is_preserved_in_report_exports(tmp_path):
+    from openpyxl import load_workbook
+
+    result = generate(
+        "https://example.com",
+        [],
+        "evidence",
+        out_dir=str(tmp_path),
+        metadata={"profile": "compatibility"},
+    )
+
+    with open(result["json_path"], encoding="utf-8") as handle:
+        data = json.load(handle)
+    assert data["author"] == "Satyendra Kumar Namdeo"
+    assert data["creator"] == "Satyendra Kumar Namdeo"
+    assert data["copyright"].startswith("© 2026 Satyendra Kumar Namdeo")
+    assert data["metadata"]["creator"] == "Satyendra Kumar Namdeo"
+
+    with open(result["html_path"], encoding="utf-8") as handle:
+        report_html = handle.read()
+    assert "Created by Satyendra Kumar Namdeo" in report_html
+
+    with open(result["manifest_path"], encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    assert manifest["author"] == "Satyendra Kumar Namdeo"
+
+    bundle_readme = tmp_path / "REPORT_BUNDLE_README.txt"
+    assert bundle_readme.is_file()
+    assert "Creator / Author: Satyendra Kumar Namdeo" in bundle_readme.read_text(encoding="utf-8")
+
+    xlsx_path = result["xlsx_path"]
+    if xlsx_path:
+        workbook = load_workbook(xlsx_path, read_only=True)
+        assert workbook.properties.creator == "Satyendra Kumar Namdeo"
+        assert workbook["Executive Summary"]["B6"].value == "Satyendra Kumar Namdeo"
+        workbook.close()
+

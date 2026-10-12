@@ -299,7 +299,9 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         categories[finding.get("category", "Uncategorized")] += 1
         confidence[finding.get("confidence", "Medium")] += 1
 
-    meta = metadata or {}
+    meta = dict(metadata or {})
+    meta.setdefault("creator", "Satyendra Kumar Namdeo")
+    meta.setdefault("copyright", "© 2026 Satyendra Kumar Namdeo. All rights reserved.")
     compatibility = _compatibility_meta(meta)
     browser_results = compatibility.get("results", [])
     security_evidence = meta.get("security_evidence", [])
@@ -451,6 +453,9 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
 
     report = {
         "schema_version": "3.0",
+        "author": "Satyendra Kumar Namdeo",
+        "creator": "Satyendra Kumar Namdeo",
+        "copyright": "© 2026 Satyendra Kumar Namdeo. All rights reserved.",
         "target": target,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "raw_findings": raw_count,
@@ -502,6 +507,9 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     with open(manifest_path, "w", encoding="utf-8") as handle:
         json.dump({
             "target": target,
+            "author": report["author"],
+            "creator": report["creator"],
+            "copyright": report["copyright"],
             "generated_at": report["generated_at"],
             "screenshots": gallery,
             "security_captures": security_evidence,
@@ -567,6 +575,8 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     bundle_readme_path = os.path.join(out_dir, "REPORT_BUNDLE_README.txt")
     bundle_contents = [
         "SENTINEL WEB SECURITY ASSESSMENT — COMPLETE EXPORT",
+        "Creator / Author: Satyendra Kumar Namdeo",
+        "Copyright: © 2026 Satyendra Kumar Namdeo. All rights reserved.",
         f"Target: {target}",
         f"Generated: {report['generated_at']}",
         "",
@@ -976,7 +986,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="panel"><div class="section-title">Execution metadata</div><pre id="meta"></pre></div>
 </section>
 
-<footer>Sentinel Assessment Framework • Automated observations require appropriate validation.</footer>
+<footer>Sentinel Assessment Framework • Created by Satyendra Kumar Namdeo • © 2026 Satyendra Kumar Namdeo. All rights reserved. • Automated observations require appropriate validation.</footer>
 </div>
 
 <script>

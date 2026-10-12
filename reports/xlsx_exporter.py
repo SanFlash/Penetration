@@ -57,6 +57,11 @@ def generate_xlsx(report: dict, output_path: str) -> str:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     wb = Workbook()
+    wb.properties.creator = "Satyendra Kumar Namdeo"
+    wb.properties.lastModifiedBy = "Satyendra Kumar Namdeo"
+    wb.properties.title = "Sentinel Penetration Assessment Report"
+    wb.properties.subject = "Automated web application assessment"
+    wb.properties.description = "Created by Satyendra Kumar Namdeo. © 2026 Satyendra Kumar Namdeo. All rights reserved for original project materials."
     ws = wb.active
     ws.title = "Executive Summary"
     findings_ws = wb.create_sheet("Failed Issues")
@@ -83,6 +88,11 @@ def generate_xlsx(report: dict, output_path: str) -> str:
     ws["B4"] = _excel_text(report.get("generated_at"))
     ws["A5"] = "Profile"
     ws["B5"] = _excel_text((report.get("metadata") or {}).get("profile", "-"))
+    ws["A6"] = "Creator / Author"
+    ws["B6"] = "Satyendra Kumar Namdeo"
+    ws["A6"].font = Font(bold=True)
+    ws["A6"].fill = sub_fill
+    ws["A6"].border = ws["B6"].border = border
     metrics = [
         ("Unique Findings", report.get("unique_findings", 0)),
         ("Raw Observations", report.get("raw_findings", 0)),
