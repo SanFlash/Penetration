@@ -571,7 +571,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         # uncontrolled request burst. Unlike a context-manager executor, this
         # loop has a hard phase deadline and a heartbeat, so one scanner can
         # never make the hosted dashboard look frozen forever.
-        pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sentinel-scan")
+        pool = ThreadPoolExecutor(max_workers=max(1, min(2, int(os.getenv("SENTINEL_SECURITY_WORKERS", "2")))), thread_name_prefix="sentinel-scan")
         futures = {pool.submit(_phase_call, name, phase_status, fn): name for name, fn in jobs.items()}
         pending = set(futures)
         parallel_started = time.monotonic()
