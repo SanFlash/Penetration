@@ -28,6 +28,7 @@ _run_thread = None
 _state = DashboardState(target=DEFAULT_TARGET, profile="pentest")
 _last_result = None
 _last_error = None
+_run_started_at = None
 
 
 def _authorized() -> bool:
@@ -138,6 +139,11 @@ def status():
     # transient worker status so users can still download the completed report.
     bundle_ready = bundle_path.is_file() and bundle_path.stat().st_size > 0
     report_ready = report_path.is_file() and report_path.stat().st_size > 0
+    bundle_mtime = bundle_path.stat().st_mtime if bundle_ready else None
+    bundle_for_current_run = bool(
+        bundle_ready and _run_started_at is not None and bundle_mtime is not None
+        and bundle_mtime >= _run_started_at
+    )
     payload["reports"] = {
         "html": "/reports/report.html",
         "portable_html": "/reports/report_portable.html",
@@ -148,16 +154,18 @@ def status():
         "sarif": "/reports/sentinel.sarif",
         "bundle": "/reports/sentinel_full_report_bundle.zip",
         "bundle_ready": bundle_ready,
+        "bundle_for_current_run": bundle_for_current_run,
         "report_ready": report_ready,
         "bundle_size_bytes": bundle_path.stat().st_size if bundle_ready else 0,
-        "bundle_modified_at": bundle_path.stat().st_mtime if bundle_ready else None,
+        "bundle_modified_at": bundle_mtime,
+        "run_started_at": _run_started_at,
     }
     return jsonify(payload)
 
 
 @app.post("/api/run")
 def run():
-    global _run_thread, _state, _last_result
+    global _run_thread, _state, _last_result, _run_started_at
     auth = _require_auth()
     if auth:
         return auth
@@ -191,6 +199,7 @@ def run():
         progress=0,
     )
     _last_result = None
+    _run_started_at = time.time()
 
     _run_thread = threading.Thread(target=_worker, args=(target,), daemon=True)
     _run_thread.start()
@@ -316,6 +325,8 @@ hr{border-top-color:#27364d!important}
 <script>
 const el = (id) => document.getElementById(id);
 let pollTimer = null;
+let autoDownloadPending = false;
+let autoDownloadStarted = false;
 
 function showState(status, stage, detail) {
   el("status").textContent = status || "IDLE";
@@ -391,7 +402,9 @@ async function startRun() {
       throw new Error(data.message || data.error || ("Server returned HTTP " + response.status));
     }
 
-    showState("RUNNING", "QUEUED", "Assessment accepted. The pentest engine is starting.");
+    autoDownloadPending = true;
+    autoDownloadStarted = false;
+    showState("RUNNING", "QUEUED", "Assessment accepted. The pentest engine is starting. The complete report ZIP will download automatically when it is ready.");
     setButton(true, "PENTEST RUNNING");
   } catch (error) {
     const message = error && error.name === "AbortError"
@@ -433,6 +446,7 @@ function renderStatus(s) {
   // an active scan. This avoids the stuck INITIALIZING screen hiding a report
   // that was already generated successfully.
   const bundleReady = reports.bundle_ready === true;
+  const currentBundleReady = reports.bundle_for_current_run === true;
   const downloadReady = !running && (finalStatus || bundleReady);
   if (completionDownloads) {
     completionDownloads.style.display = downloadReady ? "block" : "none";
@@ -440,18 +454,31 @@ function renderStatus(s) {
   if (downloadBundle) {
     downloadBundle.href = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?download=1&ts=" + Date.now();
     downloadBundle.setAttribute("download", "sentinel_full_report_bundle.zip");
-    downloadBundle.textContent = finalStatus && s.status === "COMPLETE"
-      ? "⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)"
-      : (bundleReady && !finalStatus
-        ? "⬇ DOWNLOAD LAST COMPLETED REPORT + EVIDENCE (ZIP)"
-        : "⬇ DOWNLOAD PARTIAL REPORT + AVAILABLE EVIDENCE (ZIP)");
+    downloadBundle.textContent = currentBundleReady && s.status === "COMPLETE"
+      ? "⬇ DOWNLOAD COMPLETE REPORT + ALL EVIDENCE (ZIP)"
+      : (currentBundleReady
+        ? "⬇ DOWNLOAD PARTIAL REPORT + AVAILABLE EVIDENCE (ZIP)"
+        : (bundleReady ? "⬇ DOWNLOAD PREVIOUS REPORT + EVIDENCE (ZIP)" : "REPORT BUNDLE NOT READY"));
+    downloadBundle.setAttribute("aria-disabled", currentBundleReady ? "false" : "true");
+  }
+  // Automatically start a single ZIP download for the current assessment after
+  // the server confirms that the bundle was generated after this run began.
+  // This avoids silently downloading an old bundle after a failed export.
+  if (!running && autoDownloadPending && !autoDownloadStarted && currentBundleReady && downloadBundle) {
+    autoDownloadStarted = true;
+    autoDownloadPending = false;
+    reportNotice && (reportNotice.textContent = "Assessment finished. Downloading the complete report bundle with all packaged evidence now.");
+    downloadBundle.click();
+  } else if (!running && autoDownloadPending && finalStatus && !currentBundleReady) {
+    autoDownloadPending = false;
+    reportNotice && (reportNotice.textContent = "Assessment ended, but a fresh complete ZIP was not generated. Check the execution log and use the report links for available partial artifacts.");
   }
   if (reportNotice) {
     if (running) reportNotice.textContent = "Assessment is running. No final download is triggered; the report bundle button appears only when execution ends.";
     else if (s.status === "FAILED") reportNotice.textContent = "Assessment stopped with an error. A partial report bundle is available below; review failed phases before relying on its coverage.";
     else if (s.status === "PARTIAL") reportNotice.textContent = "Assessment finished with incomplete phases. Download the partial bundle below; timed-out or failed checks are not considered passed.";
-    else if (s.status === "COMPLETE") reportNotice.textContent = "Assessment complete. Your final report and captured evidence are ready to download below.";
-    else if (reports.bundle_ready === true) reportNotice.textContent = "A previously completed report bundle is available. It remains downloadable even if the web worker restarted.";
+    else if (s.status === "COMPLETE" && currentBundleReady) reportNotice.textContent = "Assessment complete. The complete report + evidence ZIP is ready and will download automatically after a newly launched run.";
+    else if (reports.bundle_ready === true) reportNotice.textContent = "A previous report bundle is available below. It is not treated as the output of the current run unless its timestamp confirms that it was freshly generated.";
     else reportNotice.textContent = "Start an authorized assessment. The final report download will appear after it ends.";
   }
   if (running) {

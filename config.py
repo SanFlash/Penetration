@@ -66,7 +66,7 @@ ROUTE_DISCOVERY_MAX_RUNTIME = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_RUNTIM
 # Live report rendering can be expensive on large finding sets. Keep the report
 # genuinely live, but avoid rebuilding the complete HTML document after every
 # short phase.
-LIVE_REPORT_MIN_INTERVAL = float(os.getenv("SENTINEL_LIVE_REPORT_MIN_INTERVAL", "12"))
+LIVE_REPORT_MIN_INTERVAL = float(os.getenv("SENTINEL_LIVE_REPORT_MIN_INTERVAL", "45"))
 
 
 # Unified deep-pentest coverage controls. These defaults favor breadth while
