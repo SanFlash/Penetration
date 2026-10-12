@@ -585,7 +585,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "Screenshots and HTTP evidence may contain sensitive data; store and share securely.",
     ]
     with open(bundle_readme_path, "w", encoding="utf-8") as handle:
-        handle.write("\\n".join(bundle_contents) + "\\n")
+        handle.write("\n".join(bundle_contents) + "\n")
     report["exports"]["bundle_path"] = bundle_path
     report["exports"]["bundle_generated"] = False
     with open(json_path, "w", encoding="utf-8") as handle:
