@@ -178,4 +178,12 @@ def test_report_generates_sarif_and_includes_it_in_bundle(tmp_path):
 
     import zipfile
     with zipfile.ZipFile(result["report"]["exports"]["bundle_path"]) as bundle:
-        assert "sentinel.sarif" in bundle.namelist()
+        names = set(bundle.namelist())
+        assert "sentinel.sarif" in names
+        assert "REPORT_BUNDLE_README.txt" in names
+        assert "report.html" in names
+        assert "findings.json" in names
+        assert "evidence_manifest.json" in names
+        assert bundle.testzip() is None
+        assert result["report"]["exports"]["bundle_generated"] is True
+        assert result["report"]["exports"]["bundle_size_bytes"] > 0
