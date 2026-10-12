@@ -993,6 +993,7 @@ def main():
                         help="legacy compatibility option; not used by the non-destructive intrusive alias")
     parser.add_argument("--dry-run", action="store_true", help="legacy compatibility option; not used by the non-destructive intrusive alias")
     args = parser.parse_args()
+    print("Sentinel Web Pentest Framework | Created by Satyendra Kumar Namdeo | © 2026 All rights reserved for original project materials.")
     if args.slow_mo < 0 or args.slow_mo > 5000:
         parser.error("--slow-mo must be between 0 and 5000 milliseconds")
     target = args.target.rstrip("/")
