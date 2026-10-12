@@ -13,7 +13,9 @@ HTML = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sentinel Assessment Console</title>
+<title>Sentinel Assessment Console | Created by Satyendra Kumar Namdeo</title>
+<meta name="author" content="Satyendra Kumar Namdeo">
+<meta name="copyright" content="© 2026 Satyendra Kumar Namdeo. All rights reserved.">
 <style>
 :root{--bg:#020308;--panel:#07101a;--line:#15334a;--text:#dce8f5;--muted:#7890aa;--accent:#38e8a0;--blue:#4ea1ff;--warn:#ffc857;--danger:#ff3864}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 15%,#0a2430 0,#03070d 42%,#010207 100%);color:var(--text);font:14px/1.45 Inter,Segoe UI,Arial,sans-serif;min-height:100vh;overflow-x:hidden}
@@ -29,6 +31,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:8px;borde
 </style></head>
 <body><div class="app">
 <div class="top"><div class="brand">SENTINEL // ASSESSMENT CONSOLE</div><div id="status" class="status">INITIALIZING</div></div>
+<div style="color:var(--muted);font-size:11px;letter-spacing:.04em;margin:-5px 0 14px;padding-left:2px">CREATED BY SATYENDRA KUMAR NAMDEO · © 2026 ALL RIGHTS RESERVED</div>
 <div class="grid">
 <section class="panel hero"><canvas id="scene"></canvas><div class="overlay"><div class="ring"></div><div class="core"></div><div class="title" id="stage">WAITING FOR ENGINE</div><div class="sub" style="color:var(--accent);font-family:Consolas,monospace">[ ACCESSING AUTHORIZED TARGET ]</div><div class="sub" id="detail">Starting local assessment telemetry...</div></div></section>
 <aside class="panel pad side"><h3>Target</h3><div class="kv"><div>URL</div><div id="target">-</div><div>Profile</div><div id="profile">-</div><div>Browser</div><div id="browser">-</div><div>Viewport</div><div id="viewport">-</div></div>
