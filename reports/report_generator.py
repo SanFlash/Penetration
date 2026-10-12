@@ -564,13 +564,35 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     # report-local evidence artifact.
     bundle_path = os.path.join(out_dir, "sentinel_full_report_bundle.zip")
     bundle_error = None
+    bundle_readme_path = os.path.join(out_dir, "REPORT_BUNDLE_README.txt")
+    bundle_contents = [
+        "SENTINEL WEB SECURITY ASSESSMENT — COMPLETE EXPORT",
+        f"Target: {target}",
+        f"Generated: {report['generated_at']}",
+        "",
+        "Included artifacts (when successfully generated):",
+        "- report.html: interactive report with evidence gallery and finding details",
+        "- report_portable.html: portable HTML report",
+        "- report.pdf: PDF report",
+        "- penetration_report.xlsx: spreadsheet findings export",
+        "- findings.json: canonical structured findings and coverage data",
+        "- evidence_manifest.json: screenshot and security-capture index",
+        "- sentinel.sarif: SARIF 2.1.0 results for compatible CI/security tools",
+        "- evidence/: captured screenshots and other collected evidence files",
+        "",
+        "Important: optional exports can be absent if the corresponding export failed.",
+        "Review findings and execution coverage before making security conclusions.",
+        "Screenshots and HTTP evidence may contain sensitive data; store and share securely.",
+    ]
+    with open(bundle_readme_path, "w", encoding="utf-8") as handle:
+        handle.write("\\n".join(bundle_contents) + "\\n")
     report["exports"]["bundle_path"] = bundle_path
     report["exports"]["bundle_generated"] = False
     with open(json_path, "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2, ensure_ascii=False)
     try:
         with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for candidate in (html_path, portable_html_path, pdf_path, xlsx_path, sarif_path, json_path, manifest_path):
+            for candidate in (bundle_readme_path, html_path, portable_html_path, pdf_path, xlsx_path, sarif_path, json_path, manifest_path):
                 if candidate and os.path.isfile(candidate):
                     archive.write(candidate, os.path.basename(candidate))
             bundled_evidence = os.path.join(out_dir, "evidence")
@@ -579,9 +601,28 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
                     for name in names:
                         path = os.path.join(root, name)
                         archive.write(path, os.path.relpath(path, out_dir))
-        report["exports"]["bundle_generated"] = os.path.isfile(bundle_path)
+        # A ZIP is ready only if it can be reopened and contains the canonical
+        # reports plus every file under the bundled evidence directory.
+        with zipfile.ZipFile(bundle_path, "r") as archive:
+            names = set(archive.namelist())
+            required = {"REPORT_BUNDLE_README.txt", os.path.basename(html_path), os.path.basename(json_path), os.path.basename(manifest_path)}
+            missing_required = sorted(required - names)
+            missing_evidence = []
+            bundled_evidence = os.path.join(out_dir, "evidence")
+            if os.path.isdir(bundled_evidence):
+                for root, _, files in os.walk(bundled_evidence):
+                    for name in files:
+                        rel = os.path.relpath(os.path.join(root, name), out_dir).replace("\\\\", "/")
+                        if rel not in names:
+                            missing_evidence.append(rel)
+            if missing_required or missing_evidence or archive.testzip() is not None:
+                raise RuntimeError(f"Bundle validation failed; missing required={missing_required}, missing evidence={missing_evidence}")
+        report["exports"]["bundle_generated"] = True
+        report["exports"]["bundle_contents"] = sorted(names)
+        report["exports"]["bundle_size_bytes"] = os.path.getsize(bundle_path)
     except Exception as exc:
         bundle_error = f"{type(exc).__name__}: {exc}"
+        report["exports"]["bundle_generated"] = False
         report["exports"]["bundle_error"] = bundle_error
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, indent=2, ensure_ascii=False)
