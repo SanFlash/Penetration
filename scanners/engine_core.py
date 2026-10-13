@@ -96,7 +96,18 @@ _ASSIGNMENT = re.compile(
 
 
 def redact(value: str, limit: int = 1500) -> str:
-    text = _ASSIGNMENT.sub(r'\1"[REDACTED]"', value or "")
+    text = value or ""
+    text = re.sub(
+        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+        "[REDACTED PRIVATE KEY]", text,
+    )
+    text = re.sub(r"\bAKIA[0-9A-Z]{16}\b", "[REDACTED AWS ACCESS KEY]", text)
+    text = re.sub(
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
+        "[REDACTED JWT]", text,
+    )
+    text = re.sub(r"(?im)^set-cookie\s*[:=].*$", "Set-Cookie: [REDACTED]", text)
+    text = _ASSIGNMENT.sub(r'\1"[REDACTED]"', text)
     text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/-]+=*", r"\1[REDACTED]", text)
     return text[:limit]
 
