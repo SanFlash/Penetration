@@ -26,7 +26,7 @@ jobs:
 
       - name: Compile application and test modules
         run: |
-          python -m compileall -q main.py security.py scanners reports utils tests
+          python -m compileall -q main.py security.py sentinel_scan.py scanners reports utils tests
 
       - name: Test
         run: python -m pytest tests/ -v
