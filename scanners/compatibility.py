@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from config import EVIDENCE_DIR
+from scanners.accessibility import evaluate_accessibility_snapshot
 from utils.scope import assert_in_scope, assert_same_target
 
 
@@ -198,6 +199,16 @@ def _page_findings(url, browser_name, viewport_name, data):
             "remediation": "Associate each control with a visible label or an appropriate accessible name.",
         })
 
+    accessibility_snapshot = data.get("accessibility") or {}
+    for finding in evaluate_accessibility_snapshot(accessibility_snapshot, url):
+        if finding.get("id", "").startswith("A11Y-ALT-"):
+            finding["screenshot"] = evidence_path("alt")
+        elif finding.get("id", "").startswith("A11Y-CONTROL-NAME-"):
+            finding["screenshot"] = evidence_path("control")
+        elif finding.get("id", "").startswith("A11Y-CONTRAST-"):
+            finding["screenshot"] = evidence_path("contrast")
+        findings.append(finding)
+
     return findings
 
 
@@ -244,6 +255,11 @@ def _focus_failure_element(page, failure_types):
                 if (failureTypes.includes('alt')) {
                     if (tag !== 'img' || el.hasAttribute('alt')) return;
                     score += 1000;
+                }
+
+                if (failureTypes.includes('contrast')) {
+                    if (!el.hasAttribute('data-sentinel-contrast')) return;
+                    score += 1200;
                 }
 
                 if (failureTypes.includes('control')) {
@@ -419,6 +435,9 @@ def _failure_types_for_case(data):
         kinds.append("alt")
     if data.get("unlabeled_controls"):
         kinds.append("control")
+    accessibility = data.get("accessibility") or {}
+    if accessibility.get("low_contrast_samples"):
+        kinds.append("contrast")
     if data.get("status") is not None and data["status"] >= 400:
         kinds.append("http")
     if data.get("request_failures"):
@@ -535,19 +554,76 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                         # assets spend five extra seconds on every viewport.
 
                         metrics = page.evaluate(
-                            """() => ({
-                                viewportWidth: window.innerWidth,
-                                scrollWidth: document.documentElement.scrollWidth,
-                                missingAltCount: [...document.images].filter(i => !i.hasAttribute('alt')).length,
-                                unlabeledControls: [...document.querySelectorAll('input,select,textarea,button')].filter(el => {
-                                  if (el.tagName === 'INPUT' && ['hidden','submit','button','reset','image'].includes(el.type)) return false;
-                                  if (el.labels && el.labels.length) return false;
-                                  if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.title) return false;
-                                  return true;
-                                }).length,
-                                titlePresent: !!document.title.trim(),
-                                loadTiming: performance.getEntriesByType('navigation')[0]?.duration || 0
-                            })"""
+                            """() => {
+                                const visible = el => {
+                                    const style = getComputedStyle(el), rect = el.getBoundingClientRect();
+                                    return style.display !== 'none' && style.visibility !== 'hidden' &&
+                                        Number.parseFloat(style.opacity || '1') > 0 && rect.width > 0 && rect.height > 0;
+                                };
+                                const hasName = el => {
+                                    const text = (el.innerText || el.textContent || '').trim();
+                                    if (text || el.getAttribute('aria-label') || el.title) return true;
+                                    const labelledBy = (el.getAttribute('aria-labelledby') || '').trim();
+                                    if (labelledBy && labelledBy.split(/\\s+/).some(id => document.getElementById(id))) return true;
+                                    return !!el.querySelector('img[alt]:not([alt=""])');
+                                };
+                                const color = value => {
+                                    const m = String(value || '').match(/rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)(?:\\s*,\\s*([\\d.]+))?\\s*\\)/i);
+                                    return m ? {r:+m[1],g:+m[2],b:+m[3],a:m[4]===undefined?1:+m[4]} : null;
+                                };
+                                const backgroundFor = el => {
+                                    for (let node=el; node && node!==document.documentElement; node=node.parentElement) {
+                                        const bg = color(getComputedStyle(node).backgroundColor);
+                                        if (bg && bg.a >= .98) return bg;
+                                        if (getComputedStyle(node).backgroundImage !== 'none') return null;
+                                    }
+                                    return {r:255,g:255,b:255,a:1};
+                                };
+                                const linear = v => { v/=255; return v<=.04045 ? v/12.92 : Math.pow((v+.055)/1.055,2.4); };
+                                const luminance = c => .2126*linear(c.r)+.7152*linear(c.g)+.0722*linear(c.b);
+                                const contrastRatio = (a,b) => { const x=luminance(a), y=luminance(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); };
+                                const rgb = c => c ? 'rgb('+c.r+', '+c.g+', '+c.b+')' : 'unknown';
+                                const contrastSamples = [];
+                                const textNodes = [...document.querySelectorAll('p,span,a,button,label,li,td,th,h1,h2,h3,h4,h5,h6,small,strong,em,div')].slice(0,500);
+                                for (const el of textNodes) {
+                                    if (!visible(el) || !(el.innerText || el.textContent || '').trim()) continue;
+                                    const style=getComputedStyle(el);
+                                    if (style.backgroundImage !== 'none') continue;
+                                    const fg=color(style.color), bg=backgroundFor(el);
+                                    if (!fg || fg.a < .98 || !bg) continue;
+                                    const size=parseFloat(style.fontSize)||16, weight=parseInt(style.fontWeight,10)||400;
+                                    const large=size>=24 || (size>=18.66 && weight>=700);
+                                    const value=contrastRatio(fg,bg);
+                                    if (value < (large?3:4.5)) {
+                                        el.setAttribute('data-sentinel-contrast','1');
+                                        contrastSamples.push({text:(el.innerText||el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,90),
+                                            ratio:Math.round(value*100)/100,foreground:rgb(fg),background:rgb(bg),large_text:large});
+                                        if (contrastSamples.length>=12) break;
+                                    }
+                                }
+                                const headings=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(visible).map(el=>+el.tagName.slice(1));
+                                let headingSkips=0, previous=0;
+                                for (const level of headings) { if(previous && level>previous+1) headingSkips++; previous=level; }
+                                const ids=[...document.querySelectorAll('[id]')].map(el=>el.id);
+                                const duplicateIds=ids.filter((id,index)=>id && ids.indexOf(id)!==index);
+                                return {
+                                    viewportWidth:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,
+                                    missingAltCount:[...document.images].filter(i=>!i.hasAttribute('alt')).length,
+                                    unlabeledControls:[...document.querySelectorAll('input,select,textarea,button')].filter(el=>{
+                                        if(el.tagName==='INPUT' && ['hidden','submit','button','reset','image'].includes(el.type)) return false;
+                                        if(el.labels && el.labels.length) return false;
+                                        return !hasName(el);
+                                    }).length,
+                                    unlabeledLinks:[...document.querySelectorAll('a[href]')].filter(el=>!hasName(el)).length,
+                                    unlabeledButtons:[...document.querySelectorAll('button,input[type="button"],input[type="submit"],input[type="reset"]')].filter(el=>!hasName(el)).length,
+                                    documentLanguage:(document.documentElement.getAttribute('lang')||'').trim(),
+                                    mainLandmarkPresent:!!document.querySelector('main,[role="main"]'),
+                                    headingLevelSkips:headingSkips,duplicateIdCount:new Set(duplicateIds).size,
+                                    keyboardInaccessibleCustomControls:[...document.querySelectorAll('[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="tab"]')].filter(el=>visible(el)&&el.tabIndex<0).length,
+                                    lowContrastSamples:contrastSamples,titlePresent:!!document.title.trim(),
+                                    loadTiming:performance.getEntriesByType('navigation')[0]?.duration||0
+                                };
+                            }"""
                         )
 
                         issues = []
@@ -567,6 +643,12 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                             issues.append(f"MISSING ALT: {metrics['missingAltCount']}")
                         if metrics["unlabeledControls"]:
                             issues.append(f"UNLABELED CONTROLS: {metrics['unlabeledControls']}")
+                        if metrics.get("unlabeledLinks"):
+                            issues.append(f"ACCESSIBILITY: UNNAMED LINKS: {metrics['unlabeledLinks']}")
+                        if metrics.get("unlabeledButtons"):
+                            issues.append(f"ACCESSIBILITY: UNNAMED BUTTONS: {metrics['unlabeledButtons']}")
+                        if metrics.get("lowContrastSamples"):
+                            issues.append(f"ACCESSIBILITY: POTENTIAL LOW CONTRAST: {len(metrics['lowContrastSamples'])}")
                         if response and response.status >= 400:
                             issues.append(f"HTTP FAILURE: {response.status}")
 
@@ -582,6 +664,19 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                             "viewport_width": metrics["viewportWidth"],
                             "missing_alt_count": metrics["missingAltCount"],
                             "unlabeled_controls": metrics["unlabeledControls"],
+                            "accessibility": {
+                                "document_language": metrics.get("documentLanguage", ""),
+                                "title_present": metrics["titlePresent"],
+                                "missing_alt_count": metrics["missingAltCount"],
+                                "unlabeled_controls": metrics["unlabeledControls"],
+                                "unlabeled_links": metrics.get("unlabeledLinks", 0),
+                                "unlabeled_buttons": metrics.get("unlabeledButtons", 0),
+                                "main_landmark_present": metrics.get("mainLandmarkPresent", True),
+                                "heading_level_skips": metrics.get("headingLevelSkips", 0),
+                                "duplicate_id_count": metrics.get("duplicateIdCount", 0),
+                                "keyboard_inaccessible_custom_controls": metrics.get("keyboardInaccessibleCustomControls", 0),
+                                "low_contrast_samples": metrics.get("lowContrastSamples", []),
+                            },
                             "title_present": metrics["titlePresent"],
                             "load_ms": round(metrics["loadTiming"], 1),
                             "screenshot": None,
