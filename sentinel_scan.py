@@ -69,7 +69,7 @@ th{background:#141d32}.footer{color:#aab8d0;font-size:.9rem}@media(max-width:700
     destination.write_text(document, encoding="utf-8")
 
 
-def main(argv=None):
+def main(argv=None, progress_callback=None):
     parser = argparse.ArgumentParser(description="Sentinel Core Engine — authorized, bounded web security assessment")
     parser.add_argument("--target", default=os.getenv("SENTINEL_DEFAULT_TARGET", config.PENTEST_TARGET_ORIGIN))
     parser.add_argument("--confirm-authorized", action="store_true", help="Confirm ownership or written authorization.")
@@ -88,7 +88,7 @@ def main(argv=None):
     except (ValueError, OutOfScopeError) as exc:
         parser.error(str(exc))
     out, evidence_dir = Path(args.out), Path(config.EVIDENCE_DIR)
-    engine = AssessmentEngine(policy, transport=SafeTransport(policy, evidence_dir=evidence_dir))
+    engine = AssessmentEngine(policy, transport=SafeTransport(policy, evidence_dir=evidence_dir), progress_callback=progress_callback)
     register_core_checks(engine)
     print(f"[SENTINEL] Target: {origin}")
     print(f"[SENTINEL] Budget: {policy.max_probes} requests; {policy.max_urls} pages; {policy.max_runtime_seconds}s; {policy.rate_per_second} req/s")
@@ -97,17 +97,18 @@ def main(argv=None):
     html_path = out / "core_report.html"
     _write_html(report, html_path)
     zip_path = out / "sentinel_core_bundle.zip"
+    evidence_jsonl = out / "core_evidence.jsonl"
+    evidence_lines = [json.dumps(item, ensure_ascii=False) for item in report.get("evidence", [])]
+    evidence_jsonl.write_text("\n".join(evidence_lines) + ("\n" if evidence_lines else ""), encoding="utf-8")
     out.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(json_path, arcname="core_report.json")
         archive.write(html_path, arcname="core_report.html")
-        evidence = evidence_dir / "engine_evidence.jsonl"
-        if evidence.is_file():
-            archive.write(evidence, arcname="evidence/engine_evidence.jsonl")
+        archive.write(evidence_jsonl, arcname="evidence/engine_evidence.jsonl")
     summary = report["summary"]
     print(f"[SENTINEL] Status: {summary['overall_status']} | findings: {summary['finding_count']} | requests: {report['request_count']}")
     print(f"[REPORT] JSON: {json_path}\n[REPORT] HTML: {html_path}\n[REPORT] ZIP: {zip_path}")
-    return 0 if summary["overall_status"] in {"completed", "partial"} else 2
+    return 0 if summary["overall_status"] == "completed" else (1 if summary["overall_status"] == "partial" else 2)
 
 
 if __name__ == "__main__":
