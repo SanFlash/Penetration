@@ -309,6 +309,9 @@ def _focus_failure_element(page, failure_types):
             if (failureTypes.includes('alt')) {
                 document.querySelectorAll('img').forEach(el => add(el, 'missing-alt', 1000));
             }
+            if (failureTypes.includes('contrast')) {
+                document.querySelectorAll('[data-sentinel-contrast="1"]').forEach(el => add(el, 'low-contrast', 1200));
+            }
 
             if (failureTypes.includes('control')) {
                 document.querySelectorAll('input,select,textarea,button').forEach(el => add(el, 'unlabeled-control', 1000));
