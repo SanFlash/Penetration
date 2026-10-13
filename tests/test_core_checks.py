@@ -58,3 +58,28 @@ def test_query_input_check_is_skipped_without_query_pages():
     result = check_query_inputs(transport)
     assert result["checks"] == 0
     assert result["findings"] == []
+
+
+def test_core_html_report_renders_css_and_escapes_findings(tmp_path):
+    from sentinel_scan import _write_html
+    destination = tmp_path / "report.html"
+    _write_html({
+        "target_origin": "https://example.com",
+        "completed_at": "2026-10-13T00:00:00+00:00",
+        "duration_seconds": 1.2,
+        "request_count": 1,
+        "checks_executed": 1,
+        "findings": [{
+            "severity": "High", "title": "<script>alert(1)</script>",
+            "category": "Test", "url": "https://example.com/",
+            "detail": "example", "remediation": "fix",
+        }],
+        "phase_status": [{"name": "headers", "status": "completed", "checks": 1,
+                          "duration_ms": 2, "errors": []}],
+        "summary": {"overall_status": "completed", "by_severity": {"high": 1, "critical": 0}},
+        "limitations": ["Manual validation required"],
+    }, destination)
+    text = destination.read_text(encoding="utf-8")
+    assert "grid-template-columns" in text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
+    assert "Manual validation required" in text
