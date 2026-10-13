@@ -33,8 +33,6 @@ from scanners.intrusive import run_intrusive
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
-from scanners.engine_core import AssessmentEngine, AssessmentPolicy, SafeTransport
-from scanners.core_checks import register_core_checks
 
 
 class ConsoleLoader:
