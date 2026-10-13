@@ -41,23 +41,30 @@ h1{font-size:clamp(1.5rem,3vw,2.3rem)}.muted{color:#aab8d0}.metrics{display:grid
 .table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:850px}th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid #2c3a55;overflow-wrap:anywhere}
 th{background:#141d32}.footer{color:#aab8d0;font-size:.9rem}@media(max-width:700px){body{padding:10px}}
 </style></head><body>
-<header><h1>Sentinel Core Security Assessment</h1><p class="muted">Author: Satyendra Kumar Namdeo · Target: {target}</p>
-<p>Status: <b>{status}</b> · Completed: {completed}</p></header>
-<section class="panel metrics"><div class="metric">Findings<b>{findings}</b></div><div class="metric">Requests<b>{requests}</b></div>
-<div class="metric">Checks<b>{checks}</b></div><div class="metric">Duration<b>{duration}s</b></div><div class="metric">High/Critical<b>{urgent}</b></div></section>
+<header><h1>Sentinel Core Security Assessment</h1><p class="muted">Author: Satyendra Kumar Namdeo · Target: @@TARGET@@</p>
+<p>Status: <b>@@STATUS@@</b> · Completed: @@COMPLETED@@</p></header>
+<section class="panel metrics"><div class="metric">Findings<b>@@FINDINGS@@</b></div><div class="metric">Requests<b>@@REQUESTS@@</b></div>
+<div class="metric">Checks<b>@@CHECKS@@</b></div><div class="metric">Duration<b>@@DURATION@@s</b></div><div class="metric">High/Critical<b>@@URGENT@@</b></div></section>
 <section class="panel"><h2>Findings and remediation</h2><p class="muted">Automated candidates require validation. No finding does not prove a control is secure.</p>
-<div class="table-wrap"><table><thead><tr><th>Severity</th><th>Finding</th><th>Category</th><th>URL</th><th>Evidence summary</th><th>Recommended fix</th></tr></thead><tbody>{rows}</tbody></table></div></section>
-<section class="panel"><h2>Execution phases</h2><div class="table-wrap"><table><thead><tr><th>Phase</th><th>Status</th><th>Checks</th><th>Duration</th><th>Errors</th></tr></thead><tbody>{phases}</tbody></table></div></section>
-<section class="panel"><h2>Limitations</h2><ul>{limitations}</ul></section>
-<p class="footer">Bounded request summaries and hashes are in the JSON bundle. This is not a certification of security.</p></body></html>""".format(
-        target=html.escape(report.get("target_origin", "")),
-        status=html.escape(str(summary.get("overall_status", "unknown"))),
-        completed=html.escape(report.get("completed_at", "")),
-        findings=len(report.get("findings", [])), requests=report.get("request_count", 0),
-        checks=report.get("checks_executed", 0), duration=report.get("duration_seconds", 0),
-        urgent=summary.get("by_severity", {}).get("critical", 0) + summary.get("by_severity", {}).get("high", 0),
-        rows="".join(rows), phases="".join(phases), limitations=limitations,
-    )
+<div class="table-wrap"><table><thead><tr><th>Severity</th><th>Finding</th><th>Category</th><th>URL</th><th>Evidence summary</th><th>Recommended fix</th></tr></thead><tbody>@@ROWS@@</tbody></table></div></section>
+<section class="panel"><h2>Execution phases</h2><div class="table-wrap"><table><thead><tr><th>Phase</th><th>Status</th><th>Checks</th><th>Duration</th><th>Errors</th></tr></thead><tbody>@@PHASES@@</tbody></table></div></section>
+<section class="panel"><h2>Limitations</h2><ul>@@LIMITATIONS@@</ul></section>
+<p class="footer">Bounded request summaries and hashes are in the JSON bundle. This is not a certification of security.</p></body></html>"""
+    values = {
+        "TARGET": html.escape(report.get("target_origin", "")),
+        "STATUS": html.escape(str(summary.get("overall_status", "unknown"))),
+        "COMPLETED": html.escape(report.get("completed_at", "")),
+        "FINDINGS": len(report.get("findings", [])),
+        "REQUESTS": report.get("request_count", 0),
+        "CHECKS": report.get("checks_executed", 0),
+        "DURATION": report.get("duration_seconds", 0),
+        "URGENT": summary.get("by_severity", {}).get("critical", 0) + summary.get("by_severity", {}).get("high", 0),
+        "ROWS": "".join(rows),
+        "PHASES": "".join(phases),
+        "LIMITATIONS": limitations,
+    }
+    for key, value in values.items():
+        document = document.replace("@@" + key + "@@", str(value))
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(document, encoding="utf-8")
 
