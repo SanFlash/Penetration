@@ -168,37 +168,6 @@ def _page_findings(url, browser_name, viewport_name, data):
             "remediation": "Inspect the highlighted element for fixed widths, oversized media, long unbroken content, positioned elements, and container overflow rules.",
         })
 
-    if data["missing_alt_count"]:
-        findings.append({
-            "id": f"COMP-ALT-{abs(hash((url, data['missing_alt_count']))) % 100000:05d}",
-            "title": "Images missing alternative text",
-            "severity": "Low",
-            "confidence": "High",
-            "category": "Accessibility",
-            "cwe": "CWE-116",
-            "url": url,
-            "evidence": f"{data['missing_alt_count']} image element(s) without an alt attribute.",
-            "screenshot": evidence_path("alt"),
-            "detail": "The evidence image contains the affected image element only.",
-            "impact": "Important visual information may not be available to users relying on assistive technology.",
-            "remediation": "Provide meaningful alt text for informative images and an empty alt attribute for purely decorative images.",
-        })
-
-    if data["unlabeled_controls"]:
-        findings.append({
-            "id": f"COMP-LABEL-{abs(hash((url, data['unlabeled_controls']))) % 100000:05d}",
-            "title": "Potentially unlabeled form controls",
-            "severity": "Low",
-            "confidence": "Medium",
-            "category": "Accessibility",
-            "url": url,
-            "evidence": f"{data['unlabeled_controls']} form control(s) could not be associated with a label.",
-            "screenshot": evidence_path("control"),
-            "detail": "The evidence image contains the affected control only.",
-            "impact": "Users of assistive technology may have difficulty identifying the purpose of controls.",
-            "remediation": "Associate each control with a visible label or an appropriate accessible name.",
-        })
-
     accessibility_snapshot = data.get("accessibility") or {}
     for finding in evaluate_accessibility_snapshot(accessibility_snapshot, url):
         if finding.get("id", "").startswith("A11Y-ALT-"):
