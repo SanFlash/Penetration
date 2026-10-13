@@ -53,7 +53,8 @@ def classify_parameter(name: str) -> str:
 
 class InputValidationEngine:
     def __init__(self, target: str, max_urls: int = 30, max_probes: int = 180,
-                 rate_rps: float | None = None, timeout: int | None = None):
+                 rate_rps: float | None = None, timeout: int | None = None,
+                 max_runtime_seconds: int = 150):
         self.target = target.rstrip("/")
         parsed = urlparse(self.target)
         if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
@@ -62,6 +63,8 @@ class InputValidationEngine:
         self.max_probes = max(1, min(int(max_probes), 300))
         self.rate_rps = max(float(rate_rps or getattr(config, "VALIDATION_RATE_RPS", 3)), 0.5)
         self.timeout = int(timeout or getattr(config, "VALIDATION_TIMEOUT", 10))
+        self.max_runtime_seconds = max(15, min(int(max_runtime_seconds), 300))
+        self.deadline = float("inf")
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT, "Accept": "*/*"})
         self.probes = 0
@@ -73,10 +76,16 @@ class InputValidationEngine:
         assert_same_target(self.target, url)
         if self.probes >= self.max_probes:
             raise RuntimeError("input-validation probe budget exhausted")
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise requests.Timeout("input-validation phase runtime budget exhausted")
         delay = (1.0 / self.rate_rps) - (time.monotonic() - self.last_request)
         if delay > 0:
-            time.sleep(delay)
-        response = self.session.get(url, timeout=self.timeout, allow_redirects=False, verify=True)
+            time.sleep(min(delay, max(0, remaining)))
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise requests.Timeout("input-validation phase runtime budget exhausted")
+        response = self.session.get(url, timeout=min(self.timeout, max(0.5, remaining)), allow_redirects=False, verify=True)
         self.last_request = time.monotonic()
         self.probes += 1
         return response
@@ -152,11 +161,12 @@ class InputValidationEngine:
 
     def run(self, urls):
         started = time.time()
+        self.deadline = time.monotonic() + self.max_runtime_seconds
         candidates = self.candidate_points(urls)
         print(f"[VALIDATION] Candidate query inputs: {len(candidates)}", flush=True)
 
         for index, (base_url, parameter) in enumerate(candidates, 1):
-            if self.probes >= self.max_probes:
+            if self.probes >= self.max_probes or time.monotonic() >= self.deadline:
                 break
             profile = classify_parameter(parameter)
             values = PROFILES[profile]
@@ -182,7 +192,7 @@ class InputValidationEngine:
             })
 
             for invalid_index, invalid in enumerate(values["invalid"], 1):
-                if self.probes >= self.max_probes:
+                if self.probes >= self.max_probes or time.monotonic() >= self.deadline:
                     break
                 probe_url = self.mutate(base_url, parameter, invalid)
                 try:
@@ -236,8 +246,11 @@ class InputValidationEngine:
                     flush=True,
                 )
 
+        deadline_exceeded = time.monotonic() >= self.deadline
         result = {
             "schema": "input-validation-1.0",
+            "assessment_status": "partial" if deadline_exceeded else "completed",
+            "stop_reason": f"Phase runtime budget of {self.max_runtime_seconds}s reached." if deadline_exceeded else None,
             "target": self.target,
             "policy": "same-origin GET-only valid/invalid query validation; no form submission or state changes",
             "profiles": {name: {"valid": data["valid"], "invalid_cases": len(data["invalid"])}
@@ -247,6 +260,7 @@ class InputValidationEngine:
                 "max_probes": self.max_probes,
                 "rate_rps": self.rate_rps,
                 "timeout_seconds": self.timeout,
+                "max_runtime_seconds": self.max_runtime_seconds,
             },
             "probes": self.probes,
             "checks": self.checks,
@@ -270,5 +284,7 @@ class InputValidationEngine:
         return result
 
 
-def run_input_validation(target: str, urls, max_urls: int = 30, max_probes: int = 180):
-    return InputValidationEngine(target, max_urls=max_urls, max_probes=max_probes).run(urls)
+def run_input_validation(target: str, urls, max_urls: int = 30, max_probes: int = 180,
+                         max_runtime_seconds: int = 150):
+    return InputValidationEngine(target, max_urls=max_urls, max_probes=max_probes,
+                                 max_runtime_seconds=max_runtime_seconds).run(urls)

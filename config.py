@@ -68,6 +68,12 @@ ROUTE_DISCOVERY_MAX_RUNTIME = int(os.getenv("SENTINEL_ROUTE_DISCOVERY_MAX_RUNTIM
 # short phase.
 LIVE_REPORT_MIN_INTERVAL = float(os.getenv("SENTINEL_LIVE_REPORT_MIN_INTERVAL", "45"))
 
+# Browser evidence capture: collect actual viewport context when no DOM target
+# can be isolated, while keeping the phase bounded on small hosted instances.
+EVIDENCE_MAX_ITEMS = max(1, min(int(os.getenv("SENTINEL_EVIDENCE_MAX_ITEMS", "48")), 100))
+EVIDENCE_MAX_SECONDS = max(30, min(int(os.getenv("SENTINEL_EVIDENCE_MAX_SECONDS", "300")), 600))
+EVIDENCE_NAVIGATION_TIMEOUT_MS = max(2000, min(int(os.getenv("SENTINEL_EVIDENCE_NAVIGATION_TIMEOUT_MS", "7000")), 15000))
+
 
 # Unified deep-pentest coverage controls. These defaults favor breadth while
 # remaining bounded and read-only; environment variables allow larger staging

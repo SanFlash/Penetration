@@ -83,3 +83,14 @@ def test_core_html_report_renders_css_and_escapes_findings(tmp_path):
     assert "grid-template-columns" in text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
     assert "Manual validation required" in text
+
+
+
+def test_evidence_key_is_stable_for_legacy_findings_without_ids():
+    from scanners.browser_evidence import evidence_finding_key
+    first = {"title": "Missing CSP", "url": "https://example.com/a"}
+    same = {"title": "Missing CSP", "url": "https://example.com/a"}
+    other = {"title": "Missing CSP", "url": "https://example.com/b"}
+    assert evidence_finding_key(first) == evidence_finding_key(same)
+    assert evidence_finding_key(first) != evidence_finding_key(other)
+    assert evidence_finding_key({"rule_id": "CSP-01", **first}) == "CSP-01"

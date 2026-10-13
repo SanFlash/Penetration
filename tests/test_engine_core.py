@@ -69,3 +69,17 @@ def test_transport_blocks_methods_outside_policy_before_network():
     transport = SafeTransport(policy, session=requests.Session())
     with pytest.raises(OutOfScopeError):
         transport.request("POST", "https://example.com/login")
+
+
+
+def test_phase_call_preserves_partial_result_status():
+    from main import _phase_call
+    ledger = {}
+    value = _phase_call("budgeted", ledger, lambda: {
+        "assessment_status": "partial",
+        "stop_reason": "phase budget reached",
+        "findings": [],
+    })
+    assert value["assessment_status"] == "partial"
+    assert ledger["budgeted"]["status"] == "partial"
+    assert "phase budget reached" in ledger["budgeted"]["error"]
