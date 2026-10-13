@@ -234,6 +234,16 @@ def _is_exact_target_url(target: str, url: str) -> bool:
         return False
 
 
+def _final_assessment_status(phase_status: dict) -> str:
+    """Never label an assessment complete when any phase was partial or unsuccessful."""
+    incomplete = {"partial", "failed", "timed_out", "error", "blocked"}
+    return "PARTIAL" if any(
+        str(info.get("status", "")).lower() in incomplete
+        for info in phase_status.values()
+        if isinstance(info, dict)
+    ) else "COMPLETE"
+
+
 def _phase_call(name, phase_status, fn):
     """Run one assessment phase without allowing a single broken scanner to abort the whole report."""
     started = time.monotonic()
@@ -779,8 +789,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         banner("STEP 13 — Final interactive report")
         loader.set("Finalizing HTML report")
         phase_status["report_generation"] = {"status": "completed"}
-        phase_failures = [name for name, info in phase_status.items() if info.get("status") in {"failed", "timed_out"}]
-        final_status = "PARTIAL" if phase_failures else "COMPLETE"
+        phase_failures = [name for name, info in phase_status.items() if info.get("status") in {"partial", "failed", "timed_out", "error", "blocked"}]
+        final_status = _final_assessment_status(phase_status)
         report = _refresh_live_report(target, all_findings, current_metadata(final_status))
         last_report_refresh = time.monotonic()
         if not report:

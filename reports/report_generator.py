@@ -1083,7 +1083,7 @@ function evidenceAnchor(path, alt){
 const phaseStatus=(meta&&meta.phase_status)||{};
 const phaseEntries=Object.keys(phaseStatus);
 document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
- ? '<div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=p.status==="failed";return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds||"-")+' s</td><td>'+esc(p.error||"Completed")+'</td></tr>'}).join("")+'</tbody></table></div>'
+ ? '<div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=["failed","timed_out","partial","error","blocked"].includes(String(p.status||"").toLowerCase());return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds||"-")+' s</td><td>'+esc(p.error||"Completed")+'</td></tr>'}).join("")+'</tbody></table></div>'
  : '<div class="empty">Assessment phase status will appear as the report is updated.</div>';
 
 const cat=document.getElementById("cat");
