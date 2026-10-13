@@ -1,40 +1,74 @@
-"""
-utils/scope.py — the enforcement half of config.ALLOWED_HOSTS.
-
-Every module that sends a network request imports assert_in_scope() and
-calls it with the URL it is about to touch. There is no code path in this
-framework that skips this check.
-"""
-from urllib.parse import urlparse
+"""Fail-closed URL scope enforcement for Sentinel."""
+from __future__ import annotations
+import ipaddress
+from urllib.parse import urlsplit
 from config import ALLOWED_HOSTS
 
 
-class OutOfScopeError(Exception):
-    """Raised when a target host is not in config.ALLOWED_HOSTS."""
+class OutOfScopeError(ValueError):
+    """Raised when a request is not inside the explicitly configured scope."""
+
+
+def _parts(url: str):
+    if not isinstance(url, str) or not url.strip():
+        raise OutOfScopeError("URL must be a non-empty string.")
+    try:
+        p = urlsplit(url.strip())
+        port = p.port
+    except (ValueError, TypeError) as exc:
+        raise OutOfScopeError(f"Malformed URL: {url!r}") from exc
+    scheme = p.scheme.lower()
+    if scheme not in {"http", "https"}:
+        raise OutOfScopeError("Only http and https URLs are supported.")
+    if not p.hostname or p.username is not None or p.password is not None:
+        raise OutOfScopeError("URL must have a hostname and must not embed credentials.")
+    host = p.hostname.rstrip(".").lower()
+    try:
+        host = ipaddress.ip_address(host).compressed
+    except ValueError:
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise OutOfScopeError("Invalid hostname.") from exc
+    effective_port = port or (443 if scheme == "https" else 80)
+    return scheme, host, effective_port, p
+
+
+def canonical_origin(url: str) -> str:
+    scheme, host, port, _ = _parts(url)
+    default = 443 if scheme == "https" else 80
+    display = f"[{host}]" if ":" in host else host
+    return f"{scheme}://{display}" + (f":{port}" if port != default else "")
 
 
 def host_of(url: str) -> str:
-    parsed = urlparse(url)
-    return parsed.netloc
+    scheme, host, port, _ = _parts(url)
+    default = 443 if scheme == "https" else 80
+    display = f"[{host}]" if ":" in host else host
+    return display if port == default else f"{display}:{port}"
 
 
 def is_in_scope(url: str) -> bool:
-    return host_of(url) in ALLOWED_HOSTS
+    try:
+        scheme, host, port, _ = _parts(url)
+        default = 443 if scheme == "https" else 80
+        display = f"[{host}]" if ":" in host else host
+        candidate = display if port == default else f"{display}:{port}"
+        configured = {str(x).strip().lower().rstrip(".") for x in ALLOWED_HOSTS}
+        return candidate in configured
+    except OutOfScopeError:
+        return False
 
 
 def assert_same_target(target: str, url: str) -> None:
-    """Fail closed unless URL belongs to the exact requested target origin."""
-    target_parts = urlparse(target)
-    url_parts = urlparse(url)
-    if (target_parts.scheme.lower(), target_parts.netloc.lower()) != (url_parts.scheme.lower(), url_parts.netloc.lower()):
-        raise OutOfScopeError(f"Refusing to assess '{url}'. Run is locked to '{target_parts.scheme}://{target_parts.netloc}' only.")
+    expected, actual = canonical_origin(target), canonical_origin(url)
+    if expected != actual:
+        raise OutOfScopeError(f"Refusing to assess {url!r}: scan is locked to exact origin {expected!r}.")
 
 
 def assert_in_scope(url: str) -> None:
     if not is_in_scope(url):
         raise OutOfScopeError(
-            f"Refusing to send a request to '{host_of(url)}' — it is not in "
-            f"config.ALLOWED_HOSTS ({ALLOWED_HOSTS}). Add it there ONLY if "
-            f"you own it or have written authorization to test it. See the "
-            f"top of config.py before editing that list."
+            f"Refusing request to {url!r}; it is not an exact configured host in "
+            "config.ALLOWED_HOSTS. Add a host only when you own it or have written authorization."
         )

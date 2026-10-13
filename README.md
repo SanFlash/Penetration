@@ -1337,3 +1337,24 @@ Do not run this service on Render Free if persistent evidence is a requirement. 
 ### Local behavior is unchanged
 
 Without `SENTINEL_DATA_DIR`, the project continues to use the local `evidence/` and `reports/` directories. On Render, `SENTINEL_DATA_DIR=/var/data` moves both under the persistent disk.
+
+
+## Sentinel Core Engine v3 (bounded assessment profile)
+
+The repository now includes a new Core Engine path focused on predictable execution, exact-origin scope enforcement, bounded response capture, redacted evidence, deterministic finding IDs, and honest phase status. It is available through the main CLI:
+
+```powershell
+python main.py --profile core --target https://your-authorized-host.example --confirm-authorized
+```
+
+Use a smaller first run when validating configuration:
+
+```powershell
+python main.py --profile core --target https://your-authorized-host.example --confirm-authorized --core-max-urls 15 --core-max-probes 60
+```
+
+Outputs include `core_report.json`, `core_report.html`, and `sentinel_core_bundle.zip` in the configured report directory. Evidence request summaries are written under the configured evidence directory.
+
+The core profile runs bounded same-origin discovery, response-header and cookie heuristics, path-specific public-exposure checks, inert query-reflection/error triage, and a sentinel-origin CORS check. It uses GET-only checks, disables redirects, verifies TLS, caps response capture and request volume, and never submits forms or changes server data.
+
+**Important:** This is an incremental migration path, not a claim that every legacy scanner has been rewritten or that automated checks certify security. Candidate findings need validation. The existing `pentest` profile remains available for its broader legacy assessment phases. See [Core Engine v3 documentation](docs/CORE_ENGINE_V3.md).
