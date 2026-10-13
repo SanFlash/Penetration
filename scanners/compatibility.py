@@ -583,9 +583,11 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                                 const contrastRatio = (a,b) => { const x=luminance(a), y=luminance(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); };
                                 const rgb = c => c ? 'rgb('+c.r+', '+c.g+', '+c.b+')' : 'unknown';
                                 const contrastSamples = [];
+                                const directText = el => [...el.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).map(node=>node.textContent||'').join(' ').trim();
                                 const textNodes = [...document.querySelectorAll('p,span,a,button,label,li,td,th,h1,h2,h3,h4,h5,h6,small,strong,em,div')].slice(0,500);
                                 for (const el of textNodes) {
-                                    if (!visible(el) || !(el.innerText || el.textContent || '').trim()) continue;
+                                    const sampleText = directText(el);
+                                    if (!visible(el) || !sampleText) continue;
                                     const style=getComputedStyle(el);
                                     if (style.backgroundImage !== 'none') continue;
                                     const fg=color(style.color), bg=backgroundFor(el);
@@ -595,7 +597,7 @@ def run_compatibility(target: str, urls: list[str], max_pages: int = 12,
                                     const value=contrastRatio(fg,bg);
                                     if (value < (large?3:4.5)) {
                                         el.setAttribute('data-sentinel-contrast','1');
-                                        contrastSamples.push({text:(el.innerText||el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,90),
+                                        contrastSamples.push({text:sampleText.replace(/\\s+/g,' ').slice(0,90),
                                             ratio:Math.round(value*100)/100,foreground:rgb(fg),background:rgb(bg),large_text:large});
                                         if (contrastSamples.length>=12) break;
                                     }
