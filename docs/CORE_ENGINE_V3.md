@@ -10,13 +10,13 @@ Use Python 3.11+ and install the repository requirements. Only scan systems you 
 
 ```powershell
 python -m pip install -r requirements.txt
-python sentinel_scan.py --target https://your-authorized-host.example --confirm-authorized
+python main.py --profile core --target https://your-authorized-host.example --confirm-authorized
 ```
 
 Bound runtime and request volume explicitly for a first run:
 
 ```powershell
-python sentinel_scan.py --target https://your-authorized-host.example --confirm-authorized --max-urls 15 --max-probes 60 --max-runtime 120 --rate 1.5
+python main.py --profile core --target https://your-authorized-host.example --confirm-authorized --core-max-urls 15 --core-max-probes 60
 ```
 
 Output is written to the configured report/evidence directories:
