@@ -48,24 +48,32 @@ def _require_auth():
     return None
 
 
-def _worker(target: str):
+def _worker(target: str, profile: str = "pentest"):
     global _last_result, _last_error
     _last_error = None
     try:
-        rc = run_pentest_profile(
-            target,
-            headed=False,
-            slow_mo=0,
-            dashboard=False,
-            authorized=True,
-            state_override=_state,
-        )
+        if profile == "core":
+            from sentinel_scan import main as core_main
+            rc = core_main([
+                "--target", target, "--confirm-authorized",
+                "--max-urls", "25", "--max-probes", "120",
+                "--max-runtime", "180", "--out", config.REPORT_DIR,
+            ])
+        else:
+            rc = run_pentest_profile(
+                target,
+                headed=False,
+                slow_mo=0,
+                dashboard=False,
+                authorized=True,
+                state_override=_state,
+            )
         _last_result = {"return_code": rc, "completed_at": time.time()}
         if rc == 0:
             _state.update(
                 status="COMPLETE",
-                stage="PENTEST COMPLETE",
-                detail="Assessment and evidence are ready.",
+                stage="CORE SCAN COMPLETE" if profile == "core" else "PENTEST COMPLETE",
+                detail=("Core security report and evidence bundle are ready." if profile == "core" else "Assessment and evidence are ready."),
                 progress=100,
             )
         else:
@@ -131,8 +139,10 @@ def status():
     payload["running"] = _run_lock.locked()
     payload["last_result"] = _last_result
     payload["last_error"] = _last_error
-    bundle_path = Path(config.REPORT_DIR) / "sentinel_full_report_bundle.zip"
-    report_path = Path(config.REPORT_DIR) / "report.html"
+    active_profile = str(payload.get("profile") or "pentest")
+    core_mode = active_profile == "core"
+    bundle_path = Path(config.REPORT_DIR) / ("sentinel_core_bundle.zip" if core_mode else "sentinel_full_report_bundle.zip")
+    report_path = Path(config.REPORT_DIR) / ("core_report.html" if core_mode else "report.html")
     # Render may restart the web worker after a scan. The in-memory dashboard
     # state then resets to INITIALIZING even though report artifacts remain on
     # the persistent disk. Publish artifact readiness independently of the
@@ -145,14 +155,16 @@ def status():
         and bundle_mtime >= _run_started_at
     )
     payload["reports"] = {
-        "html": "/reports/report.html",
-        "portable_html": "/reports/report_portable.html",
-        "pdf": "/reports/report.pdf",
-        "xlsx": "/reports/penetration_report.xlsx",
-        "findings_json": "/reports/findings.json",
-        "manifest": "/reports/evidence_manifest.json",
-        "sarif": "/reports/sentinel.sarif",
-        "bundle": "/reports/sentinel_full_report_bundle.zip",
+        "profile": active_profile,
+        "html": "/reports/core_report.html" if core_mode else "/reports/report.html",
+        "portable_html": "" if core_mode else "/reports/report_portable.html",
+        "pdf": "" if core_mode else "/reports/report.pdf",
+        "xlsx": "" if core_mode else "/reports/penetration_report.xlsx",
+        "findings_json": "/reports/core_report.json" if core_mode else "/reports/findings.json",
+        "manifest": "" if core_mode else "/reports/evidence_manifest.json",
+        "sarif": "" if core_mode else "/reports/sentinel.sarif",
+        "bundle": "/reports/sentinel_core_bundle.zip" if core_mode else "/reports/sentinel_full_report_bundle.zip",
+        "bundle_filename": "sentinel_core_bundle.zip" if core_mode else "sentinel_full_report_bundle.zip",
         "bundle_ready": bundle_ready,
         "bundle_for_current_run": bundle_for_current_run,
         "report_ready": report_ready,
@@ -176,6 +188,13 @@ def run():
     body = request.get_json(silent=True) or {}
     target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
     authorized = bool(body.get("authorized", False))
+    profile = str(body.get("profile") or "pentest").strip().lower()
+    if profile not in {"pentest", "core"}:
+        _run_lock.release()
+        return jsonify({
+            "error": "invalid_profile",
+            "message": "Profile must be 'pentest' or 'core'.",
+        }), 400
 
     if not target.startswith(("http://", "https://")):
         _run_lock.release()
@@ -191,7 +210,7 @@ def run():
             "message": "Confirm that you own the target or have explicit permission to assess it.",
         }), 400
 
-    _state = DashboardState(target=target, profile="pentest")
+    _state = DashboardState(target=target, profile=profile)
     _state.update(
         status="RUNNING",
         stage="QUEUED",
@@ -201,9 +220,9 @@ def run():
     _last_result = None
     _run_started_at = time.time()
 
-    _run_thread = threading.Thread(target=_worker, args=(target,), daemon=True)
+    _run_thread = threading.Thread(target=_worker, args=(target, profile), daemon=True)
     _run_thread.start()
-    return jsonify({"accepted": True, "target": target}), 202
+    return jsonify({"accepted": True, "target": target, "profile": profile}), 202
 
 
 def _artifact(directory: str, filename: str):
@@ -242,7 +261,7 @@ def _artifact(directory: str, filename: str):
             response.headers["Content-Type"] = "text/html; charset=utf-8"
         elif suffix == ".zip":
             response.headers["Content-Type"] = "application/zip"
-            response.headers["Content-Disposition"] = 'attachment; filename="sentinel_full_report_bundle.zip"'
+            response.headers["Content-Disposition"] = f'attachment; filename="{full.name}"'
     return response
 
 
@@ -264,7 +283,7 @@ _HTML = r"""<!doctype html>
 <title>Sentinel // Hosted Pentest Console</title>
 <style>
 :root{--bg:#03060b;--panel:#0a111b;--line:#193149;--text:#e7f1fb;--muted:#7891a9;--green:#38e8a0;--blue:#4ea1ff;--red:#ff3864;--yellow:#ffc857}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 0,#123047 0,#04070d 45%,#020307 100%);color:var(--text);font:14px/1.5 Inter,Segoe UI,Arial,sans-serif;min-height:100vh}.wrap{max-width:1250px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}.brand{font-weight:900;letter-spacing:.12em}.badge{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--green);background:#06150f}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.panel{background:#07101bf2;border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 70px #0008;overflow:hidden}.pad{padding:18px}h2,h3{margin-top:0}.muted{color:var(--muted)}label{display:block;color:var(--muted);font-size:12px;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.08em}input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#03070d;color:var(--text)}button{margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:linear-gradient(90deg,var(--blue),var(--green));color:#02100b;font-weight:900;cursor:pointer}.hero{min-height:390px;position:relative;display:flex;align-items:center;justify-content:center;text-align:center}.ring{width:210px;height:210px;border:1px solid #38e8a066;border-radius:50%;box-shadow:0 0 70px #38e8a01a,inset 0 0 50px #38e8a01a;animation:pulse 2.2s ease-in-out infinite}.core{position:absolute;width:72px;height:72px;border-radius:50%;border:1px solid var(--green);box-shadow:0 0 45px #38e8a055;background:#38e8a014}.center{position:absolute;padding:0 30px}.stage{font-size:20px;font-weight:900;letter-spacing:.08em;margin-top:18px}.detail{color:var(--muted);margin-top:6px}@keyframes pulse{50%{transform:scale(1.08);opacity:.72}}.bar{height:9px;background:#101b29;border-radius:99px;overflow:hidden;margin:10px 0}.fill{height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .35s}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.metric{border:1px solid var(--line);border-radius:10px;padding:10px;background:#08121e}.metric b{display:block;font-size:21px}.metric span{color:var(--muted);font-size:10px;text-transform:uppercase}.evidence{margin-top:14px}.evidencebox{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px;max-height:560px;overflow:auto}.e-card{border:1px solid var(--line);border-radius:12px;background:#03070d;overflow:hidden}.e-card img{width:100%;height:145px;object-fit:contain;background:#02050a;display:block}.e-body{padding:9px}.e-id{font-weight:900;color:var(--green);font-size:11px}.e-url{font-size:10px;color:var(--muted);word-break:break-all;margin-top:4px}.e-body a{display:inline-block;margin-top:7px;color:var(--blue);text-decoration:none;font-size:11px}.coverage{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:14px}.cov{border:1px solid var(--line);border-radius:10px;padding:10px;background:#08121e}.cov b{display:block;font-size:11px}.cov span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;margin-top:4px}.links{display:grid;gap:8px;margin-top:14px}.links a{color:var(--green);text-decoration:none;border:1px solid var(--line);padding:9px;border-radius:9px}.logs{margin-top:14px;height:220px;overflow:auto;background:#02050a;border-top:1px solid var(--line);padding:12px;font:12px/1.6 Consolas,monospace}.ok{color:var(--green)}.err{color:var(--red)}.warn{color:var(--yellow)}@media(max-width:1050px){.coverage{grid-template-columns:repeat(3,1fr)}.evidencebox{grid-template-columns:repeat(2,1fr)}}@media(max-width:900px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.coverage{grid-template-columns:repeat(2,1fr)}.evidencebox{grid-template-columns:1fr}.wrap{padding:12px}}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 0,#123047 0,#04070d 45%,#020307 100%);color:var(--text);font:14px/1.5 Inter,Segoe UI,Arial,sans-serif;min-height:100vh}.wrap{max-width:1250px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}.brand{font-weight:900;letter-spacing:.12em}.badge{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--green);background:#06150f}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.panel{background:#07101bf2;border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 70px #0008;overflow:hidden}.pad{padding:18px}h2,h3{margin-top:0}.muted{color:var(--muted)}label{display:block;color:var(--muted);font-size:12px;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.08em}input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#03070d;color:var(--text)}button{margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:linear-gradient(90deg,var(--blue),var(--green));color:#02100b;font-weight:900;cursor:pointer}.hero{min-height:390px;position:relative;display:flex;align-items:center;justify-content:center;text-align:center}.ring{width:210px;height:210px;border:1px solid #38e8a066;border-radius:50%;box-shadow:0 0 70px #38e8a01a,inset 0 0 50px #38e8a01a;animation:pulse 2.2s ease-in-out infinite}.core{position:absolute;width:72px;height:72px;border-radius:50%;border:1px solid var(--green);box-shadow:0 0 45px #38e8a055;background:#38e8a014}.center{position:absolute;padding:0 30px}.stage{font-size:20px;font-weight:900;letter-spacing:.08em;margin-top:18px}.detail{color:var(--muted);margin-top:6px}@keyframes pulse{50%{transform:scale(1.08);opacity:.72}}.bar{height:9px;background:#101b29;border-radius:99px;overflow:hidden;margin:10px 0}.fill{height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .35s}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.metric{border:1px solid var(--line);border-radius:10px;padding:10px;background:#08121e}.metric b{display:block;font-size:21px}.metric span{color:var(--muted);font-size:10px;text-transform:uppercase}.evidence{margin-top:14px}.evidencebox{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px;max-height:560px;overflow:auto}.e-card{border:1px solid var(--line);border-radius:12px;background:#03070d;overflow:hidden}.e-card img{width:100%;height:145px;object-fit:contain;background:#02050a;display:block}.e-body{padding:9px}.e-id{font-weight:900;color:var(--green);font-size:11px}.e-url{font-size:10px;color:var(--muted);word-break:break-all;margin-top:4px}.e-body a{display:inline-block;margin-top:7px;color:var(--blue);text-decoration:none;font-size:11px}.coverage{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:14px}.cov{border:1px solid var(--line);border-radius:10px;padding:10px;background:#08121e}.cov b{display:block;font-size:11px}.cov span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;margin-top:4px}.links{display:grid;gap:8px;margin-top:14px}.links a{color:var(--green);text-decoration:none;border:1px solid var(--line);padding:9px;border-radius:9px}.logs{margin-top:14px;height:220px;overflow:auto;background:#02050a;border-top:1px solid var(--line);padding:12px;font:12px/1.6 Consolas,monospace}.ok{color:var(--green)}.err{color:var(--red)}.warn{color:var(--yellow)}@media(max-width:1050px){.coverage{grid-template-columns:repeat(3,1fr)}.evidencebox{grid-template-columns:repeat(2,1fr)}}@media(max-width:900px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.coverage{grid-template-columns:repeat(2,1fr)}.evidencebox{grid-template-columns:1fr}.wrap{padding:12px}}
 
 /* Sentinel Professional Console v2 */
 :root{color-scheme:dark;--bg:#0b1120;--panel:#111a2b;--line:#27364d;--text:#edf3fc;--muted:#91a2ba;--green:#55e6ad;--blue:#76a9ff;--red:#ff7188;--yellow:#f6c96b}
@@ -310,11 +329,12 @@ hr{border-top-color:#27364d!important}
 <aside class="panel pad"><h3>Start Assessment</h3>
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
 <label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
+<label for="profile">Assessment profile</label><select id="profile"><option value="pentest">Full Pentest — browser, security and evidence pipeline</option><option value="core">Core Security — bounded read-only checks and evidence bundle</option></select>
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
-<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><div id="completionDownloads" style="display:none;border:1px solid var(--green);border-radius:10px;padding:12px;background:#06150f"><strong style="color:var(--green)">ASSESSMENT COMPLETE — REPORTS READY</strong><p class="muted" style="margin:6px 0 10px">The final report bundle includes the reports, findings, manifest and captured evidence files.</p><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip" style="display:block;text-align:center;background:var(--green);color:#03110b;font-weight:900">⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)</a></div><a href="/reports/report_portable.html" target="_blank">Portable report</a><a href="/reports/findings.json" target="_blank">Findings JSON</a><a href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a href="/reports/sentinel.sarif" target="_blank">SARIF for CI tools</a><a href="/reports/report.pdf" target="_blank">PDF report</a><a href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The download button appears only after the assessment reaches its final status. Reports are not downloaded during a running assessment.</div>
+<div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><div id="completionDownloads" style="display:none;border:1px solid var(--green);border-radius:10px;padding:12px;background:#06150f"><strong style="color:var(--green)">ASSESSMENT COMPLETE — REPORTS READY</strong><p class="muted" style="margin:6px 0 10px">The final report bundle includes the reports, findings, manifest and captured evidence files.</p><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip" style="display:block;text-align:center;background:var(--green);color:#03110b;font-weight:900">⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)</a></div><a id="portableLink" href="/reports/report_portable.html" target="_blank">Portable report</a><a id="findingsJsonLink" href="/reports/findings.json" target="_blank">Findings JSON</a><a id="manifestLink" href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a id="sarifLink" href="/reports/sentinel.sarif" target="_blank">SARIF for CI tools</a><a id="pdfLink" href="/reports/report.pdf" target="_blank">PDF report</a><a id="xlsxLink" href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The download button appears only after the assessment reaches its final status. Reports are not downloaded during a running assessment.</div>
 </aside></div>
 <section class="panel evidence"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
 <section class="coverage">
@@ -383,7 +403,7 @@ async function startRun() {
           "Accept": "application/json",
           "Cache-Control": "no-cache"
         },
-        body: JSON.stringify({ target: target, authorized: true }),
+        body: JSON.stringify({ target: target, authorized: true, profile: el("profile").value }),
         signal: controller.signal
       });
     } finally {
@@ -404,7 +424,10 @@ async function startRun() {
 
     autoDownloadPending = true;
     autoDownloadStarted = false;
-    showState("RUNNING", "QUEUED", "Assessment accepted. The pentest engine is starting. The complete report ZIP will download automatically when it is ready.");
+    const selectedProfile = el("profile").value;
+    showState("RUNNING", "QUEUED", selectedProfile === "core"
+      ? "Core security assessment accepted. The HTML/JSON report and evidence ZIP will be ready when checks finish."
+      : "Full pentest accepted. The complete report ZIP will download automatically when it is ready.");
     setButton(true, "PENTEST RUNNING");
   } catch (error) {
     const message = error && error.name === "AbortError"
@@ -440,6 +463,12 @@ function renderStatus(s) {
   const completionDownloads = el("completionDownloads");
   const downloadBundle = el("downloadBundle");
   const reports = s.reports || {};
+  const coreMode = reports.profile === "core";
+  const linkIds = ["reportLink", "downloadBundle", "findingsJsonLink", "portableLink", "manifestLink", "sarifLink", "pdfLink", "xlsxLink"];
+  linkIds.forEach(function(id) {
+    const node = el(id);
+    if (node) node.style.display = coreMode ? (["reportLink", "downloadBundle", "findingsJsonLink"].includes(id) ? "block" : "none") : "";
+  });
   const finalStatus = ["COMPLETE", "PARTIAL", "FAILED"].indexOf(String(s.status || "").toUpperCase()) >= 0;
   // Show the action only when a run has ended OR a complete bundle already
   // exists on persistent storage after a worker restart. Never show it during
@@ -453,7 +482,7 @@ function renderStatus(s) {
   }
   if (downloadBundle) {
     downloadBundle.href = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?download=1&ts=" + Date.now();
-    downloadBundle.setAttribute("download", "sentinel_full_report_bundle.zip");
+    downloadBundle.setAttribute("download", reports.bundle_filename || "sentinel_full_report_bundle.zip");
     downloadBundle.textContent = currentBundleReady && s.status === "COMPLETE"
       ? "⬇ DOWNLOAD COMPLETE REPORT + ALL EVIDENCE (ZIP)"
       : (currentBundleReady
