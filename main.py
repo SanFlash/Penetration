@@ -461,6 +461,20 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         if value:
             ui_result = value
             all_findings.extend(value.get("findings", []))
+            accessibility_cases = [
+                row for row in value.get("results", [])
+                if isinstance(row.get("accessibility"), dict)
+            ]
+            phase_status["accessibility"] = {
+                "status": "completed" if accessibility_cases else "partial",
+                "checks": len(accessibility_cases) * 11,
+                "browser_cases": len(accessibility_cases),
+                "finding_count": sum(
+                    1 for finding in value.get("findings", [])
+                    if finding.get("category") == "Accessibility"
+                ),
+                "note": "WCAG 2.2 automated heuristics only; manual conformance is not implied.",
+            }
         print(f"Chrome URLs tested: {len(ui_result.get('urls_tested', []))}")
         print(f"UI findings: {len(ui_result.get('findings', []))}")
         refresh_report("UI / RESPONSIVE TESTING", f"Chrome testing completed across {len(ui_result.get('urls_tested', []))} URLs.")
