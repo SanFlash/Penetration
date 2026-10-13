@@ -163,12 +163,28 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
         banner("STEP 4 — Interactive report generation")
         loader.set("Building interactive analytics report")
         state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
+        browser_cases = result.get("results", [])
+        accessibility_cases = [
+            row for row in browser_cases if isinstance(row.get("accessibility"), dict)
+        ]
         metadata = {
             "profile": "compatibility",
             "headed": headed,
             "slow_mo_ms": slow_mo,
             "dashboard_url": dashboard_url,
             "compatibility": result,
+            "phase_status": {
+                "ui_responsive": {
+                    "status": "completed" if browser_cases else "partial",
+                    "checks": len(browser_cases),
+                },
+                "accessibility": {
+                    "status": "completed" if accessibility_cases else "partial",
+                    "checks": len(accessibility_cases) * 11,
+                    "browser_cases": len(accessibility_cases),
+                    "note": "WCAG 2.2 automated heuristics only; manual conformance is not implied.",
+                },
+            },
         }
         report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
         print(f"Findings JSON: {report['json_path']}")
@@ -354,6 +370,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "live_evidence": live_evidence[-40:],
             "coverage": {
                 "ui_responsive": phase_status.get("ui_responsive", {}).get("status", "pending"),
+                "accessibility": phase_status.get("accessibility", {}).get("status", "pending"),
                 "functional": phase_status.get("functional_testing", {}).get("status", "pending"),
                 "security": "completed" if phase_status.get("security_headers", {}).get("status") == "completed" and phase_status.get("active_security", {}).get("status") == "completed" else ("running" if "SECURITY" in str(state.snapshot().get("stage", "")) else "pending"),
                 "penetration": "completed" if all(phase_status.get(k, {}).get("status") == "completed" for k in ("deep_security", "api_surface", "aggressive_readonly", "comprehensive_security", "input_stress", "input_validation")) else ("running" if "SECURITY" in str(state.snapshot().get("stage", "")) else "pending"),
@@ -461,6 +478,20 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         if value:
             ui_result = value
             all_findings.extend(value.get("findings", []))
+            accessibility_cases = [
+                row for row in value.get("results", [])
+                if isinstance(row.get("accessibility"), dict)
+            ]
+            phase_status["accessibility"] = {
+                "status": "completed" if accessibility_cases else "partial",
+                "checks": len(accessibility_cases) * 11,
+                "browser_cases": len(accessibility_cases),
+                "finding_count": sum(
+                    1 for finding in value.get("findings", [])
+                    if finding.get("category") == "Accessibility"
+                ),
+                "note": "WCAG 2.2 automated heuristics only; manual conformance is not implied.",
+            }
         print(f"Chrome URLs tested: {len(ui_result.get('urls_tested', []))}")
         print(f"UI findings: {len(ui_result.get('findings', []))}")
         refresh_report("UI / RESPONSIVE TESTING", f"Chrome testing completed across {len(ui_result.get('urls_tested', []))} URLs.")
