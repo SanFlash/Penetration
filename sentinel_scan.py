@@ -97,13 +97,14 @@ def main(argv=None, progress_callback=None):
     html_path = out / "core_report.html"
     _write_html(report, html_path)
     zip_path = out / "sentinel_core_bundle.zip"
+    evidence_jsonl = out / "core_evidence.jsonl"
+    evidence_lines = [json.dumps(item, ensure_ascii=False) for item in report.get("evidence", [])]
+    evidence_jsonl.write_text("\n".join(evidence_lines) + ("\n" if evidence_lines else ""), encoding="utf-8")
     out.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(json_path, arcname="core_report.json")
         archive.write(html_path, arcname="core_report.html")
-        evidence = evidence_dir / "engine_evidence.jsonl"
-        if evidence.is_file():
-            archive.write(evidence, arcname="evidence/engine_evidence.jsonl")
+        archive.write(evidence_jsonl, arcname="evidence/engine_evidence.jsonl")
     summary = report["summary"]
     print(f"[SENTINEL] Status: {summary['overall_status']} | findings: {summary['finding_count']} | requests: {report['request_count']}")
     print(f"[REPORT] JSON: {json_path}\n[REPORT] HTML: {html_path}\n[REPORT] ZIP: {zip_path}")
