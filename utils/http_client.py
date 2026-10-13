@@ -54,7 +54,18 @@ def _redact_url(url: str) -> str:
 
 
 def _redact_text(value: str, limit: int = 2000) -> str:
-    value = _SECRET_VALUE.sub(r'\1"[REDACTED]"', value or "")
+    value = value or ""
+    value = re.sub(
+        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+        "[REDACTED PRIVATE KEY]", value,
+    )
+    value = re.sub(r"\bAKIA[0-9A-Z]{16}\b", "[REDACTED AWS ACCESS KEY]", value)
+    value = re.sub(
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
+        "[REDACTED JWT]", value,
+    )
+    value = re.sub(r"(?im)^set-cookie\s*[:=].*$", "Set-Cookie: [REDACTED]", value)
+    value = _SECRET_VALUE.sub(r'\1"[REDACTED]"', value)
     value = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/-]+=*", r"\1[REDACTED]", value)
     return value[:limit]
 
