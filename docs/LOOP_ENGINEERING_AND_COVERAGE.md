@@ -29,7 +29,7 @@ The existing engines are intended to cover these areas, subject to actual phase 
 - **Client-side security:** browser console/network observations, mixed-content candidates and response/DOM-based signals.
 - **Evidence and reporting:** stable finding identifiers, execution ledger, finding-level evidence status, report bundle integrity and explicit manual-review gaps.
 
-Reference methodology: [OWASP WSTG stable v4.2](https://wstg.owasp.org/v4.2/4-Web_Application_Security_Testing/), [OWASP WSTG latest development guide](https://wstg.owasp.org/latest/), and [OWASP API Security project](https://owasp.org/www-project-api-security/). Sentinel's mapping is a practical subset, not an assertion of complete OWASP coverage or certification.
+Reference methodology: [OWASP Top 10:2025](https://top10.owasp.org/2025/), [OWASP WSTG stable v4.2](https://wstg.owasp.org/v4.2/4-Web_Application_Security_Testing/), [OWASP WSTG latest development guide](https://wstg.owasp.org/latest/), and [OWASP API Security Top 10:2023](https://api-security.owasp.org/editions/2023/en/0x11-t10/). Reports retain the legacy Top 10:2021 matrix for compatibility and add a current Top 10:2025 matrix. Sentinel's mapping is a practical subset, not an assertion of complete OWASP coverage or certification.
 
 ## Accessibility checks
 
