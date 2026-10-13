@@ -37,7 +37,7 @@ def test_accessibility_snapshot_emits_wcag_mapped_findings():
     findings = evaluate_accessibility_snapshot(snapshot, "https://example.com/")
     by_id = {finding["id"].split("-")[1]: finding for finding in findings}
 
-    assert len(findings) == 10
+    assert len(findings) == 11
     assert "WCAG 2.2 - 1.1.1" in by_id["ALT"]["standard_refs"]
     assert by_id["LINK"]["severity"] == "Medium"
     assert by_id["CONTRAST"]["confidence"] == "Medium"
