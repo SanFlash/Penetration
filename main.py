@@ -33,6 +33,8 @@ from scanners.intrusive import run_intrusive
 from auth.session import login
 from reports.report_generator import generate
 from ui.dashboard import DashboardState, start_dashboard
+from scanners.engine_core import AssessmentEngine, AssessmentPolicy, SafeTransport
+from scanners.core_checks import register_core_checks
 
 
 class ConsoleLoader:
@@ -1003,13 +1005,15 @@ def main():
     parser.add_argument("--target", default=config.DEFAULT_TARGET, help="Base URL of an IN-SCOPE target")
     parser.add_argument(
         "--profile",
-        choices=("auto", "lab", "compatibility", "pentest", "security", "intrusive"),
+        choices=("auto", "lab", "compatibility", "pentest", "security", "core", "intrusive"),
         default="auto",
-        help="auto selects pentest; intrusive is a legacy alias for the non-destructive full pentest; lab remains available for localhost",
+        help="auto selects pentest; core runs the bounded Core Engine; intrusive is a legacy alias; lab remains available for localhost",
     )
     parser.add_argument("--headed", action="store_true", help="show Chrome/Chromium browser windows during UI testing")
     parser.add_argument("--full", "--all-tests", dest="full", action="store_true",
                         help="run the complete pipeline: UI/responsive + functional + security + penetration + info-leak + evidence")
+    parser.add_argument("--core-max-urls", type=int, default=25, help="page budget for the core profile")
+    parser.add_argument("--core-max-probes", type=int, default=120, help="request budget for the core profile")
     parser.add_argument("--slow-mo", type=int, default=0, metavar="MS",
                         help="delay each Playwright action by MS milliseconds (e.g. 500)")
     parser.add_argument("--no-dashboard", action="store_true",
@@ -1046,7 +1050,7 @@ def main():
 
     print(f"[PROFILE] {profile}")
 
-    if profile in {"security", "intrusive"}:
+    if profile in {"security", "core", "intrusive"}:
         if not args.confirm_authorized:
             print("[BLOCKED] Security profile requires --confirm-authorized.")
             print("[INFO] Use only on a system you own or are explicitly authorized to assess.")
@@ -1084,6 +1088,18 @@ def main():
                 target, headed=args.headed, slow_mo=args.slow_mo,
                 dashboard=not args.no_dashboard, authorized=args.confirm_authorized
             )
+
+        if profile == "core":
+            if not args.confirm_authorized:
+                print("[BLOCKED] Core profile requires --confirm-authorized.")
+                return 1
+            from sentinel_scan import main as core_main
+            return core_main([
+                "--target", target,
+                "--confirm-authorized",
+                "--max-urls", str(args.core_max_urls),
+                "--max-probes", str(args.core_max_probes),
+            ])
 
         if profile == "security":
             if args.headed or args.slow_mo or args.no_dashboard:
