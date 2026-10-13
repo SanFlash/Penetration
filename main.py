@@ -370,6 +370,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             "live_evidence": live_evidence[-40:],
             "coverage": {
                 "ui_responsive": phase_status.get("ui_responsive", {}).get("status", "pending"),
+                "accessibility": phase_status.get("accessibility", {}).get("status", "pending"),
                 "functional": phase_status.get("functional_testing", {}).get("status", "pending"),
                 "security": "completed" if phase_status.get("security_headers", {}).get("status") == "completed" and phase_status.get("active_security", {}).get("status") == "completed" else ("running" if "SECURITY" in str(state.snapshot().get("stage", "")) else "pending"),
                 "penetration": "completed" if all(phase_status.get(k, {}).get("status") == "completed" for k in ("deep_security", "api_surface", "aggressive_readonly", "comprehensive_security", "input_stress", "input_validation")) else ("running" if "SECURITY" in str(state.snapshot().get("stage", "")) else "pending"),
