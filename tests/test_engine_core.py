@@ -83,3 +83,14 @@ def test_phase_call_preserves_partial_result_status():
     assert value["assessment_status"] == "partial"
     assert ledger["budgeted"]["status"] == "partial"
     assert "phase budget reached" in ledger["budgeted"]["error"]
+
+
+
+def test_assessment_status_is_partial_when_any_phase_is_partial():
+    from main import _final_assessment_status
+    assert _final_assessment_status({"headers": {"status": "completed"}}) == "COMPLETE"
+    assert _final_assessment_status({
+        "headers": {"status": "completed"},
+        "input_validation": {"status": "partial"},
+    }) == "PARTIAL"
+    assert _final_assessment_status({"evidence": {"status": "timed_out"}}) == "PARTIAL"
