@@ -48,6 +48,9 @@ def test_redaction_removes_secret_assignments():
     assert "not-a-real-password" not in value
     assert "abcd1234" not in value
     assert "abc.def.ghi" not in value
+    extended = redact("AKIA1234567890ABCDEF eyJabcdefghijk.abcdefghijk.abcdefghijk")
+    assert "AKIA1234567890ABCDEF" not in extended
+    assert "eyJabcdefghijk.abcdefghijk.abcdefghijk" not in extended
 
 
 def test_engine_distinguishes_completed_and_failed_checks():
