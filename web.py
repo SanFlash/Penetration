@@ -192,6 +192,16 @@ def status():
         "bundle_modified_at": bundle_mtime,
         "run_started_at": _run_started_at,
     }
+    if core_mode:
+        core_state = str(payload.get("status") or "pending").lower()
+        payload["coverage"] = {
+            "ui_responsive": "not run",
+            "functional": "not run",
+            "security": core_state if core_state in {"complete", "partial", "failed"} else ("running" if payload["running"] else "pending"),
+            "penetration": "core subset",
+            "information_disclosure": "included",
+            "evidence": "captured" if bundle_ready else ("running" if payload["running"] else "pending"),
+        }
     return jsonify(payload)
 
 
@@ -534,9 +544,9 @@ function renderStatus(s) {
   }
   if (reportNotice) {
     if (running) reportNotice.textContent = "Assessment is running. No final download is triggered; the report bundle button appears only when execution ends.";
-    else if (s.status === "FAILED") reportNotice.textContent = "Assessment stopped with an error. A partial report bundle is available below; review failed phases before relying on its coverage.";
-    else if (s.status === "PARTIAL") reportNotice.textContent = "Assessment finished with incomplete phases. Download the partial bundle below; timed-out or failed checks are not considered passed.";
-    else if (s.status === "COMPLETE" && currentBundleReady) reportNotice.textContent = "Assessment complete. The complete report + evidence ZIP is ready and will download automatically after a newly launched run.";
+    else if (s.status === "FAILED") reportNotice.textContent = coreMode ? "Core assessment failed. Review the error and any available partial artifacts." : "Assessment stopped with an error. A partial report bundle is available below; review failed phases before relying on its coverage.";
+    else if (s.status === "PARTIAL") reportNotice.textContent = coreMode ? "Core assessment finished with incomplete phases. Failed or skipped checks are not counted as passes." : "Assessment finished with incomplete phases. Download the partial bundle below; timed-out or failed checks are not considered passed.";
+    else if (s.status === "COMPLETE" && currentBundleReady) reportNotice.textContent = coreMode ? "Core assessment complete. The HTML/JSON report and request-evidence ZIP are ready." : "Assessment complete. The complete report + evidence ZIP is ready and will download automatically after a newly launched run.";
     else if (reports.bundle_ready === true) reportNotice.textContent = "A previous report bundle is available below. It is not treated as the output of the current run unless its timestamp confirms that it was freshly generated.";
     else reportNotice.textContent = "Start an authorized assessment. The final report download will appear after it ends.";
   }
