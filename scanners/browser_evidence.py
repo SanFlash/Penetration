@@ -402,6 +402,16 @@ def capture_target_overview(target: str, headed: bool = False, slow_mo: int = 0)
     }
 
 
+def evidence_finding_key(finding: dict) -> str:
+    """Stable identity shared by capture and report attachment, including legacy findings without ids."""
+    explicit = finding.get("id") or finding.get("rule_id") or finding.get("finding_id")
+    if explicit:
+        return str(explicit)
+    title = str(finding.get("title") or "security")
+    url = str(finding.get("evidence_url") or finding.get("url") or "")
+    return f"{title}@{url}"
+
+
 def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30) -> list[tuple[str, str, dict]]:
     """Select distinct findings, not just distinct URLs, for individual evidence capture."""
     candidates = []
@@ -420,7 +430,7 @@ def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30)
     )
     for finding in ordered_findings:
         url = finding.get("evidence_url") or finding.get("url")
-        finding_id = str(finding.get("id") or finding.get("title") or "security")
+        finding_id = evidence_finding_key(finding)
         key = (url, finding_id)
         if not url or key in seen:
             continue
@@ -526,10 +536,25 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                         capture.get("focus_reason") or "Focused DOM capture failed.",
                     )
                 elif capture.get("mode") == "no-focused-region":
-                    capture["diagnostic_fallback"] = _write_diagnostic_evidence_card(
-                        screenshot, finding, url, status, None,
-                        capture.get("focus_reason") or "No visible DOM failure element exists for this finding.",
-                    )
+                    # A missing focus locator is not a reason to return zero visual evidence.
+                    # Capture the real page viewport and label it as context-only, never as focused proof.
+                    try:
+                        _marker(page, f"CONTEXT ONLY — {finding_id}; target DOM element not isolated")
+                        page.screenshot(path=screenshot, full_page=False, animations="disabled")
+                        capture["mode"] = "viewport-context-no-focus"
+                        capture["capture_scope"] = "viewport-context"
+                        capture["focus_reason"] = capture.get("focus_reason") or "No specific DOM element could be isolated; this is page context, not proof of the finding."
+                        diagnostic_path = os.path.splitext(screenshot)[0] + "_diagnostic.png"
+                        capture["diagnostic_fallback"] = _write_diagnostic_evidence_card(
+                            diagnostic_path, finding, url, status, None, capture["focus_reason"]
+                        )
+                        capture["diagnostic_screenshot"] = diagnostic_path if os.path.isfile(diagnostic_path) else None
+                    except Exception as exc:
+                        capture["viewport_capture_error"] = f"{type(exc).__name__}: {exc}"
+                        capture["diagnostic_fallback"] = _write_diagnostic_evidence_card(
+                            screenshot, finding, url, status, None,
+                            capture.get("focus_reason") or "No visible DOM failure element exists for this finding.",
+                        )
             except Exception as exc:
                 error_type = type(exc).__name__
                 error = f"{type(exc).__name__}: {exc}"

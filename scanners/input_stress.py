@@ -56,7 +56,8 @@ ERROR_MARKERS = (
 
 class InputStressEngine:
     def __init__(self, target: str, max_urls: int = 30, max_probes: int = 180,
-                 rate_rps: float | None = None, timeout: int | None = None):
+                 rate_rps: float | None = None, timeout: int | None = None,
+                 max_runtime_seconds: int = 150):
         self.target = target.rstrip("/")
         parsed = urlparse(self.target)
         if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
@@ -66,6 +67,8 @@ class InputStressEngine:
         self.max_probes = max(1, min(int(max_probes), 400))
         self.rate_rps = max(float(rate_rps or getattr(config, "STRESS_RATE_RPS", 3)), 0.5)
         self.timeout = int(timeout or getattr(config, "STRESS_TIMEOUT", 10))
+        self.max_runtime_seconds = max(15, min(int(max_runtime_seconds), 300))
+        self.deadline = float("inf")
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT, "Accept": "*/*"})
         self.probes = 0
@@ -81,10 +84,16 @@ class InputStressEngine:
         assert_same_target(self.target, url)
         if self.probes >= self.max_probes:
             raise RuntimeError("input-stress probe budget exhausted")
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise requests.Timeout("input-stress phase runtime budget exhausted")
         delay = (1.0 / self.rate_rps) - (time.monotonic() - self.last_request)
         if delay > 0:
-            time.sleep(delay)
-        response = self.session.get(url, timeout=self.timeout, allow_redirects=False, verify=True)
+            time.sleep(min(delay, max(0, remaining)))
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise requests.Timeout("input-stress phase runtime budget exhausted")
+        response = self.session.get(url, timeout=min(self.timeout, max(0.5, remaining)), allow_redirects=False, verify=True)
         self.last_request = time.monotonic()
         self.probes += 1
         return response
@@ -152,11 +161,12 @@ class InputStressEngine:
 
     def run(self, urls):
         started = time.time()
+        self.deadline = time.monotonic() + self.max_runtime_seconds
         candidates = self.candidate_urls(urls)
         print(f"[STRESS] Candidate input points: {len(candidates)}", flush=True)
 
         for index, (base_url, parameter) in enumerate(candidates, 1):
-            if self.probes >= self.max_probes:
+            if self.probes >= self.max_probes or time.monotonic() >= self.deadline:
                 break
             baseline = None
             try:
@@ -166,7 +176,7 @@ class InputStressEngine:
                 continue
 
             for payload_name, payload in PAYLOADS:
-                if self.probes >= self.max_probes:
+                if self.probes >= self.max_probes or time.monotonic() >= self.deadline:
                     break
                 probe_url = self.fuzz_url(base_url, parameter, payload)
                 try:
@@ -230,8 +240,11 @@ class InputStressEngine:
             if index % 5 == 0:
                 print(f"[STRESS] input points {index}/{len(candidates)} | probes={self.probes} | findings={len(self.findings)}", flush=True)
 
+        deadline_exceeded = time.monotonic() >= self.deadline
         result = {
             "schema": "input-stress-1.0",
+            "assessment_status": "partial" if deadline_exceeded else "completed",
+            "stop_reason": f"Phase runtime budget of {self.max_runtime_seconds}s reached." if deadline_exceeded else None,
             "target": self.target,
             "policy": "same-origin GET fuzzing only; no form submission or state-changing requests",
             "kill_switch": "probe budget and rate limit are enforced for every request",
@@ -240,6 +253,7 @@ class InputStressEngine:
                 "max_probes": self.max_probes,
                 "rate_rps": self.rate_rps,
                 "timeout_seconds": self.timeout,
+                "max_runtime_seconds": self.max_runtime_seconds,
                 "payload_classes": len(PAYLOADS),
             },
             "probes": self.probes,
@@ -261,5 +275,7 @@ class InputStressEngine:
         return result
 
 
-def run_input_stress(target: str, urls, max_urls: int = 30, max_probes: int = 180):
-    return InputStressEngine(target, max_urls=max_urls, max_probes=max_probes).run(urls)
+def run_input_stress(target: str, urls, max_urls: int = 30, max_probes: int = 180,
+                     max_runtime_seconds: int = 150):
+    return InputStressEngine(target, max_urls=max_urls, max_probes=max_probes,
+                             max_runtime_seconds=max_runtime_seconds).run(urls)

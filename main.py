@@ -18,7 +18,7 @@ from scanners import headers as header_scanner
 from scanners import xss_probe, sqli_probe, idor_probe
 from scanners.compatibility import run_compatibility
 from scanners.active_security import run_active_security
-from scanners.browser_evidence import capture_security_evidence, capture_target_overview
+from scanners.browser_evidence import capture_security_evidence, capture_target_overview, evidence_finding_key
 from scanners.deep_security import run_deep_security
 from scanners.api_surface import run_api_surface
 from scanners.input_stress import run_input_stress
@@ -239,10 +239,13 @@ def _phase_call(name, phase_status, fn):
     started = time.monotonic()
     try:
         value = fn()
+        result_status = str(value.get("assessment_status", "completed")).lower() if isinstance(value, dict) else "completed"
         phase_status[name] = {
-            "status": "completed",
+            "status": "partial" if result_status == "partial" else "completed",
             "duration_seconds": round(time.monotonic() - started, 2),
         }
+        if result_status == "partial" and isinstance(value, dict):
+            phase_status[name]["error"] = str(value.get("stop_reason") or "Phase stopped at its configured runtime budget.")
         return value
     except Exception as exc:
         phase_status[name] = {
@@ -611,8 +614,8 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         # on content-heavy sites. Allow a configurable, bounded window while still
         # publishing explicit timeout status rather than pretending tests passed.
         parallel_timeout = max(
-            240,
-            min(int(os.getenv("SENTINEL_SECURITY_PHASE_TIMEOUT", "300")), 360),
+            300,
+            min(int(os.getenv("SENTINEL_SECURITY_PHASE_TIMEOUT", "420")), 480),
         )
         while pending:
             done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
@@ -627,23 +630,6 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 log={"time": datetime.now().strftime("%H:%M:%S"), "level": "ok",
                      "message": f"Deep security heartbeat: {completed_count}/{len(futures)} engines complete; {len(pending)} pending."},
             )
-            if elapsed_parallel >= parallel_timeout:
-                for future in list(pending):
-                    name = futures[future]
-                    future.cancel()
-                    phase_status[name] = {
-                        "status": "timed_out",
-                        "duration_seconds": round(elapsed_parallel, 2),
-                        "error": f"PhaseTimeout: parallel security engine exceeded {parallel_timeout}s wall-clock budget.",
-                    }
-                state.update(
-                    stage="PARALLEL SECURITY TIMEOUT",
-                    detail=f"Stopped waiting after {parallel_timeout}s. Completed engines were preserved; timed-out engines are marked in the report.",
-                    progress=74,
-                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "warn",
-                         "message": f"Parallel security wall-clock budget {parallel_timeout}s reached; preserving completed results."},
-                )
-                break
             for future in done:
                 name = futures[future]
                 try:
@@ -674,6 +660,23 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                     detail=f"{name.replace('_', ' ').title()} finished ({completed_count}/{len(futures)})",
                     progress=min(74, 52 + int((completed_count / max(len(futures), 1)) * 20)),
                 )
+            if elapsed_parallel >= parallel_timeout:
+                for future in list(pending):
+                    name = futures[future]
+                    future.cancel()
+                    phase_status[name] = {
+                        "status": "timed_out",
+                        "duration_seconds": round(elapsed_parallel, 2),
+                        "error": f"PhaseTimeout: parallel security engine exceeded {parallel_timeout}s wall-clock budget.",
+                    }
+                state.update(
+                    stage="PARALLEL SECURITY TIMEOUT",
+                    detail=f"Stopped waiting after {parallel_timeout}s. Completed engines were preserved; timed-out engines are marked in the report.",
+                    progress=74,
+                    log={"time": datetime.now().strftime("%H:%M:%S"), "level": "warn",
+                         "message": f"Parallel security wall-clock budget {parallel_timeout}s reached; preserving completed results."},
+                )
+                break
         # Never wait forever on a scanner thread. A timed-out scanner is
         # isolated and its completed findings remain in the canonical report.
         pool.shutdown(wait=False, cancel_futures=True)
@@ -750,9 +753,9 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 evidence_findings,
                 headed=headed,
                 slow_mo=slow_mo,
-                max_items=30,
-                max_seconds=240,
-                navigation_timeout_ms=10000,
+                max_items=config.EVIDENCE_MAX_ITEMS,
+                max_seconds=config.EVIDENCE_MAX_SECONDS,
+                navigation_timeout_ms=config.EVIDENCE_NAVIGATION_TIMEOUT_MS,
                 progress_callback=_evidence_progress,
             ),
         )
@@ -764,7 +767,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             # evidence table while the finding itself still said "no screenshot".
             by_id = {str(item.get("finding_id")): item for item in security_evidence if item.get("finding_id")}
             for finding in all_findings:
-                item = by_id.get(str(finding.get("id")))
+                item = by_id.get(evidence_finding_key(finding))
                 if not item or not item.get("screenshot"):
                     continue
                 finding["screenshot"] = item["screenshot"]
