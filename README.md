@@ -7,6 +7,8 @@
 > **Attribution notice:** This repository and its original framework code, documentation, reporting interface, and project-specific implementation are attributed to Satyendra Kumar Namdeo. Do not remove or misrepresent this attribution. This notice does not claim ownership of third-party libraries, trademarks, or externally sourced material, which remain subject to their respective owners and terms.
 
 
+**Engineering method:** [Loop Engineering and OWASP/WCAG coverage map](docs/LOOP_ENGINEERING_AND_COVERAGE.md). Automated accessibility results are heuristic checks, not WCAG certification.
+
 A Python + Playwright web-application assessment framework for **owned or explicitly authorized targets**. It combines scope enforcement, reconnaissance, Chrome-only responsive evidence, passive security checks, bounded active checks, evidence capture, a local visual console, and interactive reporting.
 
 > **Authorization:** Only test systems you own or have explicit written permission to assess. The configured AM Webtech target is enabled because the project owner has stated that it is authorized for assessment.
