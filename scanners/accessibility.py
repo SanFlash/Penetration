@@ -123,9 +123,9 @@ def evaluate_accessibility_snapshot(snapshot: dict[str, Any] | None, url: str) -
             f"(fg={item.get('foreground')}, bg={item.get('background')})"
             for item in contrast[:5] if isinstance(item, dict)
         )
-        add("CONTRAST", "Potential low-contrast text detected", len(contrast),
+        add("CONTRAST", "Potential low-contrast text samples detected", len(contrast),
             "Medium", "WCAG 2.2 - 1.4.3",
-            f"Potential contrast failures: {len(contrast)}. Samples: {examples or 'See page snapshot.'}",
+            f"Potential low-contrast samples (sampling cap 12): {len(contrast)}. Samples: {examples or 'See page snapshot.'}",
             "Computed foreground/background colors suggest text may fall below the WCAG contrast threshold. Transparent layers, images, gradients, and browser rendering can make this estimate incomplete.",
             "Text may be difficult to read for users with low vision or in challenging lighting.",
             "Measure the actual rendered colors, meet 4.5:1 for normal text and 3:1 for large text, and verify with a dedicated accessibility tool.",
