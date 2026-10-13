@@ -451,6 +451,51 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             ),
         })
 
+    # Current OWASP Top 10:2025 mapping. The legacy 2021 matrix remains in
+    # the JSON for backwards compatibility with existing report consumers.
+    owasp_2025_map = [
+        ("A01:2025", "Broken Access Control", ["api_surface", "aggressive_readonly", "input_validation"]),
+        ("A02:2025", "Security Misconfiguration", ["security_headers", "active_security", "deep_security", "api_surface"]),
+        ("A03:2025", "Software Supply Chain Failures", []),
+        ("A04:2025", "Cryptographic Failures", ["security_headers", "active_security"]),
+        ("A05:2025", "Injection", ["deep_security", "input_validation", "input_stress"]),
+        ("A06:2025", "Insecure Design", ["functional_testing", "input_validation", "attack_surface_correlation"]),
+        ("A07:2025", "Authentication Failures", ["active_security", "input_validation"]),
+        ("A08:2025", "Software or Data Integrity Failures", ["deep_security", "information_disclosure"]),
+        ("A09:2025", "Security Logging & Alerting Failures", []),
+        ("A10:2025", "Mishandling of Exceptional Conditions", ["information_disclosure", "deep_security", "functional_testing"]),
+    ]
+    owasp_top10_2025_coverage = []
+    for code, name, phase_names in owasp_2025_map:
+        phase_rows = [
+            {"name": phase_name,
+             "status": str((phase_status.get(phase_name) or {}).get("status", "not_run")),
+             "checks": (phase_status.get(phase_name) or {}).get("checks")}
+            for phase_name in phase_names
+        ]
+        states = [row["status"].lower() for row in phase_rows]
+        if not phase_names:
+            status = "manual_review"
+        elif any(state in {"failed", "timed_out", "blocked", "skipped"} for state in states):
+            status = "partial"
+        elif all(state == "completed" for state in states):
+            status = "engines_completed"
+        elif any(state == "completed" for state in states):
+            status = "partial"
+        else:
+            status = "not_run"
+        limitation = (
+            "No mapped black-box engine can establish this category; source/SBOM, build-pipeline, and server-side review are required."
+            if code == "A03:2025" else
+            "Manual/server-side validation is required; external scanning cannot prove that logs are complete, protected, monitored, or alerted."
+            if code == "A09:2025" else
+            "Mapped engine execution is not proof that the category is secure. Validate findings and perform authenticated/manual tests where applicable."
+        )
+        owasp_top10_2025_coverage.append({
+            "code": code, "name": name, "status": status,
+            "phases": phase_rows, "limitation": limitation,
+        })
+
     report = {
         "schema_version": "3.0",
         "author": "Satyendra Kumar Namdeo",
@@ -470,6 +515,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "total_findings": len(findings_sorted),
         "coverage_matrix": coverage_matrix,
         "owasp_coverage": owasp_coverage,
+        "owasp_top10_2025_coverage": owasp_top10_2025_coverage,
         "framework_coverage": build_coverage_registry(phase_status),
         "severity_summary": summary,
         "category_summary": dict(categories),
@@ -832,6 +878,19 @@ def _render_html(report: dict) -> str:
             + details + "<p>" + html.escape(item["limitation"]) + "</p></td></tr>"
         )
     owasp_coverage_html = "".join(owasp_rows) or "<tr><td colspan='4'>No OWASP mapping available.</td></tr>"
+    owasp_2025_rows = []
+    for item in report.get("owasp_top10_2025_coverage", []):
+        details = ", ".join(
+            html.escape(str(p["name"])) + ": " + html.escape(str(p["status"]))
+            for p in item.get("phases", [])
+        ) or "Manual review only"
+        owasp_2025_rows.append(
+            "<tr><td>" + html.escape(str(item["code"])) + "</td><td>" + html.escape(str(item["name"])) + "</td>"
+            + "<td class='" + owasp_state_class.get(str(item["status"]), "warn") + "'>"
+            + html.escape(str(item["status"]).replace("_", " ").upper()) + "</td><td>"
+            + details + "<p>" + html.escape(str(item["limitation"])) + "</p></td></tr>"
+        )
+    owasp_2025_coverage_html = "".join(owasp_2025_rows) or "<tr><td colspan='4'>No OWASP Top 10:2025 mapping available.</td></tr>"
     registry_state_class = {
         "engines_completed": "warn", "partial": "warn", "partial_or_failed": "fail",
         "not_run": "fail", "manual_review": "warn",
@@ -952,7 +1011,8 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 </div></div>
 <div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
 <div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
-<div class="panel"><div class="section-title">OWASP Top 10:2021 — engine coverage</div><p class="sub">This matrix shows which automated engines ran for each OWASP category. “Engines completed” is not a declaration that the category is secure; review individual findings and perform authenticated/manual tests where required.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_COVERAGE_HTML__</tbody></table></div></div>
+<div class="panel"><div class="section-title">OWASP Top 10:2025 — current engine coverage</div><p class="sub">The current OWASP Top 10 mapping is shown separately from the retained 2021 legacy mapping. “Engines completed” means mapped checks ran, not that a category is secure. Supply-chain and logging/alerting categories remain manual review.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_2025_COVERAGE_HTML__</tbody></table></div></div>
+<div class="panel"><div class="section-title">OWASP Top 10:2021 — legacy engine coverage</div><p class="sub">This matrix shows which automated engines ran for each OWASP category. “Engines completed” is not a declaration that the category is secure; review individual findings and perform authenticated/manual tests where required.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_COVERAGE_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">WSTG and API coverage registry</div><p class="sub">Coverage is resolved from the actual phase ledger. Manual-only, unavailable, blocked, timed-out, and not-run categories remain visible and are never counted as passing.</p><div class="matrix"><table><thead><tr><th>Test ID</th><th>Standard</th><th>Area</th><th>Execution status</th><th>Phase results and limitations</th></tr></thead><tbody>__FRAMEWORK_COVERAGE_HTML__</tbody></table></div></div>
 </section>
 
@@ -1082,6 +1142,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__ATTACK_SURFACE__": attack_html,
         "__COVERAGE_MATRIX_HTML__": coverage_matrix_html_text,
         "__OWASP_COVERAGE_HTML__": owasp_coverage_html,
+        "__OWASP_2025_COVERAGE_HTML__": owasp_2025_coverage_html,
         "__FRAMEWORK_COVERAGE_HTML__": framework_coverage_html,
         "__URLS__": str(browser["urls"]),
         "__VIEWPORTS__": str(browser["viewports"]),
