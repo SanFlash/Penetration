@@ -56,6 +56,7 @@ def test_api_security_top10_categories_are_explicit_and_not_overclaimed():
 
     assert api_ids.issubset(by_id)
     assert all(by_id[code]["standard"] == "OWASP API Security Top 10:2023" for code in api_ids)
-    assert all("manual" in by_id[code]["manual"].lower() or by_id[code]["manual"] for code in api_ids)
+    assert all(by_id[code]["manual"].strip() for code in api_ids)
+    assert "workflow" in by_id["API-BUSINESS-FLOW"]["manual"].lower()
     assert by_id["API-BUSINESS-FLOW"]["status"] == "not_run"
 
