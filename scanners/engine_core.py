@@ -220,11 +220,29 @@ class FindingRegistry:
 
 class AssessmentEngine:
     """Runs independent checks and preserves failure/skip status honestly."""
-    def __init__(self, policy: AssessmentPolicy, transport: SafeTransport | None = None):
+    def __init__(self, policy: AssessmentPolicy, transport: SafeTransport | None = None,
+                 progress_callback: Callable[[dict[str, Any]], None] | None = None):
         self.policy = policy
         self.transport = transport or SafeTransport(policy)
+        self.progress_callback = progress_callback
         self._checks: list[tuple[str, Callable[[SafeTransport], dict[str, Any]]]] = []
         self.registry = FindingRegistry()
+
+    def _emit_progress(self, name: str, status: str, outcomes: list[CheckOutcome]) -> None:
+        if not self.progress_callback:
+            return
+        try:
+            self.progress_callback({
+                "name": name,
+                "status": status,
+                "completed": len(outcomes),
+                "total": len(self._checks),
+                "request_count": self.transport.budget.probes,
+                "finding_count": len(self.registry.all()),
+            })
+        except Exception:
+            # Telemetry is best-effort and must never abort the assessment.
+            pass
 
     def register(self, name: str, check: Callable[[SafeTransport], dict[str, Any]]) -> None:
         if not name.strip() or any(existing == name for existing, _ in self._checks):
@@ -251,14 +269,17 @@ class AssessmentEngine:
                     findings=[dict(f) for f in findings], errors=errors,
                     duration_ms=round((time.monotonic() - started) * 1000),
                 ))
+                self._emit_progress(name, status, outcomes)
             except BudgetExceeded as exc:
                 outcomes.append(CheckOutcome(name, "partial", errors=[str(exc)],
                                              duration_ms=round((time.monotonic() - started) * 1000)))
+                self._emit_progress(name, "partial", outcomes)
                 # No further check can meaningfully run after the shared budget is exhausted.
                 break
             except Exception as exc:
                 outcomes.append(CheckOutcome(name, "error", errors=[f"{type(exc).__name__}: {exc}"],
                                              duration_ms=round((time.monotonic() - started) * 1000)))
+                self._emit_progress(name, "error", outcomes)
         checks = sum(o.checks for o in outcomes)
         statuses = [o.status for o in outcomes]
         return {
