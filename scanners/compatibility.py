@@ -174,6 +174,10 @@ def _page_findings(url, browser_name, viewport_name, data):
             finding["screenshot"] = evidence_path("alt")
         elif finding.get("id", "").startswith("A11Y-CONTROL-NAME-"):
             finding["screenshot"] = evidence_path("control")
+        elif finding.get("id", "").startswith("A11Y-LINK-NAME-"):
+            finding["screenshot"] = evidence_path("link")
+        elif finding.get("id", "").startswith("A11Y-BUTTON-NAME-"):
+            finding["screenshot"] = evidence_path("button")
         elif finding.get("id", "").startswith("A11Y-CONTRAST-"):
             finding["screenshot"] = evidence_path("contrast")
         findings.append(finding)
@@ -231,6 +235,19 @@ def _focus_failure_element(page, failure_types):
                     score += 1200;
                 }
 
+                if (failureTypes.includes('link')) {
+                    if (tag !== 'a' || !el.hasAttribute('href')) return;
+                    if ((el.innerText || el.textContent || '').trim() || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.title || el.querySelector('img[alt]:not([alt=""])')) return;
+                    score += 1300;
+                }
+
+                if (failureTypes.includes('button')) {
+                    if (!['button','input'].includes(tag)) return;
+                    if (tag === 'input' && !['button','submit','reset'].includes(el.type)) return;
+                    if ((el.innerText || el.textContent || '').trim() || el.value || el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.title) return;
+                    score += 1300;
+                }
+
                 if (failureTypes.includes('control')) {
                     if (!['input','select','textarea','button'].includes(tag)) return;
                     if (tag === 'input' && ['hidden','submit','button','reset','image'].includes(el.type)) return;
@@ -282,6 +299,12 @@ def _focus_failure_element(page, failure_types):
                 document.querySelectorAll('[data-sentinel-contrast="1"]').forEach(el => add(el, 'low-contrast', 1200));
             }
 
+            if (failureTypes.includes('link')) {
+                document.querySelectorAll('a[href]').forEach(el => add(el, 'unlabeled-link', 1300));
+            }
+            if (failureTypes.includes('button')) {
+                document.querySelectorAll('button,input[type="button"],input[type="submit"],input[type="reset"]').forEach(el => add(el, 'unlabeled-button', 1300));
+            }
             if (failureTypes.includes('control')) {
                 document.querySelectorAll('input,select,textarea,button').forEach(el => add(el, 'unlabeled-control', 1000));
             }
@@ -408,6 +431,10 @@ def _failure_types_for_case(data):
     if data.get("unlabeled_controls"):
         kinds.append("control")
     accessibility = data.get("accessibility") or {}
+    if accessibility.get("unlabeled_links"):
+        kinds.append("link")
+    if accessibility.get("unlabeled_buttons"):
+        kinds.append("button")
     if accessibility.get("low_contrast_samples"):
         kinds.append("contrast")
     if data.get("status") is not None and data["status"] >= 400:
