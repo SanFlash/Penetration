@@ -163,12 +163,28 @@ def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 
         banner("STEP 4 — Interactive report generation")
         loader.set("Building interactive analytics report")
         state.update(stage="REPORT GENERATION", detail="Aggregating findings, coverage and evidence.")
+        browser_cases = result.get("results", [])
+        accessibility_cases = [
+            row for row in browser_cases if isinstance(row.get("accessibility"), dict)
+        ]
         metadata = {
             "profile": "compatibility",
             "headed": headed,
             "slow_mo_ms": slow_mo,
             "dashboard_url": dashboard_url,
             "compatibility": result,
+            "phase_status": {
+                "ui_responsive": {
+                    "status": "completed" if browser_cases else "partial",
+                    "checks": len(browser_cases),
+                },
+                "accessibility": {
+                    "status": "completed" if accessibility_cases else "partial",
+                    "checks": len(accessibility_cases) * 11,
+                    "browser_cases": len(accessibility_cases),
+                    "note": "WCAG 2.2 automated heuristics only; manual conformance is not implied.",
+                },
+            },
         }
         report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
         print(f"Findings JSON: {report['json_path']}")
