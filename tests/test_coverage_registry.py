@@ -31,3 +31,17 @@ def test_coverage_registry_preserves_per_phase_execution_status():
     assert [phase["status"] for phase in config["phase_results"]] == ["completed", "completed", "not_run"]
     assert config["phase_results"][0]["checks"] == 4
     assert "incomplete" in config["execution_note"]
+
+def test_wcag_coverage_depends_on_accessibility_phase_execution():
+    not_run = {row["id"]: row for row in build_coverage_registry({})}
+    completed = {
+        row["id"]: row for row in build_coverage_registry({
+            "accessibility": {"status": "completed", "checks": 22, "browser_cases": 2}
+        })
+    }
+
+    assert not_run["WCAG-2.2-AA"]["status"] == "not_run"
+    assert completed["WCAG-2.2-AA"]["status"] == "engines_completed"
+    assert "manual" in completed["WCAG-2.2-AA"]["manual"].lower()
+    assert "not proof" in completed["WCAG-2.2-AA"]["execution_note"]
+
