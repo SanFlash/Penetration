@@ -39,6 +39,7 @@ def evaluate_accessibility_snapshot(snapshot: dict[str, Any] | None, url: str) -
             "remediation": remediation,
             "standard": "WCAG 2.2",
             "standard_refs": [wcag],
+            "owasp": wcag,
             "automated_check": True,
             "manual_validation_required": True,
         })
