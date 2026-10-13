@@ -128,8 +128,16 @@ def test_report_includes_owasp_top10_engine_coverage_and_limitations(tmp_path):
 
     html_report = Path(result["html_path"]).read_text(encoding="utf-8")
     assert "OWASP Top 10:2021" in html_report
+    assert "OWASP Top 10:2025" in html_report
     assert "Mapped engines and limitations" in html_report
     assert "NOT RUN" in html_report
+
+    current = {row["code"]: row for row in data["owasp_top10_2025_coverage"]}
+    assert len(current) == 10
+    assert current["A01:2025"]["status"] == "partial"
+    assert current["A02:2025"]["status"] == "engines_completed"
+    assert current["A03:2025"]["status"] == "manual_review"
+    assert current["A09:2025"]["status"] == "manual_review"
 
 
 def test_report_exposes_wstg_and_api_coverage_registry(tmp_path):
