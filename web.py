@@ -54,11 +54,24 @@ def _worker(target: str, profile: str = "pentest"):
     try:
         if profile == "core":
             from sentinel_scan import main as core_main
+            def core_progress(event):
+                completed = int(event.get("completed", 0))
+                total = max(int(event.get("total", 1)), 1)
+                _state.update(
+                    status="RUNNING",
+                    stage="CORE: " + str(event.get("name", "ASSESSMENT")).upper(),
+                    detail=f"Phase {completed}/{total} — {event.get('status', 'running')}; requests {event.get('request_count', 0)}; findings {event.get('finding_count', 0)}.",
+                    progress=min(95, 5 + int(90 * completed / total)),
+                    checks=int(event.get("request_count", 0)),
+                    findings=int(event.get("finding_count", 0)),
+                    log={"level": "ok" if event.get("status") == "completed" else "warn",
+                         "message": f"Core phase {event.get('name')}: {event.get('status')}"},
+                )
             rc = core_main([
                 "--target", target, "--confirm-authorized",
                 "--max-urls", "25", "--max-probes", "120",
                 "--max-runtime", "180", "--out", config.REPORT_DIR,
-            ])
+            ], progress_callback=core_progress)
         else:
             rc = run_pentest_profile(
                 target,
@@ -74,6 +87,13 @@ def _worker(target: str, profile: str = "pentest"):
                 status="COMPLETE",
                 stage="CORE SCAN COMPLETE" if profile == "core" else "PENTEST COMPLETE",
                 detail=("Core security report and evidence bundle are ready." if profile == "core" else "Assessment and evidence are ready."),
+                progress=100,
+            )
+        elif profile == "core" and rc == 1:
+            _state.update(
+                status="PARTIAL",
+                stage="CORE SCAN PARTIAL",
+                detail="The core scan finished, but one or more phases were incomplete. Review the phase status in the report.",
                 progress=100,
             )
         else:
@@ -464,6 +484,12 @@ function renderStatus(s) {
   const downloadBundle = el("downloadBundle");
   const reports = s.reports || {};
   const coreMode = reports.profile === "core";
+  const findingsJsonLink = el("findingsJsonLink");
+  if (findingsJsonLink) findingsJsonLink.href = (reports.findings_json || "/reports/findings.json") + "?ts=" + Date.now();
+  const completionTitle = document.querySelector("#completionDownloads strong");
+  const completionText = document.querySelector("#completionDownloads p");
+  if (coreMode && completionTitle) completionTitle.textContent = "CORE ASSESSMENT FINISHED — REPORTS READY";
+  if (coreMode && completionText) completionText.textContent = "The core bundle includes HTML/JSON results and captured request evidence.";
   const linkIds = ["reportLink", "downloadBundle", "findingsJsonLink", "portableLink", "manifestLink", "sarifLink", "pdfLink", "xlsxLink"];
   linkIds.forEach(function(id) {
     const node = el(id);
@@ -483,11 +509,15 @@ function renderStatus(s) {
   if (downloadBundle) {
     downloadBundle.href = (reports.bundle || "/reports/sentinel_full_report_bundle.zip") + "?download=1&ts=" + Date.now();
     downloadBundle.setAttribute("download", reports.bundle_filename || "sentinel_full_report_bundle.zip");
-    downloadBundle.textContent = currentBundleReady && s.status === "COMPLETE"
-      ? "⬇ DOWNLOAD COMPLETE REPORT + ALL EVIDENCE (ZIP)"
-      : (currentBundleReady
-        ? "⬇ DOWNLOAD PARTIAL REPORT + AVAILABLE EVIDENCE (ZIP)"
-        : (bundleReady ? "⬇ DOWNLOAD PREVIOUS REPORT + EVIDENCE (ZIP)" : "REPORT BUNDLE NOT READY"));
+    downloadBundle.textContent = coreMode
+      ? (currentBundleReady && s.status === "COMPLETE"
+        ? "⬇ DOWNLOAD CORE REPORT + EVIDENCE (ZIP)"
+        : (currentBundleReady ? "⬇ DOWNLOAD PARTIAL CORE REPORT (ZIP)" : "CORE REPORT BUNDLE NOT READY"))
+      : (currentBundleReady && s.status === "COMPLETE"
+        ? "⬇ DOWNLOAD COMPLETE REPORT + ALL EVIDENCE (ZIP)"
+        : (currentBundleReady
+          ? "⬇ DOWNLOAD PARTIAL REPORT + AVAILABLE EVIDENCE (ZIP)"
+          : (bundleReady ? "⬇ DOWNLOAD PREVIOUS REPORT + EVIDENCE (ZIP)" : "REPORT BUNDLE NOT READY")));
     downloadBundle.setAttribute("aria-disabled", currentBundleReady ? "false" : "true");
   }
   // Automatically start a single ZIP download for the current assessment after
