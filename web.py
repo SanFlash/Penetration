@@ -157,8 +157,38 @@ def _coverage_payload(report: dict | None) -> dict:
     report = report or {}
     metadata = report.get("metadata") or {}
     framework = report.get("framework_coverage") or build_coverage_registry(metadata.get("phase_status") or {})
-    owasp_2025 = report.get("owasp_top10_2025_coverage") or []
-    owasp_2021 = report.get("owasp_coverage") or []
+    owasp_2025 = report.get("owasp_top10_2025_coverage") or [
+        {"code": code, "name": name, "status": "not_run", "phases": [],
+         "limitation": "No assessment report is available yet; this category has not been assessed."}
+        for code, name in [
+            ("A01:2025", "Broken Access Control"),
+            ("A02:2025", "Security Misconfiguration"),
+            ("A03:2025", "Software Supply Chain Failures"),
+            ("A04:2025", "Cryptographic Failures"),
+            ("A05:2025", "Injection"),
+            ("A06:2025", "Insecure Design"),
+            ("A07:2025", "Authentication Failures"),
+            ("A08:2025", "Software or Data Integrity Failures"),
+            ("A09:2025", "Security Logging & Alerting Failures"),
+            ("A10:2025", "Mishandling of Exceptional Conditions"),
+        ]
+    ]
+    owasp_2021 = report.get("owasp_coverage") or [
+        {"code": code, "name": name, "status": "not_run", "phases": [],
+         "limitation": "No assessment report is available yet; this category has not been assessed."}
+        for code, name in [
+            ("A01:2021", "Broken Access Control"),
+            ("A02:2021", "Cryptographic Failures"),
+            ("A03:2021", "Injection"),
+            ("A04:2021", "Insecure Design"),
+            ("A05:2021", "Security Misconfiguration"),
+            ("A06:2021", "Vulnerable and Outdated Components"),
+            ("A07:2021", "Identification and Authentication Failures"),
+            ("A08:2021", "Software and Data Integrity Failures"),
+            ("A09:2021", "Security Logging and Monitoring Failures"),
+            ("A10:2021", "Server-Side Request Forgery"),
+        ]
+    ]
 
     wstg = [row for row in framework if "OWASP WSTG" in str(row.get("standard", ""))]
     api = [row for row in framework if str(row.get("id", "")).startswith("API-")]
@@ -707,7 +737,11 @@ function coverageStatusClass(status) {
 }
 function coveragePhaseRows(item) {
   const phases = Array.isArray(item.phase_results) ? item.phase_results : (Array.isArray(item.phases) ? item.phases : []);
-  if (!phases.length) return '<p><b>Mapped phases:</b> No automated phase mapped. Manual review is required.</p>';
+  if (!phases.length) {
+    return String(item.status || "").toLowerCase() === "manual_review"
+      ? '<p><b>Mapped phases:</b> No automated phase is mapped; manual review is required.</p>'
+      : '<p><b>Mapped phases:</b> No per-phase execution data is available for this category yet. Review the assessment report before drawing conclusions.</p>';
+  }
   return '<p><b>Mapped phase execution:</b></p><div>' + phases.map(function(phase) {
     const name = phase.name || phase.code || "phase";
     const status = phase.status || "not_run";
