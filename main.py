@@ -961,7 +961,11 @@ def run_focused_profile(target: str, profile: str, state_override=None):
         checks = result.get("checks", [])
         probes = result.get("probes", summary.get(count_key, len(checks) if isinstance(checks, list) else 0))
         phase_status[name] = {
-            "status": "partial" if result.get("stop_reason") == "time_budget" or result.get("completed") is False else "completed",
+            "status": (
+                "partial" if result.get("stop_reason") == "time_budget" or result.get("completed") is False
+                else "not_run" if int(probes or 0) == 0
+                else "completed"
+            ),
             "checks": int(probes or 0),
             "findings": len(result.get("findings", [])),
             "stop_reason": result.get("stop_reason"),
@@ -989,7 +993,7 @@ def run_focused_profile(target: str, profile: str, state_override=None):
     update("ROUTES DISCOVERED", f"Discovered {len(urls)} same-origin URL candidates. Running {profile} checks.", 25)
 
     if profile == "crawler":
-        phase_status["api_surface"] = {"status": "not_run", "checks": 0, "findings": 0}
+        pass
     elif profile == "api":
         api_result = record("api_surface", run_api_surface(target, max_probes=min(config.SECURITY_MAX_PROBES, 160), route_discovery_result=route_result))
         update("API SURFACE", f"Reviewed API surface with {api_result.get('probes', 0)} probes.", 75)
@@ -1023,7 +1027,7 @@ def run_focused_profile(target: str, profile: str, state_override=None):
     if route_result.get("completed") is False:
         phase_status["route_discovery"]["status"] = "partial"
     statuses = [row.get("status") for row in phase_status.values()]
-    overall = "PARTIAL" if any(status in {"partial", "failed", "timed_out", "blocked"} for status in statuses) else "COMPLETE"
+    overall = "PARTIAL" if any(status in {"partial", "failed", "timed_out", "blocked", "not_run"} for status in statuses) else "COMPLETE"
     metadata = {
         "profile": profile,
         "status": overall,
