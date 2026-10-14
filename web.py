@@ -16,7 +16,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 import config
-from main import run_pentest_profile
+from main import run_pentest_profile, run_security_profile, run_compatibility_profile
 from ui.dashboard import DashboardState
 from scanners.coverage_registry import build_coverage_registry
 
@@ -74,6 +74,16 @@ def _worker(target: str, profile: str = "pentest"):
                 "--max-urls", "25", "--max-probes", "120",
                 "--max-runtime", "180", "--out", config.REPORT_DIR,
             ], progress_callback=core_progress)
+        elif profile == "security":
+            rc = run_security_profile(target, state_override=_state)
+        elif profile == "uiux":
+            rc = run_compatibility_profile(target, headed=False, slow_mo=0, dashboard=False, state_override=_state)
+        elif profile in {"functional", "input", "disclosure", "crawler", "api"}:
+            from main import run_focused_profile
+            rc = run_focused_profile(target, profile, state_override=_state)
+        elif profile == "zap":
+            from scanners.zap_baseline import run_zap_baseline
+            rc = run_zap_baseline(target, state=_state)
         else:
             rc = run_pentest_profile(
                 target,
@@ -87,15 +97,15 @@ def _worker(target: str, profile: str = "pentest"):
         if rc == 0:
             _state.update(
                 status="COMPLETE",
-                stage="CORE SCAN COMPLETE" if profile == "core" else "PENTEST COMPLETE",
-                detail=("Core security report and evidence bundle are ready." if profile == "core" else "Assessment and evidence are ready."),
+                stage=(profile.upper() + " ASSESSMENT COMPLETE"),
+                detail=("Core security report and evidence bundle are ready." if profile == "core" else "Assessment report and available evidence are ready."),
                 progress=100,
             )
-        elif profile == "core" and rc == 1:
+        elif rc == 1 and profile in {"core", "functional", "input", "disclosure", "crawler", "api", "zap"}:
             _state.update(
                 status="PARTIAL",
-                stage="CORE SCAN PARTIAL",
-                detail="The core scan finished, but one or more phases were incomplete. Review the phase status in the report.",
+                stage=(profile.upper() + " ASSESSMENT PARTIAL"),
+                detail="The selected profile finished with incomplete coverage or a missing integration prerequisite. Review phase statuses and the report.",
                 progress=100,
             )
         else:
@@ -318,11 +328,13 @@ def run():
     target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
     authorized = bool(body.get("authorized", False))
     profile = str(body.get("profile") or "pentest").strip().lower()
-    if profile not in {"pentest", "core"}:
+    allowed_profiles = {"pentest", "core", "security", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"}
+    if profile not in allowed_profiles:
         _run_lock.release()
         return jsonify({
             "error": "invalid_profile",
-            "message": "Profile must be 'pentest' or 'core'.",
+            "message": "Choose a supported assessment profile from the console.",
+            "allowed_profiles": sorted(allowed_profiles),
         }), 400
 
     if not target.startswith(("http://", "https://")):
@@ -427,7 +439,7 @@ body{background:#0b1120;color:var(--text);font-family:Inter,ui-sans-serif,system
 .pad{padding:22px}
 h2{font-size:18px;letter-spacing:-.02em}h3{font-size:12px;color:#a7b7ce;letter-spacing:.09em}
 .muted,.detail{color:#91a2ba}
-input{background:#0b1220;border:1px solid #34435a;border-radius:9px;padding:13px 14px;outline:none}
+input,select{background:#0b1220;border:1px solid #34435a;border-radius:9px;padding:13px 14px;outline:none;color:var(--text);width:100%;min-width:0}
 input:focus{border-color:#76a9ff;box-shadow:0 0 0 3px #76a9ff22}
 button{background:#4bd5a2;color:#06261d;border-radius:9px;font-size:13px;letter-spacing:.01em;box-shadow:none;transition:filter .15s,transform .15s}
 button:hover{filter:brightness(1.08);transform:translateY(-1px)}
@@ -478,7 +490,19 @@ hr{border-top-color:#27364d!important}
 <aside class="panel pad"><h3>Start Assessment</h3>
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
 <label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
-<label for="profile">Assessment profile</label><select id="profile"><option value="pentest">Full Pentest — browser, security and evidence pipeline</option><option value="core">Core Security — bounded read-only checks and evidence bundle</option></select>
+<label for="profile">Assessment profile</label><select id="profile">
+<option value="pentest">Full Pentest — complete multi-engine pipeline</option>
+<option value="security">Security & OWASP — passive and bounded active security checks</option>
+<option value="uiux">UI/UX, Responsive & Accessibility — browser checks and screenshots</option>
+<option value="functional">Functional & Navigation — read-only links and page smoke checks</option>
+<option value="input">Input Validation & Stress — bounded query/input probes</option>
+<option value="api">API & Attack Surface — API specifications and route inventory</option>
+<option value="disclosure">Information Disclosure — exposed files, diagnostics and error leakage</option>
+<option value="crawler">Web Crawler & Recon — same-origin routes and JavaScript/API candidates</option>
+<option value="zap">OWASP ZAP Baseline — requires configured external ZAP API</option>
+<option value="core">Core Security — quick bounded security subset</option>
+</select>
+<div id="profileDescription" class="muted" style="font-size:12px;margin-top:8px">Runs all supported phases. Review each phase ledger; the report will show incomplete or manual-only coverage explicitly.</div>
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
@@ -520,6 +544,38 @@ function setButton(running, label) {
   const btn = el("startBtn");
   btn.disabled = !!running;
   btn.textContent = label || (running ? "RUNNING..." : "START PENTEST");
+}
+
+const PROFILE_DESCRIPTIONS = {
+  pentest: "Runs all supported phases. Review each phase ledger; the report will show incomplete or manual-only coverage explicitly.",
+  security: "Runs the deep security engine and passive API/route discovery without browser UI tests.",
+  uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics. Manual assistive-technology review is still required.",
+  functional: "Runs read-only page and navigation smoke checks. It does not submit forms or validate business transactions.",
+  input: "Runs bounded valid/invalid query checks and conservative input-stress probes. No form submissions or destructive payloads.",
+  api: "Discovers API routes and available API specifications. Role-based authorization checks require supplied test accounts and expected permissions.",
+  disclosure: "Checks common exposed configuration, diagnostic, API-documentation and verbose-error paths.",
+  crawler: "Builds a same-origin route/JavaScript/API candidate inventory; discovered state-changing methods are inventoried, not submitted.",
+  zap: "Runs a passive OWASP ZAP baseline through a separately configured ZAP API endpoint; it will stop with a clear configuration message if unavailable.",
+  core: "Runs the quick, bounded Core Security subset and evidence bundle."
+};
+function updateProfileDescription() {
+  const profile = el("profile");
+  const note = el("profileDescription");
+  const button = el("startBtn");
+  const labels = {
+    pentest: "START FULL PENTEST",
+    security: "START SECURITY & OWASP",
+    uiux: "START UI/UX TEST",
+    functional: "START FUNCTIONAL TESTS",
+    input: "START INPUT TESTS",
+    api: "START API TESTS",
+    disclosure: "START INFO-DISCLOSURE TESTS",
+    crawler: "START CRAWLER",
+    zap: "START ZAP BASELINE",
+    core: "START CORE SECURITY"
+  };
+  if (profile && note) note.textContent = PROFILE_DESCRIPTIONS[profile.value] || "";
+  if (profile && button && !button.disabled) button.textContent = labels[profile.value] || "START ASSESSMENT";
 }
 
 async function startRun() {
@@ -590,7 +646,7 @@ async function startRun() {
     showState("RUNNING", "QUEUED", selectedProfile === "core"
       ? "Core security assessment accepted. The HTML/JSON report and evidence ZIP will be ready when checks finish."
       : "Full pentest accepted. The complete report ZIP will download automatically when it is ready.");
-    setButton(true, "PENTEST RUNNING");
+    setButton(true, "ASSESSMENT RUNNING");
   } catch (error) {
     const message = error && error.name === "AbortError"
       ? "The server did not respond within 25 seconds. Check Render health/logs before retrying."
@@ -599,7 +655,8 @@ async function startRun() {
         : (error && error.message ? error.message : "Unable to start the assessment."));
 
     showState("ERROR", "START FAILED", message);
-    setButton(false, "START PENTEST");
+    setButton(false);
+    updateProfileDescription();
   }
 }
 
@@ -683,9 +740,10 @@ function renderStatus(s) {
     else reportNotice.textContent = "Start an authorized assessment. The final report download will appear after it ends.";
   }
   if (running) {
-    setButton(true, "PENTEST RUNNING");
+    setButton(true, "ASSESSMENT RUNNING");
   } else {
-    setButton(false, "START PENTEST");
+    setButton(false);
+    updateProfileDescription();
   }
 
   const cov = s.coverage || {};
@@ -851,6 +909,9 @@ async function poll() {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
+  const profileSelect = el("profile");
+  if (profileSelect) profileSelect.addEventListener("change", updateProfileDescription);
+  updateProfileDescription();
   const button = el("startBtn");
   if (button) {
     button.addEventListener("click", startRun);

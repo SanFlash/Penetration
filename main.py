@@ -96,8 +96,11 @@ def _set_telemetry(state, loader):
     return telemetry
 
 
-def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True):
-    state, dashboard_url = _build_dashboard(target, "compatibility", dashboard)
+def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, state_override=None):
+    if state_override is not None:
+        state, dashboard_url = state_override, None
+    else:
+        state, dashboard_url = _build_dashboard(target, "compatibility", dashboard)
     loader = ConsoleLoader()
     loader.start("Initializing assessment engine")
     telemetry = _set_telemetry(state, loader)
@@ -885,11 +888,15 @@ def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False,
     return 0
 
 
-def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None):
+def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None, state_override=None):
     """Run security-only testing with visible progress and bounded phases."""
-    loader = ConsoleLoader()
+    loader = ConsoleLoader(enabled=state_override is None)
     loader.start("Initializing security assessment")
+    def update(stage, detail, progress):
+        if state_override is not None:
+            state_override.update(stage=stage, detail=detail, progress=progress)
     try:
+        update("SECURITY PREFLIGHT", "Starting deep security checks and passive API discovery.", 5)
         banner("SECURITY-ONLY MODE — DEEP AUTHORIZED ASSESSMENT")
         print("[MODE] UI/compatibility testing: DISABLED")
         print("[MODE] Browser/Playwright: DISABLED")
@@ -908,6 +915,7 @@ def run_security_profile(target: str, max_urls: int | None = None, max_probes: i
             max_probes=max_probes or config.SECURITY_MAX_PROBES,
         )
         print(f"[STAGE 1/2] Deep security complete: {result['probe_count']} probes, {len(result['findings'])} raw findings.", flush=True)
+        update("PASSIVE API DISCOVERY", f"Deep security finished with {result['probe_count']} probes; collecting API surface.", 60)
 
         banner("PASSIVE ROUTE / API DISCOVERY")
         print("[MODE] GET-only discovery; discovered POST/PUT/PATCH/DELETE routes are inventory candidates.")
@@ -938,9 +946,115 @@ def run_security_profile(target: str, max_urls: int | None = None, max_probes: i
             print(f"  {sev}: {count}")
         print(f"Evidence: {config.EVIDENCE_DIR}/deep_security.json")
         print(f"Report: {result['report']['html_path']}")
+        update("SECURITY ASSESSMENT FINISHED", "Deep security and passive API discovery have finished; review coverage and evidence in the report.", 100)
         return 0
     finally:
         loader.stop()
+
+
+def run_focused_profile(target: str, profile: str, state_override=None):
+    """Run a real, narrowly scoped engine set and produce the standard report."""
+    started = time.time()
+    state = state_override or DashboardState(target=target, profile=profile)
+    all_findings = []
+    phase_status = {}
+
+    def update(stage, detail, progress):
+        state.update(stage=stage, detail=detail, progress=progress)
+
+    def record(name, result, count_key="probes"):
+        summary = result.get("summary", {}) if isinstance(result, dict) else {}
+        checks = result.get("checks", [])
+        probes = result.get("probes", summary.get(count_key, len(checks) if isinstance(checks, list) else 0))
+        phase_status[name] = {
+            "status": (
+                "partial" if result.get("stop_reason") == "time_budget" or result.get("completed") is False
+                else "not_run" if int(probes or 0) == 0
+                else "completed"
+            ),
+            "checks": int(probes or 0),
+            "findings": len(result.get("findings", [])),
+            "stop_reason": result.get("stop_reason"),
+        }
+        all_findings.extend(result.get("findings", []))
+        return result
+
+    update("RECONNAISSANCE", "Discovering same-origin routes before running the selected test pack.", 5)
+    route_result = run_route_discovery(
+        target,
+        max_pages=min(config.ROUTE_DISCOVERY_MAX_PAGES, 15),
+        max_assets=min(config.ROUTE_DISCOVERY_MAX_ASSETS, 20),
+        max_candidates=min(config.ROUTE_DISCOVERY_MAX_CANDIDATES, 250),
+    )
+    route_probes = int(route_result.get("probes", 0))
+    phase_status["route_discovery"] = {
+        "status": (
+            "partial" if route_result.get("completed") is False
+            else "not_run" if route_probes == 0
+            else "completed"
+        ),
+        "checks": route_probes,
+        "findings": 0,
+        "stop_reason": route_result.get("stop_reason"),
+    }
+    urls = [target.rstrip("/") + "/"]
+    urls.extend(row for row in route_result.get("pages", []) if isinstance(row, str))
+    urls.extend(row.get("url") for row in route_result.get("routes", []) if isinstance(row, dict) and row.get("url"))
+    urls = list(dict.fromkeys(urls))
+    update("ROUTES DISCOVERED", f"Discovered {len(urls)} same-origin URL candidates. Running {profile} checks.", 25)
+
+    if profile == "crawler":
+        pass
+    elif profile == "api":
+        api_result = record("api_surface", run_api_surface(target, max_probes=min(config.SECURITY_MAX_PROBES, 160), route_discovery_result=route_result))
+        update("API SURFACE", f"Reviewed API surface with {api_result.get('probes', 0)} probes.", 75)
+    elif profile == "functional":
+        functional_result = record("functional_testing", run_functional_readonly(
+            target, urls, max_urls=min(config.COMPREHENSIVE_MAX_URLS, 40),
+            max_links=min(config.COMPREHENSIVE_MAX_PROBES, 180),
+        ), "checks")
+        update("FUNCTIONAL TESTING", f"Executed {functional_result.get('probes', 0)} read-only navigation checks.", 75)
+    elif profile == "input":
+        validation_result = record("input_validation", run_input_validation(
+            target, urls, max_urls=min(config.VALIDATION_MAX_URLS, 30),
+            max_probes=min(config.VALIDATION_MAX_PROBES, 180), max_runtime_seconds=150,
+        ))
+        update("INPUT VALIDATION", f"Completed {validation_result.get('probes', 0)} validation probes.", 55)
+        stress_result = record("input_stress", run_input_stress(
+            target, urls, max_urls=min(config.STRESS_MAX_URLS, 30),
+            max_probes=min(config.STRESS_MAX_PROBES, 180), max_runtime_seconds=150,
+        ))
+        update("INPUT STRESS", f"Completed {stress_result.get('probes', 0)} bounded input-stress probes.", 78)
+    elif profile == "disclosure":
+        disclosure_result = record("information_disclosure", run_information_disclosure(
+            target, urls, max_probes=min(80, config.SECURITY_MAX_PROBES),
+        ))
+        update("INFORMATION DISCLOSURE", f"Reviewed {disclosure_result.get('probes', 0)} information-disclosure paths.", 78)
+    else:
+        raise ValueError(f"Unsupported focused profile: {profile}")
+
+    # Route discovery is the shared prerequisite for focused modes; mark it
+    # incomplete if the crawler hit its budget instead of silently calling it complete.
+    if route_result.get("completed") is False:
+        phase_status["route_discovery"]["status"] = "partial"
+    statuses = [row.get("status") for row in phase_status.values()]
+    overall = "PARTIAL" if any(status in {"partial", "failed", "timed_out", "blocked", "not_run"} for status in statuses) else "COMPLETE"
+    metadata = {
+        "profile": profile,
+        "status": overall,
+        "phase_status": phase_status,
+        "phase_failures": [name for name, row in phase_status.items() if row.get("status") != "completed"],
+        "focused_assessment": True,
+        "scope_policy": "same-origin only; redirects disabled; read-only requests",
+        "runtime_seconds": round(time.time() - started, 2),
+        "route_discovery": route_result.get("summary", {}),
+    }
+    update("REPORT GENERATION", "Building the focused report and evidence bundle.", 90)
+    report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
+    print(f"[REPORT] Profile: {profile}; status: {overall}; findings: {report['report']['total_findings']}")
+    print(f"[REPORT] HTML: {report.get('html_path')}; JSON: {report.get('json_path')}")
+    update("FOCUSED ASSESSMENT FINISHED", f"{profile} profile {overall.lower()}; report artifacts have been generated.", 100)
+    return 0 if overall == "COMPLETE" else 1
 
 
 def run_lab_full_profile(target: str):
@@ -1016,7 +1130,7 @@ def main():
     parser.add_argument("--target", default=config.DEFAULT_TARGET, help="Base URL of an IN-SCOPE target")
     parser.add_argument(
         "--profile",
-        choices=("auto", "lab", "compatibility", "pentest", "security", "core", "intrusive"),
+        choices=("auto", "lab", "compatibility", "pentest", "security", "core", "intrusive", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"),
         default="auto",
         help="auto selects pentest; core runs the bounded Core Engine; intrusive is a legacy alias; lab remains available for localhost",
     )
@@ -1061,7 +1175,7 @@ def main():
 
     print(f"[PROFILE] {profile}")
 
-    if profile in {"security", "core", "intrusive"}:
+    if profile in {"security", "core", "intrusive", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"}:
         if not args.confirm_authorized:
             print("[BLOCKED] Security profile requires --confirm-authorized.")
             print("[INFO] Use only on a system you own or are explicitly authorized to assess.")
@@ -1088,11 +1202,18 @@ def main():
 
     try:
 
-        if profile == "compatibility":
+        if profile in {"compatibility", "uiux"}:
             return run_compatibility_profile(
                 target, headed=args.headed, slow_mo=args.slow_mo,
                 dashboard=not args.no_dashboard
             )
+
+        if profile in {"functional", "input", "disclosure", "crawler", "api"}:
+            return run_focused_profile(target, profile)
+
+        if profile == "zap":
+            from scanners.zap_baseline import run_zap_baseline
+            return run_zap_baseline(target)
 
         if profile == "pentest":
             return run_pentest_profile(

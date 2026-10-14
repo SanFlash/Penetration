@@ -13,6 +13,46 @@ A Python + Playwright web-application assessment framework for **owned or explic
 
 > **Authorization:** Only test systems you own or have explicit written permission to assess. The configured AM Webtech target is enabled because the project owner has stated that it is authorized for assessment.
 
+## Assessment profiles in the hosted console and CLI
+
+Choose the profile that matches the question you are trying to answer. Each run writes the normal Sentinel report format and records phase-level status. **Full Pentest** is the broadest built-in profile; focused profiles do not silently claim that other test areas ran.
+
+| Profile | What it runs | Key limits |
+|---|---|---|
+| **Full Pentest** (pentest) | Main multi-phase browser, functional, security, input, API/penetration, information-disclosure, and evidence pipeline | A category is only complete when its mapped phases completed; role-aware business logic can still need test accounts and manual validation |
+| **Security & OWASP** (security) | Deep security engine plus passive route/API inventory | No browser UI run; no destructive writes, credential attacks, or DoS |
+| **UI/UX, Responsive & Accessibility** (uiux or compatibility) | Chromium viewport/browser checks, UI evidence, automated accessibility heuristics | Not a visual-design opinion engine or WCAG certification |
+| **Functional & Navigation** (functional) | Read-only page and internal-link smoke checks | Does not submit forms or validate transactional workflows |
+| **Input Validation & Stress** (input) | Bounded valid/invalid query values, boundary inputs, error/reflection observations | GET-only, bounded; not load or denial-of-service testing |
+| **API & Attack Surface** (api) | API specs, routes, API-like endpoints, and method candidates | Authorization checks require role accounts and expected permissions |
+| **Information Disclosure** (disclosure) | Common exposed files/diagnostic paths, verbose errors, response-header fingerprinting | Bounded common-path checks; does not inspect server filesystem/source code |
+| **Web Crawler & Recon** (crawler) | Same-origin route and JavaScript/API candidate discovery | Not a guarantee of a complete authenticated route inventory |
+| **OWASP ZAP Baseline** (zap) | Optional external ZAP spider + passive-scan alerts | Requires a separately hosted ZAP API and pre-scoped context; active scan is disabled |
+| **Core Security** (core) | Quick bounded read-only subset | Intentionally smaller coverage than Full Pentest |
+
+### Optional OWASP ZAP Baseline configuration
+
+The hosted service does not assume that ZAP is installed inside Render. Configure an independently managed ZAP daemon and a context that is restricted to the authorized target origin, then set these environment variables on the Sentinel service:
+
+- SENTINEL_ZAP_API_URL — private/reachable ZAP API base URL, for example http://zap:8080 when both services share a private network.
+- SENTINEL_ZAP_API_KEY — ZAP API key. Keep it in Render environment secrets; never commit it.
+- SENTINEL_ZAP_CONTEXT — exact name of the ZAP context containing the target scope inclusion rule.
+
+The integration validates the configured context before starting the spider, waits for the passive scan queue, and imports alerts into the standard Sentinel report. It does **not** run ZAP active scanning. If these variables or a valid scope context are missing, the report records the ZAP area as not run/partial rather than pretending it succeeded.
+
+### Run focused profiles from the CLI
+
+```powershell
+python main.py --target https://amwebtech.com --profile uiux --confirm-authorized
+python main.py --target https://amwebtech.com --profile functional --confirm-authorized
+python main.py --target https://amwebtech.com --profile input --confirm-authorized
+python main.py --target https://amwebtech.com --profile api --confirm-authorized
+python main.py --target https://amwebtech.com --profile disclosure --confirm-authorized
+python main.py --target https://amwebtech.com --profile crawler --confirm-authorized
+python main.py --target https://amwebtech.com --profile security --confirm-authorized
+python main.py --target https://amwebtech.com --profile pentest --confirm-authorized
+```
+
 ## What the professional profile does
 
 For `https://amwebtech.com`, the recommended profile is:
