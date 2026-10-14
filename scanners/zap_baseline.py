@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from urllib.parse import urlparse
 
@@ -88,7 +89,8 @@ def run_zap_baseline(target: str, state=None, max_runtime_seconds: int = 240) ->
         ).get("regexes") or []
         if not regexes:
             raise RuntimeError("The configured ZAP context has no inclusion regex. Add an exact target-origin scope before scanning.")
-        if not any(origin in str(regex) for regex in regexes):
+        normalized_regexes = [re.sub(r"\\([./:-])", r"\1", str(regex)) for regex in regexes]
+        if not any(origin in regex for regex in normalized_regexes):
             raise RuntimeError("The configured ZAP context inclusion rules do not visibly include the exact target origin. No scan was started.")
 
         update("ZAP SPIDER", f"Starting passive-baseline spider in pre-scoped context '{context_name}'.", 12)
