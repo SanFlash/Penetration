@@ -980,9 +980,14 @@ def run_focused_profile(target: str, profile: str, state_override=None):
         max_assets=min(config.ROUTE_DISCOVERY_MAX_ASSETS, 20),
         max_candidates=min(config.ROUTE_DISCOVERY_MAX_CANDIDATES, 250),
     )
+    route_probes = int(route_result.get("probes", 0))
     phase_status["route_discovery"] = {
-        "status": "completed" if route_result.get("completed", True) else "partial",
-        "checks": int(route_result.get("probes", 0)),
+        "status": (
+            "partial" if route_result.get("completed") is False
+            else "not_run" if route_probes == 0
+            else "completed"
+        ),
+        "checks": route_probes,
         "findings": 0,
         "stop_reason": route_result.get("stop_reason"),
     }
@@ -1032,7 +1037,7 @@ def run_focused_profile(target: str, profile: str, state_override=None):
         "profile": profile,
         "status": overall,
         "phase_status": phase_status,
-        "phase_failures": [name for name, row in phase_status.items() if row.get("status") not in {"completed", "not_run"}],
+        "phase_failures": [name for name, row in phase_status.items() if row.get("status") != "completed"],
         "focused_assessment": True,
         "scope_policy": "same-origin only; redirects disabled; read-only requests",
         "runtime_seconds": round(time.time() - started, 2),
