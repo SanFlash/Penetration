@@ -96,8 +96,11 @@ def _set_telemetry(state, loader):
     return telemetry
 
 
-def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True):
-    state, dashboard_url = _build_dashboard(target, "compatibility", dashboard)
+def run_compatibility_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, state_override=None):
+    if state_override is not None:
+        state, dashboard_url = state_override, None
+    else:
+        state, dashboard_url = _build_dashboard(target, "compatibility", dashboard)
     loader = ConsoleLoader()
     loader.start("Initializing assessment engine")
     telemetry = _set_telemetry(state, loader)
@@ -941,6 +944,102 @@ def run_security_profile(target: str, max_urls: int | None = None, max_probes: i
         return 0
     finally:
         loader.stop()
+
+
+def run_focused_profile(target: str, profile: str, state_override=None):
+    """Run a real, narrowly scoped engine set and produce the standard report."""
+    started = time.time()
+    state = state_override or DashboardState(target=target, profile=profile)
+    all_findings = []
+    phase_status = {}
+
+    def update(stage, detail, progress):
+        state.update(stage=stage, detail=detail, progress=progress)
+
+    def record(name, result, count_key="probes"):
+        summary = result.get("summary", {}) if isinstance(result, dict) else {}
+        checks = result.get("checks", [])
+        probes = result.get("probes", summary.get(count_key, len(checks) if isinstance(checks, list) else 0))
+        phase_status[name] = {
+            "status": "partial" if result.get("stop_reason") == "time_budget" or result.get("completed") is False else "completed",
+            "checks": int(probes or 0),
+            "findings": len(result.get("findings", [])),
+            "stop_reason": result.get("stop_reason"),
+        }
+        all_findings.extend(result.get("findings", []))
+        return result
+
+    update("RECONNAISSANCE", "Discovering same-origin routes before running the selected test pack.", 5)
+    route_result = run_route_discovery(
+        target,
+        max_pages=min(config.ROUTE_DISCOVERY_MAX_PAGES, 15),
+        max_assets=min(config.ROUTE_DISCOVERY_MAX_ASSETS, 20),
+        max_candidates=min(config.ROUTE_DISCOVERY_MAX_CANDIDATES, 250),
+    )
+    phase_status["route_discovery"] = {
+        "status": "completed" if route_result.get("completed", True) else "partial",
+        "checks": int(route_result.get("probes", 0)),
+        "findings": 0,
+        "stop_reason": route_result.get("stop_reason"),
+    }
+    urls = [target.rstrip("/") + "/"]
+    urls.extend(row for row in route_result.get("pages", []) if isinstance(row, str))
+    urls.extend(row.get("url") for row in route_result.get("routes", []) if isinstance(row, dict) and row.get("url"))
+    urls = list(dict.fromkeys(urls))
+    update("ROUTES DISCOVERED", f"Discovered {len(urls)} same-origin URL candidates. Running {profile} checks.", 25)
+
+    if profile == "crawler":
+        phase_status["api_surface"] = {"status": "not_run", "checks": 0, "findings": 0}
+    elif profile == "api":
+        api_result = record("api_surface", run_api_surface(target, max_probes=min(config.SECURITY_MAX_PROBES, 160), route_discovery_result=route_result))
+        update("API SURFACE", f"Reviewed API surface with {api_result.get('probes', 0)} probes.", 75)
+    elif profile == "functional":
+        functional_result = record("functional_testing", run_functional_readonly(
+            target, urls, max_urls=min(config.COMPREHENSIVE_MAX_URLS, 40),
+            max_links=min(config.COMPREHENSIVE_MAX_PROBES, 180),
+        ), "checks")
+        update("FUNCTIONAL TESTING", f"Executed {functional_result.get('probes', 0)} read-only navigation checks.", 75)
+    elif profile == "input":
+        validation_result = record("input_validation", run_input_validation(
+            target, urls, max_urls=min(config.VALIDATION_MAX_URLS, 30),
+            max_probes=min(config.VALIDATION_MAX_PROBES, 180), max_runtime_seconds=150,
+        ))
+        update("INPUT VALIDATION", f"Completed {validation_result.get('probes', 0)} validation probes.", 55)
+        stress_result = record("input_stress", run_input_stress(
+            target, urls, max_urls=min(config.STRESS_MAX_URLS, 30),
+            max_probes=min(config.STRESS_MAX_PROBES, 180), max_runtime_seconds=150,
+        ))
+        update("INPUT STRESS", f"Completed {stress_result.get('probes', 0)} bounded input-stress probes.", 78)
+    elif profile == "disclosure":
+        disclosure_result = record("information_disclosure", run_information_disclosure(
+            target, urls, max_probes=min(80, config.SECURITY_MAX_PROBES),
+        ))
+        update("INFORMATION DISCLOSURE", f"Reviewed {disclosure_result.get('probes', 0)} information-disclosure paths.", 78)
+    else:
+        raise ValueError(f"Unsupported focused profile: {profile}")
+
+    # Route discovery is the shared prerequisite for focused modes; mark it
+    # incomplete if the crawler hit its budget instead of silently calling it complete.
+    if route_result.get("completed") is False:
+        phase_status["route_discovery"]["status"] = "partial"
+    statuses = [row.get("status") for row in phase_status.values()]
+    overall = "PARTIAL" if any(status in {"partial", "failed", "timed_out", "blocked"} for status in statuses) else "COMPLETE"
+    metadata = {
+        "profile": profile,
+        "status": overall,
+        "phase_status": phase_status,
+        "phase_failures": [name for name, row in phase_status.items() if row.get("status") not in {"completed", "not_run"}],
+        "focused_assessment": True,
+        "scope_policy": "same-origin only; redirects disabled; read-only requests",
+        "runtime_seconds": round(time.time() - started, 2),
+        "route_discovery": route_result.get("summary", {}),
+    }
+    update("REPORT GENERATION", "Building the focused report and evidence bundle.", 90)
+    report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
+    print(f"[REPORT] Profile: {profile}; status: {overall}; findings: {report['report']['total_findings']}")
+    print(f"[REPORT] HTML: {report.get('html_path')}; JSON: {report.get('json_path')}")
+    update("FOCUSED ASSESSMENT FINISHED", f"{profile} profile {overall.lower()}; report artifacts have been generated.", 100)
+    return 0 if overall == "COMPLETE" else 1
 
 
 def run_lab_full_profile(target: str):
