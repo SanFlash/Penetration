@@ -1115,7 +1115,7 @@ def main():
     parser.add_argument("--target", default=config.DEFAULT_TARGET, help="Base URL of an IN-SCOPE target")
     parser.add_argument(
         "--profile",
-        choices=("auto", "lab", "compatibility", "pentest", "security", "core", "intrusive"),
+        choices=("auto", "lab", "compatibility", "pentest", "security", "core", "intrusive", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"),
         default="auto",
         help="auto selects pentest; core runs the bounded Core Engine; intrusive is a legacy alias; lab remains available for localhost",
     )
@@ -1160,7 +1160,7 @@ def main():
 
     print(f"[PROFILE] {profile}")
 
-    if profile in {"security", "core", "intrusive"}:
+    if profile in {"security", "core", "intrusive", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"}:
         if not args.confirm_authorized:
             print("[BLOCKED] Security profile requires --confirm-authorized.")
             print("[INFO] Use only on a system you own or are explicitly authorized to assess.")
@@ -1187,11 +1187,18 @@ def main():
 
     try:
 
-        if profile == "compatibility":
+        if profile in {"compatibility", "uiux"}:
             return run_compatibility_profile(
                 target, headed=args.headed, slow_mo=args.slow_mo,
                 dashboard=not args.no_dashboard
             )
+
+        if profile in {"functional", "input", "disclosure", "crawler", "api"}:
+            return run_focused_profile(target, profile)
+
+        if profile == "zap":
+            from scanners.zap_baseline import run_zap_baseline
+            return run_zap_baseline(target)
 
         if profile == "pentest":
             return run_pentest_profile(
