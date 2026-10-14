@@ -60,3 +60,27 @@ def test_api_security_top10_categories_are_explicit_and_not_overclaimed():
     assert "workflow" in by_id["API-BUSINESS-FLOW"]["manual"].lower()
     assert by_id["API-BUSINESS-FLOW"]["status"] == "not_run"
 
+
+
+def test_selectable_profile_coverage_areas_are_separate_and_phase_driven():
+    rows = build_coverage_registry({
+        "ui_responsive": {"status": "completed", "checks": 12},
+        "functional_testing": {"status": "completed", "checks": 25},
+        "input_validation": {"status": "partial", "checks": 10},
+        "input_stress": {"status": "not_run", "checks": 0},
+        "route_discovery": {"status": "completed", "checks": 20},
+        "information_disclosure": {"status": "completed", "checks": 18},
+        "zap_spider": {"status": "not_run", "checks": 0},
+        "zap_passive": {"status": "not_run", "checks": 0},
+        "zap_alert_collection": {"status": "not_run", "checks": 0},
+    })
+    by_id = {row["id"]: row for row in rows}
+
+    assert by_id["SENTINEL-UIUX"]["status"] == "engines_completed"
+    assert by_id["SENTINEL-FUNCTIONAL"]["status"] == "engines_completed"
+    assert by_id["SENTINEL-INPUT-VALIDATION"]["status"] == "partial"
+    assert by_id["SENTINEL-INPUT-STRESS"]["status"] == "not_run"
+    assert by_id["SENTINEL-RECON"]["status"] == "engines_completed"
+    assert by_id["SENTINEL-INFO-LEAK"]["status"] == "engines_completed"
+    assert by_id["SENTINEL-ZAP"]["status"] == "not_run"
+    assert "active scan is disabled" in by_id["SENTINEL-ZAP"]["manual"].lower()
