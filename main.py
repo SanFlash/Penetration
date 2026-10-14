@@ -888,11 +888,15 @@ def run_intrusive_profile(target: str, plan_path: str, authorized: bool = False,
     return 0
 
 
-def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None):
+def run_security_profile(target: str, max_urls: int | None = None, max_probes: int | None = None, state_override=None):
     """Run security-only testing with visible progress and bounded phases."""
-    loader = ConsoleLoader()
+    loader = ConsoleLoader(enabled=state_override is None)
     loader.start("Initializing security assessment")
+    def update(stage, detail, progress):
+        if state_override is not None:
+            state_override.update(stage=stage, detail=detail, progress=progress)
     try:
+        update("SECURITY PREFLIGHT", "Starting deep security checks and passive API discovery.", 5)
         banner("SECURITY-ONLY MODE — DEEP AUTHORIZED ASSESSMENT")
         print("[MODE] UI/compatibility testing: DISABLED")
         print("[MODE] Browser/Playwright: DISABLED")
@@ -911,6 +915,7 @@ def run_security_profile(target: str, max_urls: int | None = None, max_probes: i
             max_probes=max_probes or config.SECURITY_MAX_PROBES,
         )
         print(f"[STAGE 1/2] Deep security complete: {result['probe_count']} probes, {len(result['findings'])} raw findings.", flush=True)
+        update("PASSIVE API DISCOVERY", f"Deep security finished with {result['probe_count']} probes; collecting API surface.", 60)
 
         banner("PASSIVE ROUTE / API DISCOVERY")
         print("[MODE] GET-only discovery; discovered POST/PUT/PATCH/DELETE routes are inventory candidates.")
@@ -941,6 +946,7 @@ def run_security_profile(target: str, max_urls: int | None = None, max_probes: i
             print(f"  {sev}: {count}")
         print(f"Evidence: {config.EVIDENCE_DIR}/deep_security.json")
         print(f"Report: {result['report']['html_path']}")
+        update("SECURITY ASSESSMENT FINISHED", "Deep security and passive API discovery have finished; review coverage and evidence in the report.", 100)
         return 0
     finally:
         loader.stop()
