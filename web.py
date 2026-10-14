@@ -7,6 +7,7 @@ All API routes except /healthz require SENTINEL_ACCESS_TOKEN when configured.
 from __future__ import annotations
 
 import html
+import json
 import os
 import threading
 import time
@@ -17,6 +18,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import config
 from main import run_pentest_profile
 from ui.dashboard import DashboardState
+from scanners.coverage_registry import build_coverage_registry
 
 app = Flask(__name__)
 
@@ -148,6 +150,103 @@ def index():
             max_age=3600,
         )
     return response
+
+
+def _coverage_payload(report: dict | None) -> dict:
+    """Build independently reviewable coverage sections from the canonical report."""
+    report = report or {}
+    metadata = report.get("metadata") or {}
+    framework = report.get("framework_coverage") or build_coverage_registry(metadata.get("phase_status") or {})
+    owasp_2025 = report.get("owasp_top10_2025_coverage") or [
+        {"code": code, "name": name, "status": "not_run", "phases": [],
+         "limitation": "No assessment report is available yet; this category has not been assessed."}
+        for code, name in [
+            ("A01:2025", "Broken Access Control"),
+            ("A02:2025", "Security Misconfiguration"),
+            ("A03:2025", "Software Supply Chain Failures"),
+            ("A04:2025", "Cryptographic Failures"),
+            ("A05:2025", "Injection"),
+            ("A06:2025", "Insecure Design"),
+            ("A07:2025", "Authentication Failures"),
+            ("A08:2025", "Software or Data Integrity Failures"),
+            ("A09:2025", "Security Logging & Alerting Failures"),
+            ("A10:2025", "Mishandling of Exceptional Conditions"),
+        ]
+    ]
+    owasp_2021 = report.get("owasp_coverage") or [
+        {"code": code, "name": name, "status": "not_run", "phases": [],
+         "limitation": "No assessment report is available yet; this category has not been assessed."}
+        for code, name in [
+            ("A01:2021", "Broken Access Control"),
+            ("A02:2021", "Cryptographic Failures"),
+            ("A03:2021", "Injection"),
+            ("A04:2021", "Insecure Design"),
+            ("A05:2021", "Security Misconfiguration"),
+            ("A06:2021", "Vulnerable and Outdated Components"),
+            ("A07:2021", "Identification and Authentication Failures"),
+            ("A08:2021", "Software and Data Integrity Failures"),
+            ("A09:2021", "Security Logging and Monitoring Failures"),
+            ("A10:2021", "Server-Side Request Forgery"),
+        ]
+    ]
+
+    wstg = [row for row in framework if "OWASP WSTG" in str(row.get("standard", ""))]
+    api = [row for row in framework if str(row.get("id", "")).startswith("API-")]
+    wcag = [row for row in framework if str(row.get("id", "")).startswith("WCAG-")]
+    supplemental = [
+        row for row in framework
+        if str(row.get("standard", "")).lower() == "sentinel"
+        and not str(row.get("id", "")).startswith(("API-", "WCAG-"))
+    ]
+    sections = [
+        {"id": "wstg", "title": "OWASP Web Security Testing Guide (WSTG)", "standard": "OWASP WSTG v4.2", "items": wstg},
+        {"id": "owasp-2025", "title": "OWASP Top 10:2025", "standard": "OWASP Top 10:2025", "items": owasp_2025},
+        {"id": "owasp-2021", "title": "OWASP Top 10:2021 (legacy comparison)", "standard": "OWASP Top 10:2021", "items": owasp_2021},
+        {"id": "api-top10", "title": "OWASP API Security Top 10:2023", "standard": "OWASP API Security Top 10:2023", "items": api},
+        {"id": "wcag", "title": "Accessibility", "standard": "W3C WCAG 2.2 AA automated heuristics", "items": wcag},
+        {"id": "supplemental", "title": "Sentinel Supplemental Coverage", "standard": "Sentinel", "items": supplemental},
+    ]
+    counts = {"engines_completed": 0, "partial": 0, "partial_or_failed": 0, "not_run": 0, "manual_review": 0}
+    total = 0
+    for section in sections:
+        for item in section["items"]:
+            total += 1
+            status = str(item.get("status", "not_run")).lower()
+            if status in {"complete", "completed", "engines_completed"}:
+                counts["engines_completed"] += 1
+            elif status in {"partial_or_failed", "failed", "timed_out", "blocked"}:
+                counts["partial_or_failed"] += 1
+            elif status in {"partial", "in_progress"}:
+                counts["partial"] += 1
+            elif status == "manual_review":
+                counts["manual_review"] += 1
+            else:
+                counts["not_run"] += 1
+    return {
+        "ready": bool(report),
+        "target": report.get("target"),
+        "generated_at": report.get("generated_at"),
+        "overall_status": metadata.get("status") or report.get("assessment_status") or "not available",
+        "phase_status": metadata.get("phase_status") or {},
+        "sections": sections,
+        "summary": {"total_areas": total, **counts},
+    }
+
+
+@app.get("/api/coverage")
+def coverage():
+    auth = _require_auth()
+    if auth:
+        return auth
+    report_path = Path(config.REPORT_DIR) / "findings.json"
+    report = None
+    if report_path.is_file():
+        try:
+            with report_path.open("r", encoding="utf-8") as handle:
+                report = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            report = None
+    return jsonify(_coverage_payload(report))
 
 
 @app.get("/api/status")
@@ -351,6 +450,26 @@ table{font-size:12px}th,td{padding:11px 10px;border-bottom-color:#25344a}th{font
 hr{border-top-color:#27364d!important}
 @media(max-width:900px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.hero{min-height:330px}.top{align-items:flex-start}.brand{font-size:13px}.panel{border-radius:12px}}
 
+
+.coverage-report .coverage-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.coverage-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:18px 0}
+.coverage-stat{background:#0d1626;border:1px solid #27364d;border-radius:10px;padding:12px}
+.coverage-stat b{display:block;font-size:20px}.coverage-stat span{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.coverage-filters{display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:12px;align-items:end;margin:12px 0 18px}
+.coverage-filters label{margin-top:0}.coverage-filters select,.coverage-filters input{width:100%;min-width:0}
+.coverage-section{border:1px solid #27364d;border-radius:11px;margin:10px 0;overflow:hidden;background:#0d1626}
+.coverage-section-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:#111d30}
+.coverage-section-head h3{margin:0;color:var(--text);font-size:13px;letter-spacing:0}
+.coverage-section-head span{font-size:11px;color:var(--muted)}
+.coverage-item{border-top:1px solid #25344a;padding:0 14px}
+.coverage-item summary{cursor:pointer;list-style:none;display:grid;grid-template-columns:minmax(70px,110px) minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 0}
+.coverage-item summary::-webkit-details-marker{display:none}
+.coverage-code{font:11px Consolas,monospace;color:#76a9ff;overflow-wrap:anywhere}
+.coverage-name{font-weight:650;font-size:12px}.coverage-status{font-size:10px;border:1px solid #34435a;border-radius:99px;padding:4px 7px;white-space:nowrap;color:var(--muted)}
+.coverage-status.completed{color:#69e8b5;border-color:#28665b}.coverage-status.partial{color:#f6c96b;border-color:#75602f}.coverage-status.failed{color:#ff7188;border-color:#793347}.coverage-status.manual{color:#c4b5fd;border-color:#55457b}
+.coverage-detail{padding:0 0 14px 0;font-size:12px;color:#b6c5d8}.coverage-detail p{margin:7px 0}.coverage-detail ul{margin:6px 0;padding-left:20px}.phase-pill{display:inline-block;border:1px solid #34435a;border-radius:6px;padding:4px 7px;margin:3px 4px 3px 0;font:10px Consolas,monospace;overflow-wrap:anywhere}
+.coverage-empty{padding:16px;border:1px dashed #34435a;border-radius:10px;color:var(--muted)}
+@media(max-width:900px){.coverage-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.coverage-filters{grid-template-columns:1fr}.coverage-report .coverage-heading{flex-direction:column}.coverage-item summary{grid-template-columns:1fr auto}.coverage-code{grid-column:1/-1}.coverage-name{min-width:0}.coverage-status{grid-column:2;grid-row:2}}
 </style></head>
 <body><main class="wrap">
 <header class="top"><div class="brand">SENTINEL // HOSTED PENTEST CONSOLE</div><div id="status" class="badge">IDLE</div></header>
@@ -367,6 +486,19 @@ hr{border-top-color:#27364d!important}
 <div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><div id="completionDownloads" style="display:none;border:1px solid var(--green);border-radius:10px;padding:12px;background:#06150f"><strong style="color:var(--green)">ASSESSMENT COMPLETE — REPORTS READY</strong><p class="muted" style="margin:6px 0 10px">The final report bundle includes the reports, findings, manifest and captured evidence files.</p><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip" style="display:block;text-align:center;background:var(--green);color:#03110b;font-weight:900">⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)</a></div><a id="portableLink" href="/reports/report_portable.html" target="_blank">Portable report</a><a id="findingsJsonLink" href="/reports/findings.json" target="_blank">Findings JSON</a><a id="manifestLink" href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a id="sarifLink" href="/reports/sentinel.sarif" target="_blank">SARIF for CI tools</a><a id="pdfLink" href="/reports/report.pdf" target="_blank">PDF report</a><a id="xlsxLink" href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The download button appears only after the assessment reaches its final status. Reports are not downloaded during a running assessment.</div>
 </aside></div>
 <section class="panel evidence"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
+<section class="panel coverage-report" id="coverageReport" style="margin-top:14px">
+<div class="pad">
+  <div class="coverage-heading"><div><h2 style="margin:0 0 5px">Section-by-Section Coverage</h2><div class="muted">Each category shows mapped phases, execution status, limitations, and manual-review requirements. Completed engines are not a security certification.</div></div><button id="refreshCoverage" type="button" style="width:auto;min-width:130px;margin:0">REFRESH COVERAGE</button></div>
+  <div id="coverageSummary" class="coverage-summary"><div class="muted">Loading coverage registry…</div></div>
+  <div class="coverage-filters">
+    <div><label for="coverageSectionFilter">Coverage standard / section</label><select id="coverageSectionFilter"><option value="all">All coverage sections</option></select></div>
+    <div><label for="coverageStatusFilter">Execution status</label><select id="coverageStatusFilter"><option value="all">All statuses</option><option value="engines_completed">Engine completed</option><option value="partial">Partial / in progress</option><option value="partial_or_failed">Failed / timed out / blocked</option><option value="not_run">Not run</option><option value="manual_review">Manual review</option></select></div>
+    <div><label for="coverageSearch">Search category or phase</label><input id="coverageSearch" type="search" placeholder="Search e.g. injection, authorization, WCAG…"></div>
+  </div>
+  <div id="coverageSections" class="coverage-sections"><div class="muted">Coverage details will appear here.</div></div>
+  <div id="coverageFooter" class="muted" style="font-size:11px;margin-top:12px">Coverage is based on the latest report ledger. Missing prerequisites remain incomplete or manual-review only.</div>
+</div>
+</section>
 <section class="coverage">
 <div class="cov"><b>UI / Responsive</b><span id="cov-ui">PENDING</span></div><div class="cov"><b>Functional</b><span id="cov-functional">PENDING</span></div><div class="cov"><b>Security</b><span id="cov-security">PENDING</span></div><div class="cov"><b>Penetration</b><span id="cov-penetration">PENDING</span></div><div class="cov"><b>Info Leak</b><span id="cov-info">PENDING</span></div><div class="cov"><b>Evidence</b><span id="cov-evidence">PENDING</span></div>
 </section>
@@ -582,6 +714,105 @@ function renderStatus(s) {
   el("logs").scrollTop = el("logs").scrollHeight;
 }
 
+let coveragePayload = null;
+let coverageLoading = false;
+let coverageLastLoaded = 0;
+
+function coverageEscape(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) {
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];
+  });
+}
+function coverageStatusLabel(status) {
+  const labels = {engines_completed:"ENGINE COMPLETED",completed:"ENGINE COMPLETED",partial:"PARTIAL",in_progress:"IN PROGRESS",partial_or_failed:"FAILED / INCOMPLETE",failed:"FAILED",timed_out:"TIMED OUT",blocked:"BLOCKED",not_run:"NOT RUN",manual_review:"MANUAL REVIEW"};
+  return labels[String(status || "not_run").toLowerCase()] || String(status || "NOT RUN").replace(/_/g, " ").toUpperCase();
+}
+function coverageStatusClass(status) {
+  status = String(status || "not_run").toLowerCase();
+  if (["engines_completed","completed"].includes(status)) return "completed";
+  if (["partial","in_progress"].includes(status)) return "partial";
+  if (["partial_or_failed","failed","timed_out","blocked"].includes(status)) return "failed";
+  if (status === "manual_review") return "manual";
+  return "";
+}
+function coveragePhaseRows(item) {
+  const phases = Array.isArray(item.phase_results) ? item.phase_results : (Array.isArray(item.phases) ? item.phases : []);
+  if (!phases.length) {
+    return String(item.status || "").toLowerCase() === "manual_review"
+      ? '<p><b>Mapped phases:</b> No automated phase is mapped; manual review is required.</p>'
+      : '<p><b>Mapped phases:</b> No per-phase execution data is available for this category yet. Review the assessment report before drawing conclusions.</p>';
+  }
+  return '<p><b>Mapped phase execution:</b></p><div>' + phases.map(function(phase) {
+    const name = phase.name || phase.code || "phase";
+    const status = phase.status || "not_run";
+    const checks = phase.checks == null ? "" : " · checks: " + phase.checks;
+    const err = phase.error ? " · " + phase.error : "";
+    return '<span class="phase-pill" title="' + coverageEscape(err) + '">' + coverageEscape(name) + ': ' + coverageEscape(coverageStatusLabel(status)) + coverageEscape(checks) + '</span>';
+  }).join("") + '</div>';
+}
+function renderCoverage() {
+  if (!coveragePayload) return;
+  const sections = Array.isArray(coveragePayload.sections) ? coveragePayload.sections : [];
+  const sectionFilter = el("coverageSectionFilter").value || "all";
+  const statusFilter = el("coverageStatusFilter").value || "all";
+  const query = (el("coverageSearch").value || "").trim().toLowerCase();
+  const summary = coveragePayload.summary || {};
+  const stats = [["Total areas",summary.total_areas||0],["Engine completed",summary.engines_completed||0],["Partial",summary.partial||0],["Failed / incomplete",summary.partial_or_failed||0],["Not run",summary.not_run||0],["Manual review",summary.manual_review||0]];
+  el("coverageSummary").innerHTML = stats.map(function(stat) {
+    return '<div class="coverage-stat"><b>' + coverageEscape(stat[1]) + '</b><span>' + coverageEscape(stat[0]) + '</span></div>';
+  }).join("");
+  const sectionSelect = el("coverageSectionFilter");
+  const oldSelection = sectionSelect.value;
+  sectionSelect.innerHTML = '<option value="all">All coverage sections</option>' + sections.map(function(section) {
+    return '<option value="' + coverageEscape(section.id) + '">' + coverageEscape(section.title) + '</option>';
+  }).join("");
+  if (sections.some(function(section){return section.id === oldSelection;})) sectionSelect.value = oldSelection;
+  let visibleCount = 0;
+  const htmlSections = sections.filter(function(section) {
+    return sectionSelect.value === "all" || section.id === sectionSelect.value;
+  }).map(function(section) {
+    const items = (section.items || []).filter(function(item) {
+      const status = String(item.status || "not_run").toLowerCase();
+      const matchesStatus = statusFilter === "all" || status === statusFilter ||
+        (statusFilter === "partial_or_failed" && ["failed","timed_out","blocked"].includes(status)) ||
+        (statusFilter === "engines_completed" && status === "completed");
+      const haystack = [item.id,item.code,item.name,item.standard,item.manual,item.execution_note,item.limitation]
+        .concat((item.phase_results || item.phases || []).map(function(p){return p.name + " " + p.status;})).join(" ").toLowerCase();
+      return matchesStatus && (!query || haystack.includes(query));
+    });
+    if (!items.length) return "";
+    visibleCount += items.length;
+    const rows = items.map(function(item) {
+      const code = item.id || item.code || "AREA";
+      const name = item.name || item.title || "Unnamed coverage area";
+      const status = String(item.status || "not_run").toLowerCase();
+      const note = item.execution_note || item.limitation || "Review phase evidence and test prerequisites before drawing conclusions.";
+      const manual = item.manual || "";
+      const standard = item.standard || section.standard || "";
+      return '<details class="coverage-item"><summary><span class="coverage-code">' + coverageEscape(code) + '</span><span class="coverage-name">' + coverageEscape(name) + '</span><span class="coverage-status ' + coverageStatusClass(status) + '">' + coverageEscape(coverageStatusLabel(status)) + '</span></summary><div class="coverage-detail"><p><b>Standard:</b> ' + coverageEscape(standard) + '</p>' + coveragePhaseRows(item) + '<p><b>Execution interpretation:</b> ' + coverageEscape(note) + '</p>' + (manual ? '<p><b>Manual / prerequisite gap:</b> ' + coverageEscape(manual) + '</p>' : '') + '</div></details>';
+    }).join("");
+    return '<section class="coverage-section"><div class="coverage-section-head"><h3>' + coverageEscape(section.title) + '</h3><span>' + items.length + ' area(s) visible</span></div>' + rows + '</section>';
+  }).join("");
+  el("coverageSections").innerHTML = htmlSections || '<div class="coverage-empty">No coverage areas match these filters. Change the section, status, or search text.</div>';
+  const generated = coveragePayload.generated_at ? " Latest report: " + coveragePayload.generated_at + "." : " No report has been generated yet; statuses are initialized as not run.";
+  el("coverageFooter").textContent = visibleCount + " coverage area(s) displayed." + generated + " Engine completion does not prove the category is secure.";
+}
+async function loadCoverage(force) {
+  if (coverageLoading || (!force && Date.now() - coverageLastLoaded < 7000)) return;
+  coverageLoading = true;
+  try {
+    const response = await fetch("/api/coverage?ts=" + Date.now(), {cache:"no-store",credentials:"same-origin",headers:{"Accept":"application/json"}});
+    if (!response.ok) throw new Error("Coverage endpoint returned HTTP " + response.status);
+    coveragePayload = await response.json();
+    coverageLastLoaded = Date.now();
+    renderCoverage();
+  } catch (error) {
+    if (!coveragePayload) el("coverageSections").innerHTML = '<div class="coverage-empty">Coverage registry could not be loaded. Refresh after reconnecting.</div>';
+  } finally {
+    coverageLoading = false;
+  }
+}
+
 let connectionFailures = 0;
 let lastGoodState = null;
 let statusPollDelay = 1000;
@@ -603,6 +834,7 @@ async function poll() {
     connectionFailures = 0;
     statusPollDelay = 1000;
     renderStatus(data);
+    loadCoverage(false);
   } catch (error) {
     connectionFailures += 1;
     // Preserve the latest assessment state during transient Render restarts
@@ -634,6 +866,13 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
+  ["coverageSectionFilter","coverageStatusFilter","coverageSearch"].forEach(function(id) {
+    const node = el(id);
+    if (node) node.addEventListener(id === "coverageSearch" ? "input" : "change", renderCoverage);
+  });
+  const refreshCoverage = el("refreshCoverage");
+  if (refreshCoverage) refreshCoverage.addEventListener("click", function(){ loadCoverage(true); });
+  loadCoverage(true);
   poll();
 });
 </script></body></html>"""
