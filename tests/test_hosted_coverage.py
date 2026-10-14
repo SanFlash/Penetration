@@ -66,11 +66,12 @@ def test_coverage_payload_separates_standards_and_preserves_execution_states():
     assert sections["wcag"]["items"][0]["id"] == "WCAG-2.2-AA"
     assert sections["owasp-2025"]["items"][0]["code"] == "A05:2025"
     assert sections["owasp-2021"]["items"][0]["code"] == "A03:2021"
-    assert payload["summary"]["total_areas"] == 5
+    assert payload["summary"]["total_areas"] == 6
     assert payload["summary"]["partial_or_failed"] == 1
     assert payload["summary"]["partial"] == 2
     assert payload["summary"]["not_run"] == 1
     assert payload["summary"]["manual_review"] == 1
+    assert payload["summary"]["engines_completed"] == 1
 
 
 def test_empty_coverage_payload_marks_registered_areas_not_run():
