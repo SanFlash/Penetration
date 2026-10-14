@@ -183,6 +183,11 @@ def run_zap_baseline(target: str, state=None, max_runtime_seconds: int = 240) ->
         session.close()
 
     elapsed = round(time.monotonic() - started, 2)
+    if "zap_baseline" not in phases:
+        phases["zap_baseline"] = {
+            "status": "completed" if completed and not errors else "partial",
+            "checks": probes,
+        }
     overall = "COMPLETE" if completed and not errors else "PARTIAL"
     metadata = {
         "profile": "zap", "status": overall, "phase_status": phases,
