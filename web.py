@@ -74,6 +74,16 @@ def _worker(target: str, profile: str = "pentest"):
                 "--max-urls", "25", "--max-probes", "120",
                 "--max-runtime", "180", "--out", config.REPORT_DIR,
             ], progress_callback=core_progress)
+        elif profile == "security":
+            rc = run_security_profile(target)
+        elif profile == "uiux":
+            rc = run_compatibility_profile(target, headed=False, slow_mo=0, dashboard=False, state_override=_state)
+        elif profile in {"functional", "input", "disclosure", "crawler", "api"}:
+            from main import run_focused_profile
+            rc = run_focused_profile(target, profile, state_override=_state)
+        elif profile == "zap":
+            from scanners.zap_baseline import run_zap_baseline
+            rc = run_zap_baseline(target, state=_state)
         else:
             rc = run_pentest_profile(
                 target,
@@ -318,11 +328,13 @@ def run():
     target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
     authorized = bool(body.get("authorized", False))
     profile = str(body.get("profile") or "pentest").strip().lower()
-    if profile not in {"pentest", "core"}:
+    allowed_profiles = {"pentest", "core", "security", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"}
+    if profile not in allowed_profiles:
         _run_lock.release()
         return jsonify({
             "error": "invalid_profile",
-            "message": "Profile must be 'pentest' or 'core'.",
+            "message": "Choose a supported assessment profile from the console.",
+            "allowed_profiles": sorted(allowed_profiles),
         }), 400
 
     if not target.startswith(("http://", "https://")):
@@ -478,7 +490,19 @@ hr{border-top-color:#27364d!important}
 <aside class="panel pad"><h3>Start Assessment</h3>
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
 <label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
-<label for="profile">Assessment profile</label><select id="profile"><option value="pentest">Full Pentest — browser, security and evidence pipeline</option><option value="core">Core Security — bounded read-only checks and evidence bundle</option></select>
+<label for="profile">Assessment profile</label><select id="profile">
+<option value="pentest">Full Pentest — complete multi-engine pipeline</option>
+<option value="security">Security & OWASP — passive and bounded active security checks</option>
+<option value="uiux">UI/UX, Responsive & Accessibility — browser checks and screenshots</option>
+<option value="functional">Functional & Navigation — read-only links and page smoke checks</option>
+<option value="input">Input Validation & Stress — bounded query/input probes</option>
+<option value="api">API & Attack Surface — API specifications and route inventory</option>
+<option value="disclosure">Information Disclosure — exposed files, diagnostics and error leakage</option>
+<option value="crawler">Web Crawler & Recon — same-origin routes and JavaScript/API candidates</option>
+<option value="zap">OWASP ZAP Baseline — requires configured external ZAP API</option>
+<option value="core">Core Security — quick bounded security subset</option>
+</select>
+<div id="profileDescription" class="muted" style="font-size:12px;margin-top:8px">Runs all supported phases. Review each phase ledger; the report will show incomplete or manual-only coverage explicitly.</div>
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
@@ -520,6 +544,24 @@ function setButton(running, label) {
   const btn = el("startBtn");
   btn.disabled = !!running;
   btn.textContent = label || (running ? "RUNNING..." : "START PENTEST");
+}
+
+const PROFILE_DESCRIPTIONS = {
+  pentest: "Runs all supported phases. Review each phase ledger; the report will show incomplete or manual-only coverage explicitly.",
+  security: "Runs the deep security engine and passive API/route discovery without browser UI tests.",
+  uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics. Manual assistive-technology review is still required.",
+  functional: "Runs read-only page and navigation smoke checks. It does not submit forms or validate business transactions.",
+  input: "Runs bounded valid/invalid query checks and conservative input-stress probes. No form submissions or destructive payloads.",
+  api: "Discovers API routes and available API specifications. Role-based authorization checks require supplied test accounts and expected permissions.",
+  disclosure: "Checks common exposed configuration, diagnostic, API-documentation and verbose-error paths.",
+  crawler: "Builds a same-origin route/JavaScript/API candidate inventory; discovered state-changing methods are inventoried, not submitted.",
+  zap: "Runs a passive OWASP ZAP baseline through a separately configured ZAP API endpoint; it will stop with a clear configuration message if unavailable.",
+  core: "Runs the quick, bounded Core Security subset and evidence bundle."
+};
+function updateProfileDescription() {
+  const profile = el("profile");
+  const note = el("profileDescription");
+  if (profile && note) note.textContent = PROFILE_DESCRIPTIONS[profile.value] || "";
 }
 
 async function startRun() {
@@ -851,6 +893,9 @@ async function poll() {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
+  const profileSelect = el("profile");
+  if (profileSelect) profileSelect.addEventListener("change", updateProfileDescription);
+  updateProfileDescription();
   const button = el("startBtn");
   if (button) {
     button.addEventListener("click", startRun);
