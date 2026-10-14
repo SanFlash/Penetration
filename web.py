@@ -561,7 +561,21 @@ const PROFILE_DESCRIPTIONS = {
 function updateProfileDescription() {
   const profile = el("profile");
   const note = el("profileDescription");
+  const button = el("startBtn");
+  const labels = {
+    pentest: "START FULL PENTEST",
+    security: "START SECURITY & OWASP",
+    uiux: "START UI/UX TEST",
+    functional: "START FUNCTIONAL TESTS",
+    input: "START INPUT TESTS",
+    api: "START API TESTS",
+    disclosure: "START INFO-DISCLOSURE TESTS",
+    crawler: "START CRAWLER",
+    zap: "START ZAP BASELINE",
+    core: "START CORE SECURITY"
+  };
   if (profile && note) note.textContent = PROFILE_DESCRIPTIONS[profile.value] || "";
+  if (profile && button && !button.disabled) button.textContent = labels[profile.value] || "START ASSESSMENT";
 }
 
 async function startRun() {
