@@ -89,8 +89,20 @@ def run_zap_baseline(target: str, state=None, max_runtime_seconds: int = 240) ->
         ).get("regexes") or []
         if not regexes:
             raise RuntimeError("The configured ZAP context has no inclusion regex. Add an exact target-origin scope before scanning.")
-        normalized_regexes = [re.sub(r"\\([./:-])", r"\1", str(regex)) for regex in regexes]
-        if not any(origin in regex for regex in normalized_regexes):
+        parsed_origin = urlparse(origin)
+        scope_match = False
+        for regex in regexes:
+            pattern = str(regex)
+            normalized = re.sub(r"\\([./:-])", r"\1", pattern)
+            if parsed_origin.netloc.lower() not in normalized.lower():
+                continue
+            try:
+                if re.search(pattern, origin.rstrip("/") + "/"):
+                    scope_match = True
+                    break
+            except re.error:
+                continue
+        if not scope_match:
             raise RuntimeError("The configured ZAP context inclusion rules do not visibly include the exact target origin. No scan was started.")
 
         update("ZAP SPIDER", f"Starting passive-baseline spider in pre-scoped context '{context_name}'.", 12)
