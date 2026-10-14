@@ -108,3 +108,56 @@ def test_zap_profile_without_configuration_is_reported_as_not_run(monkeypatch):
     assert captured["kwargs"]["status"] == "PARTIAL"
     assert captured["kwargs"]["phase_status"]["zap_baseline"]["status"] == "not_run"
     assert state.events[-1]["status"] == "PARTIAL"
+
+
+def test_zap_baseline_records_complete_phase_ledger_without_active_scan(monkeypatch):
+    from scanners import zap_baseline
+
+    monkeypatch.setenv("SENTINEL_ZAP_API_URL", "http://zap:8080")
+    monkeypatch.setenv("SENTINEL_ZAP_API_KEY", "test-key")
+    monkeypatch.setenv("SENTINEL_ZAP_CONTEXT", "authorized-example")
+    calls = []
+    def fake_api_get(session, base, api_key, path, params=None, timeout=10):
+        calls.append((path, params or {}))
+        if path == "/JSON/core/view/version/":
+            return {"version": "test"}
+        if path == "/JSON/context/view/contextList/":
+            return {"contextList": ["authorized-example"]}
+        if path == "/JSON/context/view/includeRegexs/":
+            return {"regexes": [r"https://example\.test.*"]}
+        if path == "/JSON/spider/action/scan/":
+            return {"scan": "1"}
+        if path == "/JSON/spider/view/status/":
+            return {"status": "100"}
+        if path == "/JSON/pscan/view/recordsToScan/":
+            return {"recordsToScan": "0"}
+        if path == "/JSON/alert/view/alerts/":
+            return {"alerts": [{
+                "url": "https://example.test/", "pluginId": "10001",
+                "alert": "Test passive alert", "risk": "Medium",
+                "confidence": "High", "method": "GET",
+                "description": "test description", "solution": "test fix",
+            }]}
+        raise AssertionError(f"Unexpected ZAP API path: {path}")
+
+    captured = {}
+    monkeypatch.setattr(zap_baseline, "_api_get", fake_api_get)
+    monkeypatch.setattr(zap_baseline, "generate", lambda *a, **k: captured.update(metadata=k["metadata"], findings=a[1]) or {})
+    monkeypatch.setattr(zap_baseline.time, "sleep", lambda _: None)
+
+    class FakeState:
+        def __init__(self):
+            self.events = []
+        def update(self, **kwargs):
+            self.events.append(kwargs)
+
+    state = FakeState()
+    rc = zap_baseline.run_zap_baseline("https://example.test", state=state, max_runtime_seconds=30)
+
+    assert rc == 0
+    assert captured["metadata"]["status"] == "COMPLETE"
+    assert captured["metadata"]["phase_status"]["zap_baseline"]["status"] == "completed"
+    assert captured["metadata"]["phase_status"]["zap_spider"]["status"] == "completed"
+    assert captured["metadata"]["phase_status"]["zap_passive"]["status"] == "completed"
+    assert captured["findings"][0]["title"] == "Test passive alert"
+    assert not any("/JSON/ascan/" in path for path, _ in calls)
