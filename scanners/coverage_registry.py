@@ -45,7 +45,7 @@ COVERAGE_REGISTRY = [
     {"id": "SENTINEL-RECON", "standard": "Sentinel", "name": "Web Crawler, Route and Technology Surface", "phases": ["route_discovery"], "manual": "JavaScript parsing and unauthenticated crawling cannot guarantee a complete route or technology inventory."},
     {"id": "SENTINEL-INFO-LEAK", "standard": "Sentinel", "name": "Information Disclosure and Exposed Artifacts", "phases": ["information_disclosure"], "manual": "Checks a bounded list of common paths and observed responses; no source repository or server filesystem access is implied."},
     {"id": "SENTINEL-SECURITY", "standard": "Sentinel", "name": "Security Headers and Deep Security Engine", "phases": ["security_headers", "active_security", "deep_security"], "manual": "External black-box checks cannot establish internal infrastructure, source-code, or full authentication security."},
-    {"id": "SENTINEL-ZAP", "standard": "OWASP ZAP Baseline", "name": "ZAP Spider and Passive Scan", "phases": ["zap_spider", "zap_passive", "zap_alert_collection"], "manual": "Requires an external ZAP daemon, API key, and pre-scoped context. Active scan is disabled in this integration."},
+    {"id": "SENTINEL-ZAP", "standard": "OWASP ZAP Baseline", "name": "ZAP Spider and Passive Scan", "phases": ["zap_baseline", "zap_spider", "zap_passive", "zap_alert_collection"], "manual": "Requires an external ZAP daemon, API key, and pre-scoped context. Active scan is disabled in this integration."},
 ]
 
 
