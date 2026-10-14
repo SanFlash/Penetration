@@ -75,7 +75,7 @@ def _worker(target: str, profile: str = "pentest"):
                 "--max-runtime", "180", "--out", config.REPORT_DIR,
             ], progress_callback=core_progress)
         elif profile == "security":
-            rc = run_security_profile(target)
+            rc = run_security_profile(target, state_override=_state)
         elif profile == "uiux":
             rc = run_compatibility_profile(target, headed=False, slow_mo=0, dashboard=False, state_override=_state)
         elif profile in {"functional", "input", "disclosure", "crawler", "api"}:
