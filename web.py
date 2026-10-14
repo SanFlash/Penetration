@@ -646,7 +646,7 @@ async function startRun() {
     showState("RUNNING", "QUEUED", selectedProfile === "core"
       ? "Core security assessment accepted. The HTML/JSON report and evidence ZIP will be ready when checks finish."
       : "Full pentest accepted. The complete report ZIP will download automatically when it is ready.");
-    setButton(true, "PENTEST RUNNING");
+    setButton(true, "ASSESSMENT RUNNING");
   } catch (error) {
     const message = error && error.name === "AbortError"
       ? "The server did not respond within 25 seconds. Check Render health/logs before retrying."
@@ -655,7 +655,8 @@ async function startRun() {
         : (error && error.message ? error.message : "Unable to start the assessment."));
 
     showState("ERROR", "START FAILED", message);
-    setButton(false, "START PENTEST");
+    setButton(false);
+    updateProfileDescription();
   }
 }
 
@@ -739,9 +740,10 @@ function renderStatus(s) {
     else reportNotice.textContent = "Start an authorized assessment. The final report download will appear after it ends.";
   }
   if (running) {
-    setButton(true, "PENTEST RUNNING");
+    setButton(true, "ASSESSMENT RUNNING");
   } else {
-    setButton(false, "START PENTEST");
+    setButton(false);
+    updateProfileDescription();
   }
 
   const cov = s.coverage || {};
