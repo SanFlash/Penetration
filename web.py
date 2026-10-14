@@ -16,7 +16,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 import config
-from main import run_pentest_profile
+from main import run_pentest_profile, run_security_profile, run_compatibility_profile
 from ui.dashboard import DashboardState
 from scanners.coverage_registry import build_coverage_registry
 
