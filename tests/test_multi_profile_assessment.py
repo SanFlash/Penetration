@@ -69,11 +69,11 @@ def test_focused_input_profile_records_validation_and_stress(monkeypatch):
         "probes": 5, "findings": [], "summary": {"findings": 0},
     })
     captured = {}
-    monkeypatch.setattr(main, "generate", lambda *a, **k: {
-        "json_path": "findings.json",
-        "html_path": "report.html",
-        "report": {"total_findings": 1},
-    })
+    def fake_generate(*args, **kwargs):
+        captured["findings"] = args[1]
+        captured["metadata"] = kwargs["metadata"]
+        return {"json_path": "findings.json", "html_path": "report.html", "report": {"total_findings": 1}}
+    monkeypatch.setattr(main, "generate", fake_generate)
     state = FakeState()
 
     rc = main.run_focused_profile("https://example.test", "input", state_override=state)
@@ -81,9 +81,10 @@ def test_focused_input_profile_records_validation_and_stress(monkeypatch):
     assert rc == 0
     assert any(event.get("stage") == "INPUT VALIDATION" for event in state.events)
     assert state.events[-1]["progress"] == 100
-    # The standard report generator receives the aggregated input findings and phase ledger.
-    generated = main.generate
-    assert callable(generated)
+    assert captured["findings"][0]["id"] == "VAL-1"
+    assert captured["metadata"]["profile"] == "input"
+    assert captured["metadata"]["phase_status"]["input_validation"]["checks"] == 4
+    assert captured["metadata"]["phase_status"]["input_stress"]["checks"] == 5
 
 
 def test_zap_profile_without_configuration_is_reported_as_not_run(monkeypatch):
