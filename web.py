@@ -97,15 +97,15 @@ def _worker(target: str, profile: str = "pentest"):
         if rc == 0:
             _state.update(
                 status="COMPLETE",
-                stage="CORE SCAN COMPLETE" if profile == "core" else "PENTEST COMPLETE",
-                detail=("Core security report and evidence bundle are ready." if profile == "core" else "Assessment and evidence are ready."),
+                stage=(profile.upper() + " ASSESSMENT COMPLETE"),
+                detail=("Core security report and evidence bundle are ready." if profile == "core" else "Assessment report and available evidence are ready."),
                 progress=100,
             )
-        elif profile == "core" and rc == 1:
+        elif rc == 1 and profile in {"core", "functional", "input", "disclosure", "crawler", "api", "zap"}:
             _state.update(
                 status="PARTIAL",
-                stage="CORE SCAN PARTIAL",
-                detail="The core scan finished, but one or more phases were incomplete. Review the phase status in the report.",
+                stage=(profile.upper() + " ASSESSMENT PARTIAL"),
+                detail="The selected profile finished with incomplete coverage or a missing integration prerequisite. Review phase statuses and the report.",
                 progress=100,
             )
         else:
@@ -439,7 +439,7 @@ body{background:#0b1120;color:var(--text);font-family:Inter,ui-sans-serif,system
 .pad{padding:22px}
 h2{font-size:18px;letter-spacing:-.02em}h3{font-size:12px;color:#a7b7ce;letter-spacing:.09em}
 .muted,.detail{color:#91a2ba}
-input{background:#0b1220;border:1px solid #34435a;border-radius:9px;padding:13px 14px;outline:none}
+input,select{background:#0b1220;border:1px solid #34435a;border-radius:9px;padding:13px 14px;outline:none;color:var(--text);width:100%;min-width:0}
 input:focus{border-color:#76a9ff;box-shadow:0 0 0 3px #76a9ff22}
 button{background:#4bd5a2;color:#06261d;border-radius:9px;font-size:13px;letter-spacing:.01em;box-shadow:none;transition:filter .15s,transform .15s}
 button:hover{filter:brightness(1.08);transform:translateY(-1px)}
