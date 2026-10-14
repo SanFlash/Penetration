@@ -60,7 +60,7 @@ def test_coverage_payload_separates_standards_and_preserves_execution_states():
 
     assert payload["ready"] is True
     assert payload["overall_status"] == "PARTIAL"
-    assert set(sections) == {"wstg", "owasp-2025", "owasp-2021", "api-top10", "wcag", "supplemental"}
+    assert set(sections) == {"wstg", "owasp-2025", "owasp-2021", "api-top10", "wcag", "zap", "supplemental"}
     assert sections["wstg"]["items"][0]["id"] == "WSTG-CONF"
     assert sections["api-top10"]["items"][0]["id"] == "API-BOLA"
     assert sections["wcag"]["items"][0]["id"] == "WCAG-2.2-AA"

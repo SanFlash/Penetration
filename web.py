@@ -203,6 +203,7 @@ def _coverage_payload(report: dict | None) -> dict:
     wstg = [row for row in framework if "OWASP WSTG" in str(row.get("standard", ""))]
     api = [row for row in framework if str(row.get("id", "")).startswith("API-")]
     wcag = [row for row in framework if str(row.get("id", "")).startswith("WCAG-")]
+    zap = [row for row in framework if "owasp zap" in str(row.get("standard", "")).lower()]
     supplemental = [
         row for row in framework
         if str(row.get("standard", "")).lower() == "sentinel"
@@ -214,6 +215,7 @@ def _coverage_payload(report: dict | None) -> dict:
         {"id": "owasp-2021", "title": "OWASP Top 10:2021 (legacy comparison)", "standard": "OWASP Top 10:2021", "items": owasp_2021},
         {"id": "api-top10", "title": "OWASP API Security Top 10:2023", "standard": "OWASP API Security Top 10:2023", "items": api},
         {"id": "wcag", "title": "Accessibility", "standard": "W3C WCAG 2.2 AA automated heuristics", "items": wcag},
+        {"id": "zap", "title": "OWASP ZAP Baseline", "standard": "OWASP ZAP Baseline", "items": zap},
         {"id": "supplemental", "title": "Sentinel Supplemental Coverage", "standard": "Sentinel", "items": supplemental},
     ]
     counts = {"engines_completed": 0, "partial": 0, "partial_or_failed": 0, "not_run": 0, "manual_review": 0}
