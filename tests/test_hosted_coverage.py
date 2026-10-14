@@ -78,8 +78,9 @@ def test_empty_coverage_payload_marks_registered_areas_not_run():
 
     assert payload["ready"] is False
     assert payload["summary"]["total_areas"] >= 20
-    assert payload["summary"]["not_run"] == payload["summary"]["total_areas"]
+    assert payload["summary"]["not_run"] + payload["summary"]["manual_review"] == payload["summary"]["total_areas"]
     assert payload["summary"]["engines_completed"] == 0
     assert payload["summary"]["partial_or_failed"] == 0
     assert payload["summary"]["manual_review"] >= 1
     assert all(section["items"] for section in payload["sections"] if section["id"] in {"wstg", "api-top10", "wcag", "supplemental"})
+    assert all(item["status"] in {"not_run", "manual_review"} for section in payload["sections"] for item in section["items"])
