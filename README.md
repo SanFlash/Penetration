@@ -1398,3 +1398,26 @@ Outputs include `core_report.json`, `core_report.html`, and `sentinel_core_bundl
 The core profile runs bounded same-origin discovery, response-header and cookie heuristics, path-specific public-exposure checks, inert query-reflection/error triage, and a sentinel-origin CORS check. It uses GET-only checks, disables redirects, verifies TLS, caps response capture and request volume, and never submits forms or changes server data.
 
 **Important:** This is an incremental migration path, not a claim that every legacy scanner has been rewritten or that automated checks certify security. Candidate findings need validation. The existing `pentest` profile remains available for its broader legacy assessment phases. See [Core Engine v3 documentation](docs/CORE_ENGINE_V3.md).
+
+
+## Optional OWASP ZAP integration
+
+An optional passive-first adapter is available for a locally running OWASP ZAP instance. It requires a reviewed ZAP context and keeps the ZAP API on loopback.
+
+Set the API key and context name, then run passive spidering and passive analysis:
+
+~~~powershell
+$env:ZAP_API_KEY = "your-local-zap-api-key"
+$env:ZAP_CONTEXT_NAME = "Authorized staging"
+python integrations/zap_runner.py --target https://staging.example.com --confirm-authorized
+~~~
+
+Active scanning sends attack payloads and may affect the application. It is disabled by default and requires both explicit confirmations:
+
+~~~powershell
+python integrations/zap_runner.py --target https://staging.example.com --confirm-authorized --active --confirm-active-zap --max-seconds 600
+~~~
+
+The separate JSON output defaults to reports/zap_report.json. Configure and verify ZAP context include/exclude rules before running; do not expose the ZAP API publicly. See [OWASP_ZAP_INTEGRATION.md](docs/OWASP_ZAP_INTEGRATION.md) for prerequisites, safety boundaries, and regression tests.
+
+The adapter complements the existing scanners; it does not yet merge ZAP alerts into the primary HTML/PDF report or establish full OWASP coverage.
