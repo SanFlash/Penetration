@@ -968,10 +968,10 @@ def _render_html(report: dict) -> str:
         shot_html = "".join(evidenceAnchor(p, "Open marked-up evidence") for p in shots)
         if not shot_html:
             shot_html = '<div class="warn">No screenshot file was attached. Structured evidence is shown above; inspect the evidence manifest for the capture failure reason.</div>'
-        elif capture_mode == "diagnostic-evidence-card":
+        elif str(capture_mode or "").startswith("diagnostic-evidence-card"):
             shot_html += '<p class="warn">This is a labelled diagnostic evidence card, not a browser screenshot.</p>'
         server_finding_cards.append(
-            '<article class="finding"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s</span></div>'
+            '<article class="finding"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s</span><span class="fid">%s evidence</span></div>'
             '<h3>%s</h3>'
             '<div class="finding-grid"><div><b>WHERE FOUND</b><div class="url">%s</div></div><div><b>METHOD</b><div>%s</div></div><div><b>PARAMETER / ELEMENT</b><div>%s</div></div><div><b>CATEGORY / CWE / OWASP</b><div>%s / %s / %s</div></div></div>'
             '<div class="finding-section"><b>ISSUE DESCRIPTION / CONTEXT</b><p>%s</p></div>'
@@ -981,7 +981,7 @@ def _render_html(report: dict) -> str:
             '<div class="finding-section"><b>HOW TO FIX</b><p>%s</p><p><b>Validation:</b> %s</p></div>'
             '<div class="finding-section"><b>VISUAL EVIDENCE</b><div class="finding-evidence-grid">%s</div></div></article>' % (
                 color, sev, html.escape(str(finding.get("id",""))), html.escape(str(finding.get("confidence","Medium"))),
-                html.escape(str(finding.get("observation_count",1))), html.escape(str(finding.get("title","Untitled finding"))),
+                html.escape(str(finding.get("observation_count",1))), html.escape(str(finding.get("evidence_status","not available"))), html.escape(str(finding.get("title","Untitled finding"))),
                 html.escape(str(finding.get("url") or "Target origin")), html.escape(str(finding.get("method","GET"))),
                 html.escape(str(finding.get("parameter") or finding.get("element") or "-")),
                 html.escape(str(finding.get("category") or "-")), html.escape(str(finding.get("cwe") or "-")), html.escape(str(finding.get("owasp") or "-")),
@@ -1249,7 +1249,7 @@ function renderFindings(){
   const color=colors[f.severity]||colors.Info;
   const shots=f.screenshots_relative||[];
   const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return evidenceAnchor(p,"Security evidence screenshot")}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
-  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>What failed / evidence / how to fix</summary><p><b>Description:</b> '+esc(f.description||f.plain_language_summary)+'</p><p><b>Why it matters:</b> '+esc(f.why_it_matters||f.impact)+'</p><p><b>Location:</b> '+esc((f.location_details||{}).path||f.url||"Target origin")+' · <b>Element:</b> '+esc((f.location_details||{}).element||f.parameter||"not identified")+'</p><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Suggested validation:</b> '+esc((f.reproduction_steps||[]).join(" "))+'</p><p><b>Evidence status:</b> '+esc(f.evidence_status||"not available")+'</p><p><b>Recommended action:</b> '+esc(f.recommended_action)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
+  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span><span class="fid">'+esc(f.evidence_status||"evidence pending")+'</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>What failed / evidence / how to fix</summary><p><b>Description:</b> '+esc(f.description||f.plain_language_summary)+'</p><p><b>Why it matters:</b> '+esc(f.why_it_matters||f.impact)+'</p><p><b>Location:</b> '+esc((f.location_details||{}).path||f.url||"Target origin")+' · <b>Element:</b> '+esc((f.location_details||{}).element||f.parameter||"not identified")+'</p><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Suggested validation:</b> '+esc((f.reproduction_steps||[]).join(" "))+'</p><p><b>Evidence status:</b> '+esc(f.evidence_status||"not available")+'</p><p><b>Recommended action:</b> '+esc(f.recommended_action)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
  }).join("");
 }
 ["search","sev"].forEach(function(id){document.getElementById(id).addEventListener("input",renderFindings)});
