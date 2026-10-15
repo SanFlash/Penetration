@@ -375,12 +375,22 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         item["location"] = _finding_location(item)
         item["observation_count"] = item.get("occurrences", 1)
         item["viewports"] = sorted(set(item.get("viewports", [])))
+        capture_meta = item.get("evidence_capture") or {}
+        capture_details = capture_meta.get("capture") if isinstance(capture_meta, dict) else {}
+        capture_details = capture_details if isinstance(capture_details, dict) else {}
+        capture_mode = str(capture_details.get("mode") or "")
+        screenshot_annotated = bool(
+            capture_details.get("annotated")
+            or capture_details.get("focus_found")
+            or capture_mode in {"exact-error-element", "diagnostic-evidence-card", "diagnostic-evidence-card-time-budget"}
+        )
         item["evidence_artifacts"] = [
             {
                 "path": rel,
                 "status": "attached" if os.path.isfile(os.path.join(out_dir, rel.replace("/", os.sep))) else "missing",
                 "kind": "screenshot",
-                "annotated": True,
+                "annotated": screenshot_annotated,
+                "capture_mode": capture_mode or "unspecified",
             }
             for rel in item.get("screenshots_relative", [])
         ]
@@ -1163,7 +1173,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="summary-item"><b>__SECURITYCAPS__</b><span>Security captures</span></div>
 </div></div>
 <div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
-<div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Checks recorded</th><th>Related findings*</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
+<div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes. Related-finding counts are category/title matches, can overlap between areas, and are not additive unique-finding totals.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Checks recorded</th><th>Related findings*</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">OWASP Top 10:2025 — current engine coverage</div><p class="sub">The current OWASP Top 10 mapping is shown separately from the retained 2021 legacy mapping. “Engines completed” means mapped checks ran, not that a category is secure. Supply-chain and logging/alerting categories remain manual review.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_2025_COVERAGE_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">OWASP Top 10:2021 — legacy engine coverage</div><p class="sub">This matrix shows which automated engines ran for each OWASP category. “Engines completed” is not a declaration that the category is secure; review individual findings and perform authenticated/manual tests where required.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_COVERAGE_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">WSTG and API coverage registry</div><p class="sub">Coverage is resolved from the actual phase ledger. Manual-only, unavailable, blocked, timed-out, and not-run categories remain visible and are never counted as passing.</p><div class="matrix"><table><thead><tr><th>Test ID</th><th>Standard</th><th>Area</th><th>Execution status</th><th>Phase results and limitations</th></tr></thead><tbody>__FRAMEWORK_COVERAGE_HTML__</tbody></table></div></div>
