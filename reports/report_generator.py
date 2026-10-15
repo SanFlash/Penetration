@@ -13,6 +13,7 @@ from reports.remediation import build_remediation_summary, enrich_finding
 from reports.exporter import make_portable_html, make_pdf
 from reports.xlsx_exporter import generate_xlsx
 from scanners.coverage_registry import build_coverage_registry
+from scanners.evidence_integrity import validate_evidence
 from reports.sarif_exporter import write_sarif
 
 
@@ -669,6 +670,20 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "phases": phase_rows, "limitation": limitation,
         })
 
+    # Validate source evidence before it is represented as attached in exports.
+    # The manifest keeps file-integrity status separate from semantic proof.
+    evidence_integrity_manifest = validate_evidence(findings_sorted, evidence_dir)
+    integrity_by_id = {
+        str(row.get("finding_id")): row
+        for row in evidence_integrity_manifest.get("findings", [])
+    }
+    for finding in findings_sorted:
+        integrity_row = integrity_by_id.get(str(finding.get("id")), {})
+        finding["evidence_integrity_status"] = integrity_row.get("evidence_status", "missing")
+        finding["evidence_integrity_artifacts"] = integrity_row.get("artifacts", [])
+        finding["verified_screenshot_count"] = integrity_row.get("screenshots_verified", 0)
+        finding["unverified_screenshot_count"] = integrity_row.get("screenshots_invalid_or_unavailable", 0)
+
     report = {
         "schema_version": "3.0",
         "author": "Satyendra Kumar Namdeo",
@@ -697,6 +712,10 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "findings_by_category": dict(categories),
             "screenshots_attached_to_findings": sum(1 for finding in findings_sorted if finding.get("evidence_status") == "attached"),
             "findings_without_screenshot": sum(1 for finding in findings_sorted if finding.get("evidence_status") != "attached"),
+            "findings_with_verified_evidence": sum(1 for finding in findings_sorted if finding.get("evidence_integrity_status") == "verified_file"),
+            "findings_with_partial_evidence": sum(1 for finding in findings_sorted if finding.get("evidence_integrity_status") == "partial"),
+            "findings_with_invalid_or_unavailable_evidence": sum(1 for finding in findings_sorted if finding.get("evidence_integrity_status") == "invalid_or_unavailable"),
+            "verified_screenshot_files": evidence_integrity_manifest.get("summary", {}).get("findings_with_verified_screenshots", 0),
             "evidence_artifacts_missing": len(missing_evidence),
         },
         "phase_execution_log": [
@@ -724,7 +743,11 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "marked": sum(1 for r in browser_results if r.get("evidence_marked")),
         },
         "security_evidence": security_evidence,
+        "evidence_integrity_manifest": evidence_integrity_manifest,
         "evidence_integrity": {
+            "manifest_schema_version": evidence_integrity_manifest.get("schema_version"),
+            "manifest_summary": evidence_integrity_manifest.get("summary", {}),
+            "manifest_inventory_errors": evidence_integrity_manifest.get("inventory_errors", []),
             "expected_visual_artifacts": len(unique_evidence_paths),
             "resolvable_visual_artifacts": len(unique_evidence_paths) - len(missing_evidence),
             "missing_visual_artifacts": missing_evidence,
@@ -741,6 +764,10 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     with open(json_path, "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2, ensure_ascii=False)
 
+    integrity_manifest_path = os.path.join(out_dir, "evidence_integrity.json")
+    with open(integrity_manifest_path, "w", encoding="utf-8") as handle:
+        json.dump(evidence_integrity_manifest, handle, indent=2, ensure_ascii=False)
+
     manifest_path = os.path.join(out_dir, "evidence_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as handle:
         json.dump({
@@ -751,6 +778,8 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "generated_at": report["generated_at"],
             "screenshots": gallery,
             "security_captures": security_evidence,
+            "integrity_manifest": "evidence_integrity.json",
+            "integrity_summary": evidence_integrity_manifest.get("summary", {}),
         }, handle, indent=2, ensure_ascii=False)
 
     html_path = os.path.join(out_dir, "report.html")
@@ -825,6 +854,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "- penetration_report.xlsx: spreadsheet findings export",
         "- findings.json: canonical structured findings and coverage data",
         "- evidence_manifest.json: screenshot and security-capture index",
+        "- evidence_integrity.json: per-finding screenshot verification, SHA-256 hashes, and inventory errors",
         "- sentinel.sarif: SARIF 2.1.0 results for compatible CI/security tools",
         "- evidence/: captured screenshots and other collected evidence files",
         "",
@@ -840,7 +870,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         json.dump(report, handle, indent=2, ensure_ascii=False)
     try:
         with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for candidate in (bundle_readme_path, html_path, portable_html_path, pdf_path, xlsx_path, sarif_path, json_path, manifest_path):
+            for candidate in (bundle_readme_path, html_path, portable_html_path, pdf_path, xlsx_path, sarif_path, json_path, manifest_path, integrity_manifest_path):
                 if candidate and os.path.isfile(candidate):
                     archive.write(candidate, os.path.basename(candidate))
             bundled_evidence = os.path.join(out_dir, "evidence")
