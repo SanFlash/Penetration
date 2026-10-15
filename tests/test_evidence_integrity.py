@@ -70,7 +70,7 @@ def test_manifest_writer_outputs_json(tmp_path):
 
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved == report
-    assert saved["schema_version"] == "1.0"
+    assert saved["schema_version"] == "1.1"
     assert saved["summary"]["artifact_files"] == 1
 
 
