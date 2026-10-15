@@ -788,9 +788,15 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             # Previously the capture phase produced PNGs but the finding objects
             # were never linked to those files, so the report could show an
             # evidence table while the finding itself still said "no screenshot".
-            by_id = {str(item.get("finding_id")): item for item in security_evidence if item.get("finding_id")}
+            by_id = {
+                (str(item.get("finding_id")), str(item.get("url") or "")): item
+                for item in security_evidence if item.get("finding_id")
+            }
             for finding in all_findings:
-                item = by_id.get(evidence_finding_key(finding))
+                item = by_id.get((
+                    evidence_finding_key(finding),
+                    str(finding.get("evidence_url") or finding.get("url") or ""),
+                ))
                 if not item or not item.get("screenshot"):
                     continue
                 finding["screenshot"] = item["screenshot"]
@@ -1061,11 +1067,14 @@ def run_focused_profile(target: str, profile: str, state_override=None):
                 navigation_timeout_ms=config.EVIDENCE_NAVIGATION_TIMEOUT_MS,
             )
             evidence_by_id = {
-                str(row.get("finding_id")): row
+                (str(row.get("finding_id")), str(row.get("url") or "")): row
                 for row in security_evidence if row.get("finding_id")
             }
             for finding in all_findings:
-                captured = evidence_by_id.get(evidence_finding_key(finding))
+                captured = evidence_by_id.get((
+                    evidence_finding_key(finding),
+                    str(finding.get("evidence_url") or finding.get("url") or ""),
+                ))
                 if captured and captured.get("screenshot"):
                     finding["screenshot"] = captured["screenshot"]
                     finding["evidence_capture"] = captured
