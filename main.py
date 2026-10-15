@@ -766,7 +766,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 evidence_findings,
                 headed=headed,
                 slow_mo=slow_mo,
-                max_items=config.EVIDENCE_MAX_ITEMS,
+                max_items=max(config.EVIDENCE_MAX_ITEMS, len(evidence_findings)),
                 max_seconds=config.EVIDENCE_MAX_SECONDS,
                 navigation_timeout_ms=config.EVIDENCE_NAVIGATION_TIMEOUT_MS,
                 progress_callback=_evidence_progress,
@@ -774,6 +774,16 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
         )
         if value:
             security_evidence = value
+            actual_page_shots = sum(
+                1 for item in security_evidence
+                if item.get("screenshot") and not (item.get("capture") or {}).get("diagnostic_artifact")
+            )
+            artifact_count = sum(1 for item in security_evidence if item.get("screenshot"))
+            phase_status["security_evidence"].update({
+                "checks": len(security_evidence),
+                "findings": artifact_count,
+                "note": f"{actual_page_shots} browser captures; {artifact_count - actual_page_shots} diagnostic-only artifacts.",
+            })
             # Attach captured browser artifacts back to their originating findings.
             # Previously the capture phase produced PNGs but the finding objects
             # were never linked to those files, so the report could show an
@@ -1039,15 +1049,58 @@ def run_focused_profile(target: str, profile: str, state_override=None):
         phase_status["route_discovery"]["status"] = "partial"
     statuses = [row.get("status") for row in phase_status.values()]
     overall = "PARTIAL" if any(status in {"partial", "failed", "timed_out", "blocked", "not_run"} for status in statuses) else "COMPLETE"
+    security_evidence = []
+    if all_findings:
+        update("EVIDENCE CAPTURE", f"Capturing marked evidence for {len(all_findings)} finding(s).", 82)
+        try:
+            security_evidence = capture_security_evidence(
+                target,
+                all_findings,
+                max_items=len(all_findings),
+                max_seconds=config.EVIDENCE_MAX_SECONDS,
+                navigation_timeout_ms=config.EVIDENCE_NAVIGATION_TIMEOUT_MS,
+            )
+            evidence_by_id = {
+                str(row.get("finding_id")): row
+                for row in security_evidence if row.get("finding_id")
+            }
+            for finding in all_findings:
+                captured = evidence_by_id.get(evidence_finding_key(finding))
+                if captured and captured.get("screenshot"):
+                    finding["screenshot"] = captured["screenshot"]
+                    finding["evidence_capture"] = captured
+                    finding["screenshots"] = list(dict.fromkeys(
+                        list(finding.get("screenshots") or []) + [captured["screenshot"]]
+                    ))
+            actual_page_shots = sum(
+                1 for row in security_evidence
+                if row.get("screenshot") and not (row.get("capture") or {}).get("diagnostic_artifact")
+            )
+            attached_artifacts = sum(1 for row in security_evidence if row.get("screenshot"))
+            phase_status["security_evidence"] = {
+                "status": "completed" if attached_artifacts == len(all_findings) and actual_page_shots == len(all_findings) else "partial",
+                "checks": len(security_evidence),
+                "findings": attached_artifacts,
+                "duration_seconds": None,
+                "note": f"{actual_page_shots} browser captures; {attached_artifacts - actual_page_shots} diagnostic-only artifacts.",
+            }
+        except Exception as exc:
+            phase_status["security_evidence"] = {
+                "status": "failed",
+                "checks": 0,
+                "findings": 0,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
     metadata = {
         "profile": profile,
-        "status": overall,
+        "status": overall if phase_status.get("security_evidence", {}).get("status") not in {"partial", "failed"} else "PARTIAL",
         "phase_status": phase_status,
         "phase_failures": [name for name, row in phase_status.items() if row.get("status") != "completed"],
         "focused_assessment": True,
         "scope_policy": "same-origin only; redirects disabled; read-only requests",
         "runtime_seconds": round(time.time() - started, 2),
         "route_discovery": route_result.get("summary", {}),
+        "security_evidence": security_evidence,
     }
     update("REPORT GENERATION", "Building the focused report and evidence bundle.", 90)
     report = generate(target, all_findings, config.EVIDENCE_DIR, out_dir=config.REPORT_DIR, metadata=metadata)
