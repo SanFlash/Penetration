@@ -63,7 +63,7 @@ def _normalize_finding(finding: dict) -> dict:
 
 def _context_excerpt(value: object, limit: int = 260) -> str:
     """Return a compact evidence excerpt without inventing missing response details."""
-    text = re.sub(r"\\s+", " ", str(value or "").strip())
+    text = re.sub(r"\s+", " ", str(value or "").strip())
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
