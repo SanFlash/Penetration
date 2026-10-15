@@ -72,3 +72,51 @@ def test_manifest_writer_outputs_json(tmp_path):
     assert saved == report
     assert saved["schema_version"] == "1.0"
     assert saved["summary"]["artifact_files"] == 1
+
+
+def test_mixed_screenshot_set_is_reported_as_partial_and_invalid_files_stay_referenced(tmp_path):
+    root = tmp_path / "evidence"
+    root.mkdir()
+    valid = root / "valid.png"
+    invalid = root / "invalid.png"
+    valid.write_bytes(PNG)
+    invalid.write_bytes(b"not an image")
+
+    report = validate_evidence(
+        [{"id": "F-PARTIAL", "screenshots": [str(valid), str(invalid)]}],
+        root,
+    )
+
+    finding = report["findings"][0]
+    assert finding["evidence_status"] == "partial"
+    assert finding["screenshots_verified"] == 1
+    assert finding["screenshots_invalid_or_unavailable"] == 1
+    inventory = {row["path"]: row for row in report["artifacts"]}
+    assert inventory["invalid.png"]["referenced_by_findings"] is True
+
+
+def test_manifest_writer_rejects_output_inside_evidence_root(tmp_path):
+    root = tmp_path / "evidence"
+    root.mkdir()
+    try:
+        write_evidence_manifest([], root, root / "manifest.json")
+    except ValueError as exc:
+        assert "outside the evidence root" in str(exc)
+    else:
+        raise AssertionError("Manifest output inside the evidence root must be rejected")
+
+
+def test_symlink_to_outside_evidence_is_rejected_when_supported(tmp_path):
+    root = tmp_path / "evidence"
+    root.mkdir()
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(PNG)
+    link = root / "outside-link.png"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        return
+
+    report = validate_evidence([{"id": "F-LINK", "screenshot": str(link)}], root)
+    assert report["findings"][0]["evidence_status"] == "invalid_or_unavailable"
+    assert report["findings"][0]["artifacts"][0]["status"] == "outside_evidence_root"
