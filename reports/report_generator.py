@@ -68,19 +68,26 @@ def _context_excerpt(value: object, limit: int = 260) -> str:
 
 
 def _contextualize_findings(items: list[dict]) -> list[dict]:
-    """Give every reported issue a stable ID and location-specific explanation."""
-    title_counts = Counter((str(item.get("title") or "Untitled finding").strip(),
-                            str(item.get("category") or "Uncategorized").strip()) for item in items)
+    """Add unique identifiers and evidence-led, location-specific finding context."""
+    title_counts = Counter(
+        (str(item.get("title") or "Untitled finding").strip(),
+         str(item.get("category") or "Uncategorized").strip())
+        for item in items
+    )
     title_seen, id_seen, variant_seen = Counter(), set(), Counter()
     templates = [
-        "The {category} check recorded “{title}” at {path} using {method}{parameter}. The recorded signal is: {evidence}.",
-        "At {path}, the assessment flagged “{title}” during its {category} pass{parameter}. The supporting observation reads: {evidence}.",
-        "This record points to {path}: a {method} check classified the condition as “{title}” in {category}{parameter}. Evidence captured for this instance: {evidence}.",
-        "The scan associated “{title}” with {path}{parameter}. Its {category} evidence was recorded as: {evidence}.",
-        "A location-specific {category} check found the “{title}” signal on {path}{parameter}. The report retains this observation for retesting: {evidence}.",
-        "For {path}, the scanner logged “{title}” via {method}{parameter}. This entry is grounded in the following observed evidence: {evidence}.",
-        "The issue was raised for {path} by the {category} engine{parameter}; the finding title is “{title}”. Recorded evidence: {evidence}.",
-        "During assessment of {path}, the {category} engine marked “{title}”{parameter}. The associated evidence excerpt is: {evidence}.",
+        "The {category} engine observed “{title}” at {path} during a {method} check. Evidence recorded: {evidence}.",
+        "At {path}, a {category} assessment flagged “{title}” via {method}. The captured signal was: {evidence}.",
+        "This finding links “{title}” to {path}; the {category} phase recorded the following observation: {evidence}.",
+        "The scan marked {path} for review after its {category} check detected “{title}”. Supporting evidence: {evidence}.",
+        "A {method} request to {path} produced a signal classified as “{title}” by the {category} check. Observed detail: {evidence}.",
+        "The recorded condition is specific to {path}: “{title}” was raised by {category}. Evidence excerpt: {evidence}.",
+        "During the {category} pass, Sentinel associated “{title}” with {path}. The retained observation is: {evidence}.",
+        "The assessment logged “{title}” for {path} after a {method} inspection. The evidence available for review states: {evidence}.",
+        "Review is recommended for {path}, where the {category} engine reported “{title}”. The scanner recorded: {evidence}.",
+        "A location-level signal was recorded at {path}: {title}. It came from the {category} check using {method}; evidence: {evidence}.",
+        "The {category} result points to {path} and describes “{title}”. This record is based on the following captured detail: {evidence}.",
+        "Sentinel's {category} pass placed {path} on the review list for “{title}”. The observed evidence is: {evidence}.",
     ]
     severity_impact = {
         "Critical": "Critical-rated signal: if validated as exploitable, it may materially affect confidentiality, integrity, or availability. Confirm exploitability and affected privileges before final risk acceptance.",
@@ -95,23 +102,29 @@ def _contextualize_findings(items: list[dict]) -> list[dict]:
         url = str(item.get("url") or "").strip()
         from urllib.parse import urlparse
         parsed = urlparse(url)
-        path = (parsed.path or "/") + (("?" + parsed.query[:120]) if parsed.query else "")
-        path = path or "target origin"
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query[:120]
         method = str(item.get("method") or "GET").upper()
         parameter_value = str(item.get("parameter") or "").strip()
         parameter = f" (parameter: {parameter_value})" if parameter_value else ""
-        evidence = _context_excerpt(item.get("evidence") or item.get("detail") or "No response excerpt was recorded.")
+        evidence = _context_excerpt(
+            item.get("evidence") or item.get("detail") or "No response excerpt was recorded."
+        )
         group_key = (original_title, category)
         variant = variant_seen[group_key]
         variant_seen[group_key] += 1
+
         if title_counts[group_key] > 1:
             title_seen[group_key] += 1
             suffix = path + (f" · {parameter_value}" if parameter_value else "")
-            item["title"] = f"{original_title} — {suffix}"
-            if any(str(other.get("title") or "") == item["title"] for other in items[:index - 1]):
-                item["title"] += f" · instance {title_seen[group_key]}"
+            candidate = f"{original_title} — {suffix}"
+            if any(str(other.get("title") or "") == candidate for other in items[:index - 1]):
+                candidate += f" · instance {title_seen[group_key]}"
+            item["title"] = candidate
         else:
             item["title"] = original_title
+
         existing_id = str(item.get("id") or item.get("finding_id") or "").strip()
         if not existing_id or existing_id in id_seen:
             seed = "|".join((category, original_title, url, method, parameter_value, evidence, str(index)))
@@ -121,32 +134,50 @@ def _contextualize_findings(items: list[dict]) -> list[dict]:
         id_seen.add(existing_id)
         item["id"] = existing_id
         item["issue_id"] = existing_id
+
         description = templates[variant % len(templates)].format(
-            category=category, title=original_title, path=path, method=method,
-            parameter=parameter, evidence=evidence,
+            category=category, title=original_title, path=path or "target origin",
+            method=method, parameter=parameter, evidence=evidence,
         )
+        # Preserve varied language for very large repeated-finding groups too;
+        # each additional instance gets a traceable context sentence rather than
+        # silently recycling an identical description after the template list ends.
+        if variant >= len(templates):
+            description += (
+                f" This is repeated observation {variant + 1} for this finding family; "
+                f"compare it with the other recorded locations and evidence before deduplicating."
+            )
         item["description"] = description
         item["plain_language_summary"] = description
         item["evidence_summary"] = evidence
         item["location_details"] = {
-            "url": url or None, "path": path, "method": method,
+            "url": url or None,
+            "path": path,
+            "method": method,
             "parameter": parameter_value or None,
             "element": item.get("selector") or item.get("element") or None,
+            "source_scanner": item.get("scanner") or item.get("source") or item.get("check") or None,
+            "response_status": item.get("status_code") or item.get("http_status") or None,
             "affected_url_count": len(item.get("affected_urls") or ([url] if url else [])),
         }
         item["reproduction_steps"] = [
             f"Open the recorded location: {url or 'target origin'}.",
             f"Review the {method} observation and the parameter/element noted in this finding.",
-            "Compare the response or browser behavior with the recorded evidence; the screenshot alone does not prove exploitability.",
+            "Compare the observed response or browser behavior with the recorded evidence; a screenshot alone does not establish exploitability.",
         ]
         impact = str(item.get("impact") or "").strip()
         if not impact or impact == "Security or compatibility impact should be validated in the authorized test environment.":
-            item["impact"] = severity_impact.get(str(item.get("severity") or "Info").title(), severity_impact["Info"])
+            item["impact"] = severity_impact.get(
+                str(item.get("severity") or "Info").title(), severity_impact["Info"]
+            )
         item["impact_assessment"] = {
             "severity": str(item.get("severity") or "Info").title(),
             "statement": item.get("impact") or severity_impact["Info"],
             "validation_required": True,
+            "cvss_score": item.get("cvss_score") or item.get("cvss"),
         }
+        item.setdefault("expected_behavior", "Confirm the expected behavior against the application's requirements; it was not inferred from the screenshot.")
+        item.setdefault("remediation", "Review the affected code path and apply the appropriate security control, then rerun the relevant check.")
     return items
 
 
