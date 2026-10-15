@@ -257,6 +257,27 @@ def _phase_call(name, phase_status, fn):
             "status": "partial" if result_status == "partial" else "completed",
             "duration_seconds": round(time.monotonic() - started, 2),
         }
+        if isinstance(value, dict):
+            summary = value.get("summary")
+            if isinstance(summary, dict) and summary:
+                phase_status[name]["summary"] = summary
+            stop_reason = value.get("stop_reason")
+            if stop_reason:
+                phase_status[name]["stop_reason"] = str(stop_reason)
+            checks = value.get("probes")
+            if checks is None:
+                checks = value.get("checks")
+            if checks is None and isinstance(summary, dict):
+                checks = summary.get("probes", summary.get("checks"))
+            if isinstance(checks, list):
+                checks = len(checks)
+            if isinstance(checks, (int, float)):
+                phase_status[name]["checks"] = int(checks)
+            findings = value.get("findings")
+            if isinstance(findings, list):
+                phase_status[name]["findings"] = len(findings)
+            elif isinstance(findings, (int, float)):
+                phase_status[name]["findings"] = int(findings)
         if result_status == "partial" and isinstance(value, dict):
             phase_status[name]["error"] = str(value.get("stop_reason") or "Phase stopped at its configured runtime budget.")
         return value
