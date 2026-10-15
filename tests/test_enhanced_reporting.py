@@ -195,3 +195,63 @@ def test_report_generates_sarif_and_includes_it_in_bundle(tmp_path):
         assert bundle.testzip() is None
         assert result["report"]["exports"]["bundle_generated"] is True
         assert result["report"]["exports"]["bundle_size_bytes"] > 0
+
+
+def test_report_integrates_verified_evidence_and_issue_linked_phase_logs(tmp_path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    screenshot = evidence / "diagnostic-endpoint.png"
+    screenshot.write_bytes(bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+        "0000000d49444154789c6360606000000004000105f9d8"
+        "0000000049454e44ae426082"
+    ))
+
+    result = generate(
+        "https://example.test",
+        [{
+            "id": "DISC-1",
+            "title": "Diagnostic endpoint exposed",
+            "severity": "High",
+            "category": "Information Disclosure",
+            "url": "https://example.test/.well-known/diagnostic",
+            "method": "GET",
+            "evidence": "HTTP 200 with diagnostic banner",
+            "remediation": "Remove the public diagnostic route.",
+            "screenshot": str(screenshot),
+        }],
+        str(evidence),
+        out_dir=str(tmp_path / "reports"),
+        metadata={
+            "profile": "pentest",
+            "phase_status": {
+                "information_disclosure": {
+                    "status": "completed",
+                    "checks": 4,
+                    "findings": 1,
+                    "duration_seconds": 1.25,
+                    "summary": {"paths_checked": 4},
+                }
+            },
+        },
+    )
+
+    report = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
+    finding = report["findings"][0]
+    assert finding["evidence_integrity_status"] == "verified_file"
+    assert finding["verified_screenshot_count"] == 1
+    assert report["evidence_integrity_manifest"]["summary"]["findings_with_verified_screenshots"] == 1
+    assert Path(result["report"]["exports"]["bundle_path"]).is_file()
+
+    html_report = Path(result["html_path"]).read_text(encoding="utf-8")
+    assert "Complete phase execution log" in html_report
+    assert "information_disclosure" in html_report
+    assert "DISC-1 · Diagnostic endpoint exposed" in html_report
+    assert "integrity: verified_file" in html_report
+
+    import zipfile
+    with zipfile.ZipFile(result["report"]["exports"]["bundle_path"]) as bundle:
+        names = set(bundle.namelist())
+        assert "evidence_integrity.json" in names
+        assert "evidence/diagnostic-endpoint.png" in names
+        assert bundle.testzip() is None
