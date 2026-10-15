@@ -560,17 +560,25 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "OWASP ZAP Baseline": ("zap", "passive scan"),
         }
         hints = category_hints.get(label, ())
-        related_findings = sum(
-            1 for finding in findings_sorted
+        related_items = [
+            finding for finding in findings_sorted
             if any(hint in str(finding.get("category") or "").lower() for hint in hints)
             or any(hint in str(finding.get("title") or "").lower() for hint in hints if hint in {"zap", "passive scan"})
-        )
+        ] if hints else []
+        related_findings = len(related_items)
+        related_observations = sum(int(item.get("observation_count", 1) or 1) for item in related_items)
         check_values = [phase.get("checks") for phase in present if isinstance(phase.get("checks"), (int, float))]
         coverage_matrix.append({
             "area": label,
             "status": status,
             "checks": sum(check_values) if check_values else None,
             "findings": related_findings if hints else None,
+            "observations": related_observations if hints else None,
+            "finding_refs": [
+                {"id": str(item.get("id") or ""), "title": str(item.get("title") or "Untitled finding"),
+                 "severity": str(item.get("severity") or "Info")}
+                for item in related_items
+            ],
             "phases": [
                 {
                     "name": name,
@@ -1046,7 +1054,7 @@ def _render_html(report: dict) -> str:
         elif str(capture_mode or "").startswith("diagnostic-evidence-card"):
             shot_html += '<p class="warn">This is a labelled diagnostic evidence card, not a browser screenshot.</p>'
         server_finding_cards.append(
-            '<article class="finding"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s</span><span class="fid">%s evidence</span></div>'
+            '<article class="finding" id="finding-%s"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s observations</span><span class="fid">%s evidence</span><span class="fid">integrity: %s</span></div>'
             '<h3>%s</h3>'
             '<div class="finding-grid"><div><b>WHERE FOUND</b><div class="url">%s</div></div><div><b>METHOD</b><div>%s</div></div><div><b>PARAMETER / ELEMENT</b><div>%s</div></div><div><b>CATEGORY / CWE / OWASP</b><div>%s / %s / %s</div></div></div>'
             '<div class="finding-section"><b>ISSUE DESCRIPTION / CONTEXT</b><p>%s</p></div>'
@@ -1055,8 +1063,9 @@ def _render_html(report: dict) -> str:
             '<div class="finding-section"><b>IMPACT</b><p>%s</p></div>'
             '<div class="finding-section"><b>HOW TO FIX</b><p>%s</p><p><b>Validation:</b> %s</p></div>'
             '<div class="finding-section"><b>VISUAL EVIDENCE</b><div class="finding-evidence-grid">%s</div></div></article>' % (
-                color, sev, html.escape(str(finding.get("id",""))), html.escape(str(finding.get("confidence","Medium"))),
-                html.escape(str(finding.get("observation_count",1))), html.escape(str(finding.get("evidence_status","not available"))), html.escape(str(finding.get("title","Untitled finding"))),
+                html.escape(str(finding.get("id","")), quote=True), color, sev, html.escape(str(finding.get("id",""))), html.escape(str(finding.get("confidence","Medium"))),
+                html.escape(str(finding.get("observation_count",1))), html.escape(str(finding.get("evidence_status","not available"))),
+                html.escape(str(finding.get("evidence_integrity_status","missing"))), html.escape(str(finding.get("title","Untitled finding"))),
                 html.escape(str(finding.get("url") or "Target origin")), html.escape(str(finding.get("method","GET"))),
                 html.escape(str(finding.get("parameter") or finding.get("element") or "-")),
                 html.escape(str(finding.get("category") or "-")), html.escape(str(finding.get("cwe") or "-")), html.escape(str(finding.get("owasp") or "-")),
@@ -1095,7 +1104,12 @@ def _render_html(report: dict) -> str:
             + "<td class='" + coverage_status_class.get(str(row.get("status", "not_run")), "warn") + "'>"
             + html.escape(str(row.get("status", "not_run")).replace("_", " ").upper()) + "</td>"
             + "<td>" + html.escape(str(row.get("checks") if row.get("checks") is not None else "Not recorded")) + "</td>"
-            + "<td>" + html.escape(str(row.get("findings") if row.get("findings") is not None else "Category mapping unavailable")) + "</td>"
+            + "<td>" + html.escape(str(row.get("findings") if row.get("findings") is not None else "Category mapping unavailable"))
+            + ("<div class='sub'>Observations: " + html.escape(str(row.get("observations", 0))) + "</div>" if row.get("findings") is not None else "")
+            + "".join("<div><a href='#finding-" + html.escape(str(ref.get("id", "")), quote=True) + "'>"
+                      + html.escape(str(ref.get("id", ""))) + " · " + html.escape(str(ref.get("title", "")))
+                      + " [" + html.escape(str(ref.get("severity", "Info"))) + "]</a></div>"
+                      for ref in row.get("finding_refs", [])) + "</td>"
             + "<td>" + ("".join(details) or "No phase details were recorded.") + "</td></tr>"
         )
     coverage_matrix_html_text = "".join(coverage_matrix_html) or "<tr><td colspan='5'>No phase coverage metadata was recorded.</td></tr>"
@@ -1160,6 +1174,30 @@ def _render_html(report: dict) -> str:
                html.escape(str(overview.get("title") or "")),
                html.escape(str(overview.get("status") or "-")))
         )
+
+    phase_execution_rows = []
+    for phase in report.get("phase_execution_log", []):
+        summary_value = phase.get("summary")
+        if isinstance(summary_value, (dict, list)):
+            summary_text = json.dumps(summary_value, ensure_ascii=False, sort_keys=True)
+        else:
+            summary_text = str(summary_value or "")
+        details_text = " · ".join(value for value in (
+            summary_text,
+            ("stop: " + str(phase.get("stop_reason"))) if phase.get("stop_reason") else "",
+            ("error: " + str(phase.get("error"))) if phase.get("error") else "",
+            str(phase.get("note")) if phase.get("note") else "",
+        ) if value) or "No additional phase detail recorded."
+        phase_execution_rows.append(
+            "<tr><td>" + html.escape(str(phase.get("phase", ""))) + "</td>"
+            + "<td class='" + coverage_status_class.get(str(phase.get("status", "not_run")).lower(), "warn") + "'>"
+            + html.escape(str(phase.get("status", "not_run")).replace("_", " ").upper()) + "</td>"
+            + "<td>" + html.escape(str(phase.get("duration_seconds") if phase.get("duration_seconds") is not None else "—")) + "</td>"
+            + "<td>" + html.escape(str(phase.get("checks") if phase.get("checks") is not None else "—")) + "</td>"
+            + "<td>" + html.escape(str(phase.get("findings") if phase.get("findings") is not None else "—")) + "</td>"
+            + "<td>" + html.escape(details_text) + "</td></tr>"
+        )
+    phase_execution_log_html = "".join(phase_execution_rows) or "<tr><td colspan='6'>No phase execution log was recorded for this run.</td></tr>"
 
     template = r'''<!doctype html>
 <html lang="en">
@@ -1278,7 +1316,10 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div id="remediationList"></div></div>
 </section>
 <section id="execution" class="tab" hidden>
-<div class="panel"><div class="section-title">Execution metadata</div><pre id="meta"></pre></div>
+<div class="panel"><div class="section-title">Complete phase execution log</div>
+<p class="sub">Each recorded phase shows its final status, checks, finding count, duration, summary, stop reason and error details. Missing phases remain visible in the coverage matrix as not run.</p>
+<div class="matrix"><table><thead><tr><th>Phase</th><th>Status</th><th>Duration (s)</th><th>Checks</th><th>Findings</th><th>Summary / stop reason / error</th></tr></thead><tbody>__PHASE_EXECUTION_LOG__</tbody></table></div></div>
+<div class="panel"><div class="section-title">Execution metadata (raw)</div><pre id="meta"></pre></div>
 </section>
 
 <footer>Sentinel Assessment Framework • Created by Satyendra Kumar Namdeo • © 2026 Satyendra Kumar Namdeo. All rights reserved. • Automated observations require appropriate validation.</footer>
@@ -1379,6 +1420,7 @@ document.getElementById("meta").textContent=JSON.stringify(meta,null,2);
         "__OWASP_COVERAGE_HTML__": owasp_coverage_html,
         "__OWASP_2025_COVERAGE_HTML__": owasp_2025_coverage_html,
         "__FRAMEWORK_COVERAGE_HTML__": framework_coverage_html,
+        "__PHASE_EXECUTION_LOG__": phase_execution_log_html,
         "__URLS__": str(browser["urls"]),
         "__VIEWPORTS__": str(browser["viewports"]),
         "__COVERFAILS__": str(browser["failures"]),
