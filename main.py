@@ -337,6 +337,35 @@ def _preflight_full_assessment(target: str) -> dict:
             f"Target preflight failed for {target}: {type(exc).__name__}: {exc}"
         ) from exc
 
+def _merge_zap_baseline_payload(payload, return_code, phase_status, all_findings):
+    """Merge validated ZAP baseline output into the unified assessment ledger."""
+    payload = payload if isinstance(payload, dict) else {}
+    alerts = payload.get("alerts", [])
+    if not isinstance(alerts, list):
+        alerts = []
+    all_findings.extend(item for item in alerts if isinstance(item, dict))
+    metadata = payload.get("metadata", {})
+    metadata = metadata if isinstance(metadata, dict) else {}
+    zap_metadata = metadata.get("zap", {})
+    zap_metadata = zap_metadata if isinstance(zap_metadata, dict) else {}
+    phases = payload.get("phases", {})
+    phases = phases if isinstance(phases, dict) else {}
+    phase_status["zap_baseline"] = {
+        "status": "completed" if return_code == 0 else "partial",
+        "checks": sum(
+            int(row.get("checks", 0) or 0)
+            for row in phases.values() if isinstance(row, dict)
+        ),
+        "findings": len(alerts),
+        "error": "; ".join(str(item) for item in zap_metadata.get("errors", []) if item) or None,
+        "note": "External ZAP spider + passive scan; active scanning disabled.",
+    }
+    for name, row in phases.items():
+        if isinstance(row, dict):
+            phase_status[str(name)] = dict(row)
+    return len(alerts)
+
+
 def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, dashboard: bool = True, authorized: bool = False, state_override=None):
     parsed = urlparse(target)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
@@ -826,6 +855,37 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 if item["screenshot"] not in finding["screenshots"]:
                     finding["screenshots"].append(item["screenshot"])
         refresh_report("SECURITY EVIDENCE", f"Focused evidence captured for {sum(1 for x in security_evidence if x.get('screenshot'))} issues.")
+
+        # Optional external ZAP baseline joins the same Full Pentest finding
+        # collection when configured. Missing integration is explicitly recorded
+        # as not_run rather than silently counted as completed.
+        zap_configured = all(os.getenv(key, "").strip() for key in (
+            "SENTINEL_ZAP_API_URL", "SENTINEL_ZAP_API_KEY", "SENTINEL_ZAP_CONTEXT"
+        ))
+        if zap_configured:
+            loader.set("Running configured OWASP ZAP passive baseline")
+            telemetry(stage="OWASP ZAP BASELINE", detail="Running ZAP spider and passive analysis in the pre-scoped context; active scanning remains disabled.", progress=94)
+            try:
+                from scanners.zap_baseline import run_zap_baseline
+                zap_rc = run_zap_baseline(target, state=state)
+                zap_path = os.path.join(config.EVIDENCE_DIR, "zap_baseline.json")
+                zap_payload = {}
+                if os.path.isfile(zap_path):
+                    with open(zap_path, "r", encoding="utf-8") as zap_handle:
+                        zap_payload = json.load(zap_handle)
+                _merge_zap_baseline_payload(zap_payload, zap_rc, phase_status, all_findings)
+            except Exception as zap_exc:
+                phase_status["zap_baseline"] = {
+                    "status": "failed",
+                    "checks": 0,
+                    "error": f"{type(zap_exc).__name__}: {zap_exc}",
+                }
+        else:
+            phase_status["zap_baseline"] = {
+                "status": "not_run",
+                "checks": 0,
+                "note": "Optional ZAP integration not configured; configure SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY, and SENTINEL_ZAP_CONTEXT to include its alerts in the unified report.",
+            }
 
         banner("STEP 13 — Final interactive report")
         loader.set("Finalizing HTML report")
