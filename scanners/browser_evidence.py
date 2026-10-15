@@ -464,6 +464,10 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
 
     candidates = _evidence_candidates(target, findings, max_items)
+    unlocated = [
+        finding for finding in findings
+        if not (finding.get("evidence_url") or finding.get("url"))
+    ]
 
     def notify(done, total, finding_id, url, status, item=None):
         if not progress_callback:
@@ -475,9 +479,35 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             progress_callback(done, total, finding_id, url, status)
 
     captured = []
+    # A finding without a reliable URL still receives a clearly labelled
+    # diagnostic card; it is never misrepresented as a browser screenshot.
+    for index, finding in enumerate(unlocated, 1):
+        finding_id = evidence_finding_key(finding)
+        reason = "The scanner did not provide a finding-specific URL; this artifact summarizes the recorded issue without asserting page-level visual proof."
+        path = os.path.join(EVIDENCE_DIR, f"security_unlocated_{index:03d}_{_safe_filename(target)}_diagnostic.png")
+        diagnostic = _write_diagnostic_evidence_card(path, finding, target, None, reason, reason)
+        item = {
+            "finding_id": finding_id, "url": target, "status": None,
+            "screenshot": path if os.path.isfile(path) else None,
+            "capture": {
+                "mode": "diagnostic-evidence-card-unlocated",
+                "focus_found": False,
+                "capture_scope": "generated-diagnostic-card",
+                "diagnostic_artifact": True,
+                "annotated": True,
+                "focus_reason": reason,
+                "diagnostic_fallback": diagnostic,
+            },
+            "console_errors": [], "error": reason,
+        }
+        captured.append(item)
+        if item["screenshot"]:
+            finding["screenshot"] = item["screenshot"]
+            finding["evidence_capture"] = item
+
     if not candidates:
         with open(os.path.join(EVIDENCE_DIR, "security_browser_evidence.json"), "w", encoding="utf-8") as f:
-            json.dump([], f, indent=2)
+            json.dump(captured, f, indent=2)
         return captured
 
     started = __import__("time").monotonic()
