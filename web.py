@@ -7,11 +7,13 @@ All API routes except /healthz require SENTINEL_ACCESS_TOKEN when configured.
 from __future__ import annotations
 
 import html
+import hmac
 import json
 import os
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -23,6 +25,22 @@ from scanners.coverage_registry import build_coverage_registry
 app = Flask(__name__)
 
 ACCESS_TOKEN = os.getenv("SENTINEL_ACCESS_TOKEN", "").strip()
+ALLOWED_PROFILES = {
+    "pentest", "core", "security", "uiux", "functional",
+    "input", "disclosure", "crawler", "api", "zap",
+}
+PROFILE_CAPABILITIES = {
+    "pentest": {"label": "Full Pentest", "engines": ["recon", "ui_responsive", "accessibility", "functional_testing", "security_headers", "active_security", "deep_security", "api_surface", "route_discovery", "input_validation", "input_stress", "information_disclosure", "attack_surface", "security_evidence"], "external_integrations": ["zap_optional"]},
+    "security": {"label": "Security & OWASP", "engines": ["deep_security", "api_surface"], "external_integrations": []},
+    "uiux": {"label": "UI/UX, Responsive & Accessibility", "engines": ["ui_responsive", "accessibility"], "external_integrations": []},
+    "functional": {"label": "Functional & Navigation", "engines": ["route_discovery", "functional_testing"], "external_integrations": []},
+    "input": {"label": "Input Validation & Stress", "engines": ["route_discovery", "input_validation", "input_stress"], "external_integrations": []},
+    "api": {"label": "API & Attack Surface", "engines": ["route_discovery", "api_surface"], "external_integrations": []},
+    "disclosure": {"label": "Information Disclosure", "engines": ["route_discovery", "information_disclosure"], "external_integrations": []},
+    "crawler": {"label": "Web Crawler & Recon", "engines": ["route_discovery"], "external_integrations": []},
+    "zap": {"label": "OWASP ZAP Baseline", "engines": ["zap_spider", "zap_passive", "zap_alert_collection"], "external_integrations": ["OWASP ZAP daemon, API key, reviewed context"]},
+    "core": {"label": "Core Security", "engines": ["bounded_core_security"], "external_integrations": []},
+}
 DEFAULT_TARGET = os.getenv("SENTINEL_DEFAULT_TARGET", "").strip() or config.PENTEST_TARGET_ORIGIN
 
 _run_lock = threading.Lock()
@@ -33,6 +51,32 @@ _last_error = None
 _run_started_at = None
 
 
+def _validate_target_url(value: str) -> str:
+    """Validate target URL syntax without silently changing the assessment scope."""
+    raw = str(value or "").strip()
+    if not raw or any(ord(ch) < 32 for ch in raw):
+        raise ValueError("Target URL is empty or contains control characters.")
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Target URL contains an invalid host or port.") from exc
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Target must be an absolute HTTP(S) URL with a hostname.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Do not embed usernames or passwords in the target URL.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Enter the base URL or path without a query string or fragment.")
+    host = parsed.hostname
+    if any(ch.isspace() for ch in host) or "/" in host or chr(92) in host:
+        raise ValueError("Target hostname is malformed.")
+    scheme = parsed.scheme.lower()
+    host_for_netloc = "[" + host.lower() + "]" if ":" in host else host.lower()
+    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    netloc = host_for_netloc if port is None or default_port else f"{host_for_netloc}:{port}"
+    return urlunsplit((scheme, netloc, parsed.path.rstrip("/"), "", ""))
+
+
 def _authorized() -> bool:
     if not ACCESS_TOKEN:
         return True
@@ -41,7 +85,7 @@ def _authorized() -> bool:
         supplied = request.args.get("token", "")
     if not supplied:
         supplied = request.cookies.get("sentinel_access_token", "")
-    return supplied == ACCESS_TOKEN
+    return hmac.compare_digest(supplied, ACCESS_TOKEN)
 
 
 def _require_auth():
@@ -316,6 +360,38 @@ def status():
     return jsonify(payload)
 
 
+@app.get("/api/preflight")
+def preflight():
+    auth = _require_auth()
+    if auth:
+        return auth
+    profile = str(request.args.get("profile") or "pentest").strip().lower()
+    if profile not in ALLOWED_PROFILES:
+        return jsonify({"error": "invalid_profile", "allowed_profiles": sorted(ALLOWED_PROFILES)}), 400
+    try:
+        target = _validate_target_url(request.args.get("target") or DEFAULT_TARGET)
+    except ValueError as exc:
+        return jsonify({"valid": False, "error": "invalid_target", "message": str(exc), "profile": profile}), 400
+    parsed = urlsplit(target)
+    zap_ready = all(os.getenv(key, "").strip() for key in (
+        "SENTINEL_ZAP_API_URL", "SENTINEL_ZAP_API_KEY", "SENTINEL_ZAP_CONTEXT"
+    ))
+    return jsonify({
+        "valid": True,
+        "target": target,
+        "origin": f"{parsed.scheme}://{parsed.netloc}",
+        "profile": profile,
+        "profile_capabilities": PROFILE_CAPABILITIES[profile],
+        "integrations": {"zap": {
+            "configured": zap_ready,
+            "status": "configured_prerequisites_present" if zap_ready else "not_configured",
+            "note": "Environment presence does not prove the ZAP API is reachable or its context is correctly scoped."
+        }},
+        "authorization_required": True,
+        "scope_note": "This endpoint validates URL syntax, not ownership or authorization. Scanner scope enforcement remains required."
+    })
+
+
 @app.post("/api/run")
 def run():
     global _run_thread, _state, _last_result, _run_started_at
@@ -327,23 +403,19 @@ def run():
         return jsonify({"error": "assessment_already_running"}), 409
 
     body = request.get_json(silent=True) or {}
-    target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
-    authorized = bool(body.get("authorized", False))
+    try:
+        target = _validate_target_url(body.get("target") or DEFAULT_TARGET)
+    except ValueError as exc:
+        _run_lock.release()
+        return jsonify({"error": "invalid_target", "message": str(exc)}), 400
+    authorized = body.get("authorized") is True
     profile = str(body.get("profile") or "pentest").strip().lower()
-    allowed_profiles = {"pentest", "core", "security", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"}
-    if profile not in allowed_profiles:
+    if profile not in ALLOWED_PROFILES:
         _run_lock.release()
         return jsonify({
             "error": "invalid_profile",
             "message": "Choose a supported assessment profile from the console.",
-            "allowed_profiles": sorted(allowed_profiles),
-        }), 400
-
-    if not target.startswith(("http://", "https://")):
-        _run_lock.release()
-        return jsonify({
-            "error": "invalid_target",
-            "message": "Target must be a complete http:// or https:// URL.",
+            "allowed_profiles": sorted(ALLOWED_PROFILES),
         }), 400
 
     if not authorized:
