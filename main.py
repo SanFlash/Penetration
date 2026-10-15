@@ -772,7 +772,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 progress_callback=_evidence_progress,
             ),
         )
-        if value:
+        if value is not None:
             security_evidence = value
             actual_page_shots = sum(
                 1 for item in security_evidence
@@ -780,6 +780,7 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             )
             artifact_count = sum(1 for item in security_evidence if item.get("screenshot"))
             phase_status["security_evidence"].update({
+                "status": "completed" if artifact_count == len(evidence_findings) and actual_page_shots == len(evidence_findings) else "partial",
                 "checks": len(security_evidence),
                 "findings": artifact_count,
                 "note": f"{actual_page_shots} browser captures; {artifact_count - actual_page_shots} diagnostic-only artifacts.",
