@@ -661,5 +661,14 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             finding["screenshot"] = item["screenshot"]
             finding["evidence_capture"] = item
             finding["evidence_focus"] = item.get("capture", {})
+            finding.setdefault("screenshots", [])
+            if item["screenshot"] not in finding["screenshots"]:
+                finding["screenshots"].append(item["screenshot"])
+            # When the page itself could not isolate a DOM node, attach the
+            # generated diagnostic card alongside the context viewport so the
+            # report still shows the issue-specific markup at the finding.
+            diagnostic_path = (item.get("capture") or {}).get("diagnostic_screenshot")
+            if diagnostic_path and os.path.isfile(diagnostic_path) and diagnostic_path not in finding["screenshots"]:
+                finding["screenshots"].append(diagnostic_path)
 
     return captured
