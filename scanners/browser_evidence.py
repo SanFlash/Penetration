@@ -490,20 +490,43 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         for index, (url, finding_id, finding) in enumerate(candidates, 1):
             elapsed = __import__("time").monotonic() - started
             if elapsed >= max_seconds:
-                captured.append({
+                # Do not leave selected findings without an attached artifact just
+                # because the browser-navigation budget was consumed. These are
+                # explicitly labelled diagnostic cards, never represented as page screenshots.
+                reason = (
+                    f"Browser evidence time budget ({max_seconds}s) was reached after "
+                    f"{len(captured)} capture(s); this item was not navigated."
+                )
+                diagnostic_path = os.path.join(
+                    EVIDENCE_DIR,
+                    f"security_{index:03d}_{_safe_filename(url)}_budget_diagnostic.png",
+                )
+                diagnostic = _write_diagnostic_evidence_card(
+                    diagnostic_path, finding, url, None, reason, reason
+                )
+                item = {
                     "finding_id": finding_id,
                     "url": url,
                     "status": None,
-                    "screenshot": None,
+                    "screenshot": diagnostic_path if os.path.isfile(diagnostic_path) else None,
                     "capture": {
-                        "mode": "evidence-time-budget-exceeded",
+                        "mode": "diagnostic-evidence-card-time-budget",
                         "focus_found": False,
-                        "focus_reason": f"Evidence phase stopped after the {max_seconds}s safety budget; remaining items were not navigated.",
+                        "capture_scope": "generated-diagnostic-card",
+                        "diagnostic_artifact": True,
+                        "annotated": True,
+                        "focus_reason": reason,
+                        "diagnostic_fallback": diagnostic,
                     },
                     "console_errors": [],
-                    "error": f"EvidencePhaseTimeout: global evidence budget of {max_seconds}s exceeded after {len(captured)} item(s).",
-                })
-                break
+                    "error": reason,
+                    "error_type": "EvidenceTimeBudget",
+                    "error_description": reason,
+                }
+                captured.append(item)
+                if progress_callback:
+                    notify(index, total, finding_id, url, "diagnostic-only", item)
+                continue
 
             if progress_callback:
                 notify(index - 1, total, finding_id, url, "starting", None)
