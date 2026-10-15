@@ -621,15 +621,15 @@ function setButton(running, label) {
 }
 
 const PROFILE_DESCRIPTIONS = {
-  pentest: "Runs the full built-in pipeline: reconnaissance, UI/responsive/accessibility, functional/navigation, information disclosure, security headers, bounded active/deep security, API and route discovery, input validation/stress, attack-surface correlation, and evidence capture. ZAP is separate and runs only when selected/configured.",
-  security: "Runs the deep security engine and passive API/route discovery without browser UI tests.",
-  uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics. Manual assistive-technology review is still required.",
+  pentest: "Runs the broadest built-in pipeline: reconnaissance, browser UI/responsive/accessibility, read-only navigation, information disclosure, security headers, bounded active/deep security, API/route discovery, input validation/stress, attack-surface correlation and evidence. External ZAP is a separate profile; its results are not automatically merged into this report.",
+  security: "Runs deep security checks plus passive API-surface discovery. Browser UI/responsive and functional navigation phases are not included in this focused profile.",
+  uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics on discovered pages. Manual keyboard, screen-reader and assistive-technology review is still required.",
   functional: "Runs read-only page and navigation smoke checks. It does not submit forms or validate business transactions.",
   input: "Runs bounded valid/invalid query checks and conservative input-stress probes. No form submissions or destructive payloads.",
   api: "Discovers API routes and available API specifications. Role-based authorization checks require supplied test accounts and expected permissions.",
   disclosure: "Checks common exposed configuration, diagnostic, API-documentation and verbose-error paths.",
   crawler: "Builds a same-origin route/JavaScript/API candidate inventory; discovered state-changing methods are inventoried, not submitted.",
-  zap: "Requires SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY, and SENTINEL_ZAP_CONTEXT plus a reviewed exact-target ZAP context. Runs spider + passive analysis only; active scanning is disabled. If unavailable, the report correctly shows PARTIAL and records the missing prerequisite.",
+  zap: "Requires SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY and SENTINEL_ZAP_CONTEXT plus a reviewed exact-target ZAP context. Runs the passive baseline only; active scanning is disabled. Environment values alone do not prove that the API or scope is valid."
   core: "Runs the quick, bounded Core Security subset and evidence bundle."
 };
 function updateProfileDescription() {
@@ -678,10 +678,31 @@ async function startRun() {
     return;
   }
 
-  setButton(true, "STARTING...");
-  showState("STARTING", "CONNECTING", "Submitting the assessment request...");
+  setButton(true, "VALIDATING TARGET...");
+  showState("PREFLIGHT", "VALIDATING SCOPE", "Checking URL syntax and the selected profile prerequisites before starting any scanner.");
 
   try {
+    const preflightUrl = "/api/preflight?target=" + encodeURIComponent(target) + "&profile=" + encodeURIComponent(el("profile").value);
+    const preflightResponse = await fetch(preflightUrl, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: {"Accept": "application/json", "Cache-Control": "no-cache"}
+    });
+    const preflightText = await preflightResponse.text();
+    let preflight = {};
+    try { preflight = preflightText ? JSON.parse(preflightText) : {}; }
+    catch (_) { preflight = {message: "Preflight returned an invalid response."}; }
+    if (!preflightResponse.ok || preflight.valid !== true) {
+      throw new Error(preflight.message || preflight.error || ("Preflight failed with HTTP " + preflightResponse.status));
+    }
+    if (preflight.target) targetInput.value = preflight.target;
+    const zap = preflight.integrations && preflight.integrations.zap;
+    if (el("profile").value === "zap" && zap && !zap.configured) {
+      showState("PREFLIGHT", "ZAP NOT CONFIGURED", "The run can still report the missing prerequisite, but no ZAP spider or passive scan can run until the ZAP API, key and context are configured.");
+    } else {
+      showState("PREFLIGHT", "SCOPE VALIDATED", "URL syntax is valid. Starting the selected profile; this does not verify ownership or guarantee every coverage category will run.");
+    }
+    setButton(true, "STARTING ASSESSMENT...");
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
     let response;
