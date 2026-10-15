@@ -1,4 +1,5 @@
 """Generate interactive JSON and self-contained HTML assessment reports."""
+import hashlib
 import html
 import json
 import os
@@ -58,6 +59,95 @@ def _normalize_finding(finding: dict) -> dict:
     item.setdefault("references", [])
     item.update(_friendly_fields(item))
     return item
+
+
+def _context_excerpt(value: object, limit: int = 260) -> str:
+    """Return a compact evidence excerpt without inventing missing response details."""
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def _contextualize_findings(items: list[dict]) -> list[dict]:
+    """Give every reported issue a stable ID and location-specific explanation."""
+    title_counts = Counter((str(item.get("title") or "Untitled finding").strip(),
+                            str(item.get("category") or "Uncategorized").strip()) for item in items)
+    title_seen, id_seen, variant_seen = Counter(), set(), Counter()
+    templates = [
+        "The {category} check recorded “{title}” at {path} using {method}{parameter}. The recorded signal is: {evidence}.",
+        "At {path}, the assessment flagged “{title}” during its {category} pass{parameter}. The supporting observation reads: {evidence}.",
+        "This record points to {path}: a {method} check classified the condition as “{title}” in {category}{parameter}. Evidence captured for this instance: {evidence}.",
+        "The scan associated “{title}” with {path}{parameter}. Its {category} evidence was recorded as: {evidence}.",
+        "A location-specific {category} check found the “{title}” signal on {path}{parameter}. The report retains this observation for retesting: {evidence}.",
+        "For {path}, the scanner logged “{title}” via {method}{parameter}. This entry is grounded in the following observed evidence: {evidence}.",
+        "The issue was raised for {path} by the {category} engine{parameter}; the finding title is “{title}”. Recorded evidence: {evidence}.",
+        "During assessment of {path}, the {category} engine marked “{title}”{parameter}. The associated evidence excerpt is: {evidence}.",
+    ]
+    severity_impact = {
+        "Critical": "Critical-rated signal: if validated as exploitable, it may materially affect confidentiality, integrity, or availability. Confirm exploitability and affected privileges before final risk acceptance.",
+        "High": "High-rated signal: if confirmed, it may enable meaningful unauthorized access or exposure. Verify the reachable attack path and affected data before remediation sign-off.",
+        "Medium": "Medium-rated signal: the condition may increase risk in combination with another weakness or under specific application states. Validate the preconditions and scope.",
+        "Low": "Low-rated signal: the observed condition is likely limited in direct impact, but should be reviewed for security hardening and chained-risk implications.",
+        "Info": "Informational observation: no direct security impact is asserted from this record alone; use the evidence to decide whether follow-up validation is needed.",
+    }
+    for index, item in enumerate(items, 1):
+        original_title = str(item.get("title") or "Untitled finding").strip()
+        category = str(item.get("category") or "Uncategorized").strip()
+        url = str(item.get("url") or "").strip()
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        path = (parsed.path or "/") + (("?" + parsed.query[:120]) if parsed.query else "")
+        path = path or "target origin"
+        method = str(item.get("method") or "GET").upper()
+        parameter_value = str(item.get("parameter") or "").strip()
+        parameter = f" (parameter: {parameter_value})" if parameter_value else ""
+        evidence = _context_excerpt(item.get("evidence") or item.get("detail") or "No response excerpt was recorded.")
+        group_key = (original_title, category)
+        variant = variant_seen[group_key]
+        variant_seen[group_key] += 1
+        if title_counts[group_key] > 1:
+            title_seen[group_key] += 1
+            suffix = path + (f" · {parameter_value}" if parameter_value else "")
+            item["title"] = f"{original_title} — {suffix}"
+            if any(str(other.get("title") or "") == item["title"] for other in items[:index - 1]):
+                item["title"] += f" · instance {title_seen[group_key]}"
+        else:
+            item["title"] = original_title
+        existing_id = str(item.get("id") or item.get("finding_id") or "").strip()
+        if not existing_id or existing_id in id_seen:
+            seed = "|".join((category, original_title, url, method, parameter_value, evidence, str(index)))
+            existing_id = "SNT-" + hashlib.sha256(seed.encode("utf-8", "replace")).hexdigest()[:10].upper()
+            while existing_id in id_seen:
+                existing_id = "SNT-" + hashlib.sha256((seed + existing_id).encode("utf-8", "replace")).hexdigest()[:10].upper()
+        id_seen.add(existing_id)
+        item["id"] = existing_id
+        item["issue_id"] = existing_id
+        description = templates[variant % len(templates)].format(
+            category=category, title=original_title, path=path, method=method,
+            parameter=parameter, evidence=evidence,
+        )
+        item["description"] = description
+        item["plain_language_summary"] = description
+        item["evidence_summary"] = evidence
+        item["location_details"] = {
+            "url": url or None, "path": path, "method": method,
+            "parameter": parameter_value or None,
+            "element": item.get("selector") or item.get("element") or None,
+            "affected_url_count": len(item.get("affected_urls") or ([url] if url else [])),
+        }
+        item["reproduction_steps"] = [
+            f"Open the recorded location: {url or 'target origin'}.",
+            f"Review the {method} observation and the parameter/element noted in this finding.",
+            "Compare the response or browser behavior with the recorded evidence; the screenshot alone does not prove exploitability.",
+        ]
+        impact = str(item.get("impact") or "").strip()
+        if not impact or impact == "Security or compatibility impact should be validated in the authorized test environment.":
+            item["impact"] = severity_impact.get(str(item.get("severity") or "Info").title(), severity_impact["Info"])
+        item["impact_assessment"] = {
+            "severity": str(item.get("severity") or "Info").title(),
+            "statement": item.get("impact") or severity_impact["Info"],
+            "validation_required": True,
+        }
+    return items
 
 
 def _finding_location(item: dict) -> dict:
@@ -271,6 +361,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
                     current["viewports"].append(current_viewport)
 
     normalized = list(grouped.values()) + list(security_grouped.values())
+    normalized = _contextualize_findings(normalized)
     for item in normalized:
         if item.get("screenshots"):
             item["screenshot"] = item["screenshots"][0]
@@ -284,6 +375,29 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         item["location"] = _finding_location(item)
         item["observation_count"] = item.get("occurrences", 1)
         item["viewports"] = sorted(set(item.get("viewports", [])))
+        capture_meta = item.get("evidence_capture") or {}
+        capture_details = capture_meta.get("capture") if isinstance(capture_meta, dict) else {}
+        capture_details = capture_details if isinstance(capture_details, dict) else {}
+        capture_mode = str(capture_details.get("mode") or "")
+        screenshot_annotated = bool(
+            capture_details.get("annotated")
+            or capture_details.get("focus_found")
+            or capture_mode in {"exact-error-element", "diagnostic-evidence-card", "diagnostic-evidence-card-time-budget"}
+        )
+        item["evidence_artifacts"] = [
+            {
+                "path": rel,
+                "status": "attached" if os.path.isfile(os.path.join(out_dir, rel.replace("/", os.sep))) else "missing",
+                "kind": "screenshot",
+                "annotated": screenshot_annotated,
+                "capture_mode": capture_mode or "unspecified",
+            }
+            for rel in item.get("screenshots_relative", [])
+        ]
+        item["evidence_status"] = (
+            "attached" if any(artifact["status"] == "attached" for artifact in item["evidence_artifacts"])
+            else "not_available"
+        )
 
     findings_sorted = sorted(
         normalized,
@@ -372,11 +486,16 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     phase_status = meta.get("phase_status") or {}
     phase_groups = {
         "UI & Responsive": ["ui_responsive"],
+        "Accessibility": ["accessibility"],
         "Functional": ["functional_testing"],
         "Security Controls": ["security_headers", "active_security"],
         "Deep Security": ["deep_security", "comprehensive_security", "api_surface"],
         "Penetration Testing": ["aggressive_readonly", "input_stress", "input_validation"],
+        "Input Validation": ["input_validation", "input_stress"],
+        "API & Attack Surface": ["api_surface", "route_discovery"],
+        "Web Crawler & Recon": ["route_discovery"],
         "Information Disclosure": ["information_disclosure"],
+        "OWASP ZAP Baseline": ["zap_baseline", "zap_spider", "zap_passive", "zap_alert_collection"],
         "Evidence Capture": ["security_evidence"],
     }
     coverage_matrix = []
@@ -386,17 +505,40 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         statuses = [str(phase.get("status", "pending")).lower() for phase in present]
         if not present or not statuses:
             status = "not_run"
-        elif any(value in {"failed", "timed_out"} for value in statuses):
+        elif any(value in {"failed", "timed_out", "error", "blocked"} for value in statuses):
             status = "failed_or_timed_out"
+        elif all(value == "not_run" for value in statuses):
+            status = "not_run"
         elif any(value in {"partial", "skipped"} for value in statuses) or len(present) < len(phase_names):
             status = "partial"
         elif all(value == "completed" for value in statuses):
             status = "completed"
         else:
             status = "in_progress"
+        category_hints = {
+            "UI & Responsive": ("compatibility", "responsive", "accessibility", "ui/ux"),
+            "Functional": ("functional", "navigation", "workflow"),
+            "Security Controls": ("security", "header", "cookie", "tls"),
+            "Deep Security": ("deep security", "api", "injection", "authorization", "xss", "sqli", "idor"),
+            "Penetration Testing": ("penetration", "input", "injection", "authorization", "idor", "xss", "sqli"),
+            "Input Validation": ("input", "validation", "boundary", "stress"),
+            "API & Attack Surface": ("api", "attack surface", "endpoint"),
+            "Web Crawler & Recon": ("recon", "crawler", "route"),
+            "Information Disclosure": ("disclosure", "information leak", "exposed artifact"),
+            "OWASP ZAP Baseline": ("zap", "passive scan"),
+        }
+        hints = category_hints.get(label, ())
+        related_findings = sum(
+            1 for finding in findings_sorted
+            if any(hint in str(finding.get("category") or "").lower() for hint in hints)
+            or any(hint in str(finding.get("title") or "").lower() for hint in hints if hint in {"zap", "passive scan"})
+        )
+        check_values = [phase.get("checks") for phase in present if isinstance(phase.get("checks"), (int, float))]
         coverage_matrix.append({
             "area": label,
             "status": status,
+            "checks": sum(check_values) if check_values else None,
+            "findings": related_findings if hints else None,
             "phases": [
                 {
                     "name": name,
@@ -514,6 +656,24 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         }),
         "total_findings": len(findings_sorted),
         "coverage_matrix": coverage_matrix,
+        "coverage_summary": {
+            "areas_total": len(coverage_matrix),
+            "areas_completed": sum(1 for row in coverage_matrix if row["status"] == "completed"),
+            "areas_partial": sum(1 for row in coverage_matrix if row["status"] == "partial"),
+            "areas_failed_or_timed_out": sum(1 for row in coverage_matrix if row["status"] == "failed_or_timed_out"),
+            "areas_not_run": sum(1 for row in coverage_matrix if row["status"] == "not_run"),
+            "checks_recorded": sum(info.get("checks") or 0 for info in phase_status.values() if isinstance(info, dict) and isinstance(info.get("checks"), (int, float))),
+            "findings_by_category": dict(categories),
+            "screenshots_attached_to_findings": sum(1 for finding in findings_sorted if finding.get("evidence_status") == "attached"),
+            "findings_without_screenshot": sum(1 for finding in findings_sorted if finding.get("evidence_status") != "attached"),
+            "evidence_artifacts_missing": len(missing_evidence),
+        },
+        "phase_execution_log": [
+            {"phase": name, "status": str(info.get("status", "not_run")).lower(),
+             "duration_seconds": info.get("duration_seconds"), "checks": info.get("checks"),
+             "findings": info.get("findings"), "error": info.get("error"), "note": info.get("note")}
+            for name, info in phase_status.items() if isinstance(info, dict)
+        ],
         "owasp_coverage": owasp_coverage,
         "owasp_top10_2025_coverage": owasp_top10_2025_coverage,
         "framework_coverage": build_coverage_registry(phase_status),
@@ -821,23 +981,27 @@ def _render_html(report: dict) -> str:
         shot_html = "".join(evidenceAnchor(p, "Open marked-up evidence") for p in shots)
         if not shot_html:
             shot_html = '<div class="warn">No screenshot file was attached. Structured evidence is shown above; inspect the evidence manifest for the capture failure reason.</div>'
-        elif capture_mode == "diagnostic-evidence-card":
+        elif str(capture_mode or "").startswith("diagnostic-evidence-card"):
             shot_html += '<p class="warn">This is a labelled diagnostic evidence card, not a browser screenshot.</p>'
         server_finding_cards.append(
-            '<article class="finding"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s</span></div>'
+            '<article class="finding"><div class="fh"><span class="badge" style="background:%s">%s</span><span class="fid">%s</span><span class="fid">%s confidence</span><span class="fid">%s</span><span class="fid">%s evidence</span></div>'
             '<h3>%s</h3>'
             '<div class="finding-grid"><div><b>WHERE FOUND</b><div class="url">%s</div></div><div><b>METHOD</b><div>%s</div></div><div><b>PARAMETER / ELEMENT</b><div>%s</div></div><div><b>CATEGORY / CWE / OWASP</b><div>%s / %s / %s</div></div></div>'
-            '<div class="finding-section"><b>WHAT IS THE ISSUE?</b><p>%s</p></div>'
+            '<div class="finding-section"><b>ISSUE DESCRIPTION / CONTEXT</b><p>%s</p></div>'
+            '<div class="finding-section"><b>LOCATION DETAILS</b><p>Path: %s<br>Element: %s<br>Affected URLs: %s</p></div>'
             '<div class="finding-section"><b>OBSERVED EVIDENCE</b><pre>%s</pre></div>'
             '<div class="finding-section"><b>IMPACT</b><p>%s</p></div>'
             '<div class="finding-section"><b>HOW TO FIX</b><p>%s</p><p><b>Validation:</b> %s</p></div>'
             '<div class="finding-section"><b>VISUAL EVIDENCE</b><div class="finding-evidence-grid">%s</div></div></article>' % (
                 color, sev, html.escape(str(finding.get("id",""))), html.escape(str(finding.get("confidence","Medium"))),
-                html.escape(str(finding.get("observation_count",1))), html.escape(str(finding.get("title","Untitled finding"))),
+                html.escape(str(finding.get("observation_count",1))), html.escape(str(finding.get("evidence_status","not available"))), html.escape(str(finding.get("title","Untitled finding"))),
                 html.escape(str(finding.get("url") or "Target origin")), html.escape(str(finding.get("method","GET"))),
                 html.escape(str(finding.get("parameter") or finding.get("element") or "-")),
                 html.escape(str(finding.get("category") or "-")), html.escape(str(finding.get("cwe") or "-")), html.escape(str(finding.get("owasp") or "-")),
-                html.escape(str(finding.get("plain_language_summary") or finding.get("detail") or "-")),
+                html.escape(str(finding.get("description") or finding.get("plain_language_summary") or finding.get("detail") or "-")),
+                html.escape(str((finding.get("location_details") or {}).get("path") or "-")),
+                html.escape(str((finding.get("location_details") or {}).get("element") or "-")),
+                html.escape(str((finding.get("location_details") or {}).get("affected_url_count") or 0)),
                 html.escape(str(finding.get("evidence") or finding.get("detail") or "-")),
                 html.escape(str(finding.get("impact") or finding.get("why_it_matters") or "-")),
                 html.escape(str(finding.get("recommended_action") or finding.get("fix_summary") or finding.get("remediation") or "-")),
@@ -861,9 +1025,11 @@ def _render_html(report: dict) -> str:
             "<tr><td>" + html.escape(str(row.get("area", ""))) + "</td>"
             + "<td class='" + coverage_status_class.get(str(row.get("status", "not_run")), "warn") + "'>"
             + html.escape(str(row.get("status", "not_run")).replace("_", " ").upper()) + "</td>"
+            + "<td>" + html.escape(str(row.get("checks") if row.get("checks") is not None else "Not recorded")) + "</td>"
+            + "<td>" + html.escape(str(row.get("findings") if row.get("findings") is not None else "Category mapping unavailable")) + "</td>"
             + "<td>" + ("".join(details) or "No phase details were recorded.") + "</td></tr>"
         )
-    coverage_matrix_html_text = "".join(coverage_matrix_html) or "<tr><td colspan='3'>No phase coverage metadata was recorded.</td></tr>"
+    coverage_matrix_html_text = "".join(coverage_matrix_html) or "<tr><td colspan='5'>No phase coverage metadata was recorded.</td></tr>"
     owasp_state_class = {"engines_completed": "warn", "partial": "warn", "in_progress": "warn", "not_run": "fail"}
     owasp_rows = []
     for item in report.get("owasp_coverage", []):
@@ -1010,7 +1176,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 <div class="summary-item"><b>__SECURITYCAPS__</b><span>Security captures</span></div>
 </div></div>
 <div class="panel"><div class="section-title">Correlated attack surface</div>__ATTACK_SURFACE__</div>
-<div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
+<div class="panel"><div class="section-title">Coverage matrix — completed vs not run</div><p class="sub">A category is marked complete only when its recorded phases complete. Failed, timed-out, skipped, and not-run phases are shown explicitly; they are never counted as passes. Related-finding counts are category/title matches, can overlap between areas, and are not additive unique-finding totals.</p><div class="matrix"><table><thead><tr><th>Coverage area</th><th>Status</th><th>Checks recorded</th><th>Related findings*</th><th>Phase detail</th></tr></thead><tbody>__COVERAGE_MATRIX_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">OWASP Top 10:2025 — current engine coverage</div><p class="sub">The current OWASP Top 10 mapping is shown separately from the retained 2021 legacy mapping. “Engines completed” means mapped checks ran, not that a category is secure. Supply-chain and logging/alerting categories remain manual review.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_2025_COVERAGE_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">OWASP Top 10:2021 — legacy engine coverage</div><p class="sub">This matrix shows which automated engines ran for each OWASP category. “Engines completed” is not a declaration that the category is secure; review individual findings and perform authenticated/manual tests where required.</p><div class="matrix"><table><thead><tr><th>ID</th><th>OWASP category</th><th>Execution status</th><th>Mapped engines and limitations</th></tr></thead><tbody>__OWASP_COVERAGE_HTML__</tbody></table></div></div>
 <div class="panel"><div class="section-title">WSTG and API coverage registry</div><p class="sub">Coverage is resolved from the actual phase ledger. Manual-only, unavailable, blocked, timed-out, and not-run categories remain visible and are never counted as passing.</p><div class="matrix"><table><thead><tr><th>Test ID</th><th>Standard</th><th>Area</th><th>Execution status</th><th>Phase results and limitations</th></tr></thead><tbody>__FRAMEWORK_COVERAGE_HTML__</tbody></table></div></div>
@@ -1083,7 +1249,7 @@ function evidenceAnchor(path, alt){
 const phaseStatus=(meta&&meta.phase_status)||{};
 const phaseEntries=Object.keys(phaseStatus);
 document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
- ? '<div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=["failed","timed_out","partial","error","blocked"].includes(String(p.status||"").toLowerCase());return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds||"-")+' s</td><td>'+esc(p.error||"Completed")+'</td></tr>'}).join("")+'</tbody></table></div>'
+ ? '<div class="summary-strip"><div class="summary-item"><b>'+phaseEntries.length+'</b><span>Recorded phases</span></div><div class="summary-item"><b>'+phaseEntries.filter(function(k){return String((phaseStatus[k]||{}).status).toLowerCase()==="completed"}).length+'</b><span>Completed phases</span></div><div class="summary-item"><b>'+phaseEntries.filter(function(k){return ["partial","failed","timed_out","error","blocked"].includes(String((phaseStatus[k]||{}).status).toLowerCase())}).length+'</b><span>Partial / failed phases</span></div><div class="summary-item"><b>'+phaseEntries.reduce(function(sum,k){return sum+((typeof (phaseStatus[k]||{}).checks==="number")?(phaseStatus[k]||{}).checks:0)},0)+'</b><span>Recorded checks</span></div></div><div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Checks</th><th>Findings</th><th>Notes / error</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=["failed","timed_out","partial","error","blocked"].includes(String(p.status||"").toLowerCase());return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds??"-")+' s</td><td>'+esc(p.checks??"not recorded")+'</td><td>'+esc(p.findings??"not tagged")+'</td><td>'+esc(p.error||p.note||"No error recorded")+'</td></tr>'}).join("")+'</tbody></table></div>'
  : '<div class="empty">Assessment phase status will appear as the report is updated.</div>';
 
 const cat=document.getElementById("cat");
@@ -1096,7 +1262,7 @@ function renderFindings(){
   const color=colors[f.severity]||colors.Info;
   const shots=f.screenshots_relative||[];
   const shotHtml=shots.length?'<div style="margin-top:12px"><b>Visual evidence ('+shots.length+'):</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px">'+shots.map(function(p){return evidenceAnchor(p,"Security evidence screenshot")}).join("")+'</div></div>': '<p class="warn"><b>No screenshot captured for this finding.</b></p>';
-  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>What failed / evidence / how to fix</summary><p><b>What this means:</b> '+esc(f.plain_language_summary)+'</p><p><b>Why it matters:</b> '+esc(f.why_it_matters)+'</p><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Recommended action:</b> '+esc(f.recommended_action)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
+  return '<article class="finding"><div class="fh"><span class="badge" style="background:'+color+'">'+esc(f.severity)+'</span><span class="fid">'+esc(f.id)+'</span><span class="fid">'+esc(f.confidence)+' confidence</span><span class="fid">'+esc(f.method||"GET")+'</span><span class="fid">'+esc(f.observation_count||1)+' observation(s)</span><span class="fid">'+esc(f.evidence_status||"evidence pending")+'</span></div><h3>'+esc(f.title)+'</h3><div class="url">'+esc(f.url)+(f.affected_urls&&f.affected_urls.length>1?" · affected URLs: "+f.affected_urls.length:"")+'</div><details open><summary>What failed / evidence / how to fix</summary><p><b>Description:</b> '+esc(f.description||f.plain_language_summary)+'</p><p><b>Why it matters:</b> '+esc(f.why_it_matters||f.impact)+'</p><p><b>Location:</b> '+esc((f.location_details||{}).path||f.url||"Target origin")+' · <b>Element:</b> '+esc((f.location_details||{}).element||f.parameter||"not identified")+'</p><p><b>Category:</b> '+esc(f.category)+' &nbsp; <b>OWASP:</b> '+esc(f.owasp||"-")+' &nbsp; <b>Parameter:</b> '+esc(f.parameter||"-")+'</p><pre>'+esc(f.evidence)+'</pre>'+shotHtml+'<p><b>Impact:</b> '+esc(f.impact)+'</p><p><b>Suggested validation:</b> '+esc((f.reproduction_steps||[]).join(" "))+'</p><p><b>Evidence status:</b> '+esc(f.evidence_status||"not available")+'</p><p><b>Recommended action:</b> '+esc(f.recommended_action)+'</p><p><b>Remediation:</b> '+esc(f.remediation)+'</p></details></article>'
  }).join("");
 }
 ["search","sev"].forEach(function(id){document.getElementById(id).addEventListener("input",renderFindings)});
