@@ -44,6 +44,18 @@ class ZapRunnerSafetyTests(unittest.TestCase):
             runner.run("https://example.com", confirm_authorized=True, active=True)
         session.get.assert_not_called()
 
+    def test_api_key_uses_header_not_query_parameter(self):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"scan": "1"}
+        session = Mock()
+        session.get.return_value = response
+        runner = ZapRunner(session=session, api_key="secret", context_name="Authorized staging")
+        runner._get("spider", "action", "scan")
+        kwargs = session.get.call_args.kwargs
+        self.assertEqual(kwargs["headers"], {"X-ZAP-API-Key": "secret"})
+        self.assertNotIn("apikey", kwargs["params"])
+
     def test_non_json_api_response_is_rejected(self):
         response = Mock()
         response.raise_for_status.return_value = None
