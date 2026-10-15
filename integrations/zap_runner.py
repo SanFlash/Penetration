@@ -57,11 +57,10 @@ class ZapRunner:
 
     def _get(self, component, kind, action, params=None):
         values = dict(params or {})
-        if self.api_key:
-            values["apikey"] = self.api_key
+        headers = {"X-ZAP-API-Key": self.api_key} if self.api_key else {}
         response = self.session.get(
             f"{self.api_url}/JSON/{component}/{kind}/{action}/",
-            params=values, timeout=self.timeout,
+            params=values, headers=headers, timeout=self.timeout,
         )
         response.raise_for_status()
         try:
@@ -110,33 +109,42 @@ class ZapRunner:
             ],
         }
         if spider:
-            payload = self._get("spider", "action", "scan", {"url": target.rstrip("/") + "/", "recurse": "true", "contextName": self.context_name, "subtreeOnly": "true"})
-            scan_id = str(payload.get("scan", ""))
-            if not scan_id:
-                raise ZapError("ZAP did not return a spider scan ID.")
-            result["phases"]["spider"] = self._poll("spider", scan_id, deadline)
-        if passive_wait and time.monotonic() < deadline:
-            remaining = 0
-            while time.monotonic() < deadline:
-                payload = self._get("pscan", "view", "recordsToScan")
-                try:
-                    remaining = int(next(iter(payload.values()), "0"))
-                except (TypeError, ValueError):
-                    remaining = 0
-                if remaining <= 0:
-                    result["phases"]["passive_scan"] = {"status": "completed", "records_remaining": 0}
-                    break
-                time.sleep(min(self.poll_interval, max(0, deadline - time.monotonic())))
+            if time.monotonic() >= deadline:
+                result["phases"]["spider"] = {"status": "skipped", "reason": "runtime_budget_exhausted"}
             else:
-                result["phases"]["passive_scan"] = {"status": "timed_out", "records_remaining": remaining}
-        if active and time.monotonic() < deadline:
-            payload = self._get("ascan", "action", "scan", {
-                "url": target.rstrip("/") + "/", "recurse": "true", "inScopeOnly": "true",
-            })
-            scan_id = str(payload.get("scan", ""))
-            if not scan_id:
-                raise ZapError("ZAP did not return an active-scan ID.")
-            result["phases"]["active_scan"] = self._poll("ascan", scan_id, deadline)
+                payload = self._get("spider", "action", "scan", {"url": target.rstrip("/") + "/", "recurse": "true", "contextName": self.context_name, "subtreeOnly": "true"})
+                scan_id = str(payload.get("scan", ""))
+                if not scan_id:
+                    raise ZapError("ZAP did not return a spider scan ID.")
+                result["phases"]["spider"] = self._poll("spider", scan_id, deadline)
+        if passive_wait:
+            if time.monotonic() >= deadline:
+                result["phases"]["passive_scan"] = {"status": "skipped", "reason": "runtime_budget_exhausted"}
+            else:
+                remaining = 0
+                while time.monotonic() < deadline:
+                    payload = self._get("pscan", "view", "recordsToScan")
+                    try:
+                        remaining = int(next(iter(payload.values()), "0"))
+                    except (TypeError, ValueError):
+                        remaining = 0
+                    if remaining <= 0:
+                        result["phases"]["passive_scan"] = {"status": "completed", "records_remaining": 0}
+                        break
+                    time.sleep(min(self.poll_interval, max(0, deadline - time.monotonic())))
+                else:
+                    result["phases"]["passive_scan"] = {"status": "timed_out", "records_remaining": remaining}
+        if active:
+            if time.monotonic() >= deadline:
+                result["phases"]["active_scan"] = {"status": "skipped", "reason": "runtime_budget_exhausted"}
+            else:
+                payload = self._get("ascan", "action", "scan", {
+                    "url": target.rstrip("/") + "/", "recurse": "true", "inScopeOnly": "true",
+                })
+                scan_id = str(payload.get("scan", ""))
+                if not scan_id:
+                    raise ZapError("ZAP did not return an active-scan ID.")
+                result["phases"]["active_scan"] = self._poll("ascan", scan_id, deadline)
         payload = self._get("core", "view", "alerts", {"baseurl": target_origin, "start": "0", "count": "1000"})
         rows = payload.get("alerts", [])
         if not isinstance(rows, list):
