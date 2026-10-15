@@ -148,6 +148,16 @@ def _contextualize_findings(items: list[dict]) -> list[dict]:
                 f" This is repeated observation {variant + 1} for this finding family; "
                 f"compare it with the other recorded locations and evidence before deduplicating."
             )
+        affected_urls = list(dict.fromkeys(
+            str(value) for value in (item.get("affected_urls") or ([url] if url else [])) if value
+        ))
+        if len(affected_urls) > 1:
+            shown_locations = ", ".join(affected_urls[:5])
+            remainder = len(affected_urls) - min(5, len(affected_urls))
+            description += f" This same finding family was observed at {shown_locations}"
+            if remainder:
+                description += f" and {remainder} additional location(s)"
+            description += ". Review the affected-location list before triage."
         item["description"] = description
         item["plain_language_summary"] = description
         item["evidence_summary"] = evidence
@@ -159,7 +169,8 @@ def _contextualize_findings(items: list[dict]) -> list[dict]:
             "element": item.get("selector") or item.get("element") or None,
             "source_scanner": item.get("scanner") or item.get("source") or item.get("check") or None,
             "response_status": item.get("status_code") or item.get("http_status") or None,
-            "affected_url_count": len(item.get("affected_urls") or ([url] if url else [])),
+            "affected_url_count": len(affected_urls),
+            "affected_urls": affected_urls,
         }
         item["reproduction_steps"] = [
             f"Open the recorded location: {url or 'target origin'}.",
@@ -1106,7 +1117,7 @@ def _render_html(report: dict) -> str:
             + "<td>" + html.escape(str(row.get("checks") if row.get("checks") is not None else "Not recorded")) + "</td>"
             + "<td>" + html.escape(str(row.get("findings") if row.get("findings") is not None else "Category mapping unavailable"))
             + ("<div class='sub'>Observations: " + html.escape(str(row.get("observations", 0))) + "</div>" if row.get("findings") is not None else "")
-            + "".join("<div><a href='#finding-" + html.escape(str(ref.get("id", "")), quote=True) + "'>"
+            + "".join("<div><a href='#findings'>"
                       + html.escape(str(ref.get("id", ""))) + " · " + html.escape(str(ref.get("title", "")))
                       + " [" + html.escape(str(ref.get("severity", "Info"))) + "]</a></div>"
                       for ref in row.get("finding_refs", [])) + "</td>"
