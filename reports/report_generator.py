@@ -175,7 +175,7 @@ def _contextualize_findings(items: list[dict]) -> list[dict]:
         item["reproduction_steps"] = [
             f"Open the recorded location: {url or 'target origin'}.",
             f"Review the {method} observation and the parameter/element noted in this finding.",
-            "Compare the observed response or browser behavior with the recorded evidence; a screenshot alone does not establish exploitability.",
+            "Compare the observed response or browser behavior with the recorded evidence; the screenshot alone does not prove exploitability.",
         ]
         impact = str(item.get("impact") or "").strip()
         if not impact or impact == "Security or compatibility impact should be validated in the authorized test environment.":
