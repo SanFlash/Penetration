@@ -101,7 +101,7 @@ def _worker(target: str, profile: str = "pentest"):
                 detail=("Core security report and evidence bundle are ready." if profile == "core" else "Assessment report and available evidence are ready."),
                 progress=100,
             )
-        elif rc == 1 and profile in {"core", "functional", "input", "disclosure", "crawler", "api", "zap"}:
+        elif rc == 1:
             _state.update(
                 status="PARTIAL",
                 stage=(profile.upper() + " ASSESSMENT PARTIAL"),
@@ -493,7 +493,7 @@ hr{border-top-color:#27364d!important}
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
 <label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
 <label for="profile">Assessment profile</label><select id="profile">
-<option value="pentest">Full Pentest — complete multi-engine pipeline</option>
+<option value="pentest">Full Pentest — all built-in coverage engines</option>
 <option value="security">Security & OWASP — passive and bounded active security checks</option>
 <option value="uiux">UI/UX, Responsive & Accessibility — browser checks and screenshots</option>
 <option value="functional">Functional & Navigation — read-only links and page smoke checks</option>
@@ -504,7 +504,7 @@ hr{border-top-color:#27364d!important}
 <option value="zap">OWASP ZAP Baseline — requires configured external ZAP API</option>
 <option value="core">Core Security — quick bounded security subset</option>
 </select>
-<div id="profileDescription" class="muted" style="font-size:12px;margin-top:8px">Runs all supported phases. Review each phase ledger; the report will show incomplete or manual-only coverage explicitly.</div>
+<div id="profileDescription" class="muted" style="font-size:12px;margin-top:8px">Full Pentest runs the built-in UI, functional, security, input, API/route, information-disclosure, and evidence phases. OWASP ZAP is a separate optional external integration. Every phase is recorded in the report; skipped or incomplete phases are never counted as passes.</div>
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
@@ -549,7 +549,7 @@ function setButton(running, label) {
 }
 
 const PROFILE_DESCRIPTIONS = {
-  pentest: "Runs all supported phases. Review each phase ledger; the report will show incomplete or manual-only coverage explicitly.",
+  pentest: "Runs the full built-in pipeline: reconnaissance, UI/responsive/accessibility, functional/navigation, information disclosure, security headers, bounded active/deep security, API and route discovery, input validation/stress, attack-surface correlation, and evidence capture. ZAP is separate and runs only when selected/configured.",
   security: "Runs the deep security engine and passive API/route discovery without browser UI tests.",
   uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics. Manual assistive-technology review is still required.",
   functional: "Runs read-only page and navigation smoke checks. It does not submit forms or validate business transactions.",
