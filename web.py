@@ -7,11 +7,13 @@ All API routes except /healthz require SENTINEL_ACCESS_TOKEN when configured.
 from __future__ import annotations
 
 import html
+import hmac
 import json
 import os
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -23,6 +25,22 @@ from scanners.coverage_registry import build_coverage_registry
 app = Flask(__name__)
 
 ACCESS_TOKEN = os.getenv("SENTINEL_ACCESS_TOKEN", "").strip()
+ALLOWED_PROFILES = {
+    "pentest", "core", "security", "uiux", "functional",
+    "input", "disclosure", "crawler", "api", "zap",
+}
+PROFILE_CAPABILITIES = {
+    "pentest": {"label": "Full Pentest", "engines": ["recon", "ui_responsive", "accessibility", "functional_testing", "security_headers", "active_security", "deep_security", "api_surface", "route_discovery", "input_validation", "input_stress", "information_disclosure", "attack_surface", "security_evidence"], "external_integrations": ["zap_optional"]},
+    "security": {"label": "Security & OWASP", "engines": ["deep_security", "api_surface"], "external_integrations": []},
+    "uiux": {"label": "UI/UX, Responsive & Accessibility", "engines": ["ui_responsive", "accessibility"], "external_integrations": []},
+    "functional": {"label": "Functional & Navigation", "engines": ["route_discovery", "functional_testing"], "external_integrations": []},
+    "input": {"label": "Input Validation & Stress", "engines": ["route_discovery", "input_validation", "input_stress"], "external_integrations": []},
+    "api": {"label": "API & Attack Surface", "engines": ["route_discovery", "api_surface"], "external_integrations": []},
+    "disclosure": {"label": "Information Disclosure", "engines": ["route_discovery", "information_disclosure"], "external_integrations": []},
+    "crawler": {"label": "Web Crawler & Recon", "engines": ["route_discovery"], "external_integrations": []},
+    "zap": {"label": "OWASP ZAP Baseline", "engines": ["zap_spider", "zap_passive", "zap_alert_collection"], "external_integrations": ["OWASP ZAP daemon, API key, reviewed context"]},
+    "core": {"label": "Core Security", "engines": ["bounded_core_security"], "external_integrations": []},
+}
 DEFAULT_TARGET = os.getenv("SENTINEL_DEFAULT_TARGET", "").strip() or config.PENTEST_TARGET_ORIGIN
 
 _run_lock = threading.Lock()
@@ -33,6 +51,32 @@ _last_error = None
 _run_started_at = None
 
 
+def _validate_target_url(value: str) -> str:
+    """Validate target URL syntax without silently changing the assessment scope."""
+    raw = str(value or "").strip()
+    if not raw or any(ord(ch) < 32 for ch in raw):
+        raise ValueError("Target URL is empty or contains control characters.")
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Target URL contains an invalid host or port.") from exc
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Target must be an absolute HTTP(S) URL with a hostname.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Do not embed usernames or passwords in the target URL.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Enter the base URL or path without a query string or fragment.")
+    host = parsed.hostname
+    if any(ch.isspace() for ch in host) or "/" in host or chr(92) in host:
+        raise ValueError("Target hostname is malformed.")
+    scheme = parsed.scheme.lower()
+    host_for_netloc = "[" + host.lower() + "]" if ":" in host else host.lower()
+    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    netloc = host_for_netloc if port is None or default_port else f"{host_for_netloc}:{port}"
+    return urlunsplit((scheme, netloc, parsed.path.rstrip("/"), "", ""))
+
+
 def _authorized() -> bool:
     if not ACCESS_TOKEN:
         return True
@@ -41,7 +85,7 @@ def _authorized() -> bool:
         supplied = request.args.get("token", "")
     if not supplied:
         supplied = request.cookies.get("sentinel_access_token", "")
-    return supplied == ACCESS_TOKEN
+    return hmac.compare_digest(supplied, ACCESS_TOKEN)
 
 
 def _require_auth():
@@ -316,6 +360,38 @@ def status():
     return jsonify(payload)
 
 
+@app.get("/api/preflight")
+def preflight():
+    auth = _require_auth()
+    if auth:
+        return auth
+    profile = str(request.args.get("profile") or "pentest").strip().lower()
+    if profile not in ALLOWED_PROFILES:
+        return jsonify({"error": "invalid_profile", "allowed_profiles": sorted(ALLOWED_PROFILES)}), 400
+    try:
+        target = _validate_target_url(request.args.get("target") or DEFAULT_TARGET)
+    except ValueError as exc:
+        return jsonify({"valid": False, "error": "invalid_target", "message": str(exc), "profile": profile}), 400
+    parsed = urlsplit(target)
+    zap_ready = all(os.getenv(key, "").strip() for key in (
+        "SENTINEL_ZAP_API_URL", "SENTINEL_ZAP_API_KEY", "SENTINEL_ZAP_CONTEXT"
+    ))
+    return jsonify({
+        "valid": True,
+        "target": target,
+        "origin": f"{parsed.scheme}://{parsed.netloc}",
+        "profile": profile,
+        "profile_capabilities": PROFILE_CAPABILITIES[profile],
+        "integrations": {"zap": {
+            "configured": zap_ready,
+            "status": "configured_prerequisites_present" if zap_ready else "not_configured",
+            "note": "Environment presence does not prove the ZAP API is reachable or its context is correctly scoped."
+        }},
+        "authorization_required": True,
+        "scope_note": "This endpoint validates URL syntax, not ownership or authorization. Scanner scope enforcement remains required."
+    })
+
+
 @app.post("/api/run")
 def run():
     global _run_thread, _state, _last_result, _run_started_at
@@ -326,24 +402,23 @@ def run():
     if not _run_lock.acquire(blocking=False):
         return jsonify({"error": "assessment_already_running"}), 409
 
-    body = request.get_json(silent=True) or {}
-    target = str(body.get("target") or DEFAULT_TARGET).strip().rstrip("/")
-    authorized = bool(body.get("authorized", False))
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        _run_lock.release()
+        return jsonify({"error": "invalid_request", "message": "Request body must be a JSON object."}), 400
+    try:
+        target = _validate_target_url(body.get("target") or DEFAULT_TARGET)
+    except ValueError as exc:
+        _run_lock.release()
+        return jsonify({"error": "invalid_target", "message": str(exc)}), 400
+    authorized = body.get("authorized") is True
     profile = str(body.get("profile") or "pentest").strip().lower()
-    allowed_profiles = {"pentest", "core", "security", "uiux", "functional", "input", "disclosure", "crawler", "api", "zap"}
-    if profile not in allowed_profiles:
+    if profile not in ALLOWED_PROFILES:
         _run_lock.release()
         return jsonify({
             "error": "invalid_profile",
             "message": "Choose a supported assessment profile from the console.",
-            "allowed_profiles": sorted(allowed_profiles),
-        }), 400
-
-    if not target.startswith(("http://", "https://")):
-        _run_lock.release()
-        return jsonify({
-            "error": "invalid_target",
-            "message": "Target must be a complete http:// or https:// URL.",
+            "allowed_profiles": sorted(ALLOWED_PROFILES),
         }), 400
 
     if not authorized:
@@ -549,15 +624,15 @@ function setButton(running, label) {
 }
 
 const PROFILE_DESCRIPTIONS = {
-  pentest: "Runs the full built-in pipeline: reconnaissance, UI/responsive/accessibility, functional/navigation, information disclosure, security headers, bounded active/deep security, API and route discovery, input validation/stress, attack-surface correlation, and evidence capture. ZAP is separate and runs only when selected/configured.",
-  security: "Runs the deep security engine and passive API/route discovery without browser UI tests.",
-  uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics. Manual assistive-technology review is still required.",
+  pentest: "Runs the broadest built-in pipeline: reconnaissance, browser UI/responsive/accessibility, read-only navigation, information disclosure, security headers, bounded active/deep security, API/route discovery, input validation/stress, attack-surface correlation and evidence. External ZAP is a separate profile; its results are not automatically merged into this report.",
+  security: "Runs deep security checks plus passive API-surface discovery. Browser UI/responsive and functional navigation phases are not included in this focused profile.",
+  uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics on discovered pages. Manual keyboard, screen-reader and assistive-technology review is still required.",
   functional: "Runs read-only page and navigation smoke checks. It does not submit forms or validate business transactions.",
   input: "Runs bounded valid/invalid query checks and conservative input-stress probes. No form submissions or destructive payloads.",
   api: "Discovers API routes and available API specifications. Role-based authorization checks require supplied test accounts and expected permissions.",
   disclosure: "Checks common exposed configuration, diagnostic, API-documentation and verbose-error paths.",
   crawler: "Builds a same-origin route/JavaScript/API candidate inventory; discovered state-changing methods are inventoried, not submitted.",
-  zap: "Requires SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY, and SENTINEL_ZAP_CONTEXT plus a reviewed exact-target ZAP context. Runs spider + passive analysis only; active scanning is disabled. If unavailable, the report correctly shows PARTIAL and records the missing prerequisite.",
+  zap: "Requires SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY and SENTINEL_ZAP_CONTEXT plus a reviewed exact-target ZAP context. Runs the passive baseline only; active scanning is disabled. Environment values alone do not prove that the API or scope is valid."
   core: "Runs the quick, bounded Core Security subset and evidence bundle."
 };
 function updateProfileDescription() {
@@ -606,10 +681,31 @@ async function startRun() {
     return;
   }
 
-  setButton(true, "STARTING...");
-  showState("STARTING", "CONNECTING", "Submitting the assessment request...");
+  setButton(true, "VALIDATING TARGET...");
+  showState("PREFLIGHT", "VALIDATING SCOPE", "Checking URL syntax and the selected profile prerequisites before starting any scanner.");
 
   try {
+    const preflightUrl = "/api/preflight?target=" + encodeURIComponent(target) + "&profile=" + encodeURIComponent(el("profile").value);
+    const preflightResponse = await fetch(preflightUrl, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: {"Accept": "application/json", "Cache-Control": "no-cache"}
+    });
+    const preflightText = await preflightResponse.text();
+    let preflight = {};
+    try { preflight = preflightText ? JSON.parse(preflightText) : {}; }
+    catch (_) { preflight = {message: "Preflight returned an invalid response."}; }
+    if (!preflightResponse.ok || preflight.valid !== true) {
+      throw new Error(preflight.message || preflight.error || ("Preflight failed with HTTP " + preflightResponse.status));
+    }
+    if (preflight.target) targetInput.value = preflight.target;
+    const zap = preflight.integrations && preflight.integrations.zap;
+    if (el("profile").value === "zap" && zap && !zap.configured) {
+      showState("PREFLIGHT", "ZAP NOT CONFIGURED", "The run can still report the missing prerequisite, but no ZAP spider or passive scan can run until the ZAP API, key and context are configured.");
+    } else {
+      showState("PREFLIGHT", "SCOPE VALIDATED", "URL syntax is valid. Starting the selected profile; this does not verify ownership or guarantee every coverage category will run.");
+    }
+    setButton(true, "STARTING ASSESSMENT...");
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
     let response;
@@ -623,7 +719,7 @@ async function startRun() {
           "Accept": "application/json",
           "Cache-Control": "no-cache"
         },
-        body: JSON.stringify({ target: target, authorized: true, profile: el("profile").value }),
+        body: JSON.stringify({ target: preflight.target || target, authorized: true, profile: el("profile").value }),
         signal: controller.signal
       });
     } finally {
@@ -645,9 +741,14 @@ async function startRun() {
     autoDownloadPending = true;
     autoDownloadStarted = false;
     const selectedProfile = el("profile").value;
+    const selectedLabel = (PROFILE_DESCRIPTIONS[selectedProfile] || selectedProfile).split(".")[0];
     showState("RUNNING", "QUEUED", selectedProfile === "core"
       ? "Core security assessment accepted. The HTML/JSON report and evidence ZIP will be ready when checks finish."
-      : "Full pentest accepted. The complete report ZIP will download automatically when it is ready.");
+      : selectedProfile === "zap"
+        ? "OWASP ZAP baseline accepted. The run requires a reachable, correctly scoped ZAP API; inspect phase status before interpreting results."
+        : selectedProfile === "pentest"
+          ? "Full Pentest accepted. The built-in multi-engine pipeline is running; external ZAP remains a separate profile."
+          : selectedLabel + " assessment accepted. Only the selected profile's mapped phases run; review the phase ledger for skipped or incomplete coverage.");
     setButton(true, "ASSESSMENT RUNNING");
   } catch (error) {
     const message = error && error.name === "AbortError"
