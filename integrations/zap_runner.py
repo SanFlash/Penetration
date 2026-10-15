@@ -47,8 +47,9 @@ def validate_api_url(url: str) -> str:
 
 
 class ZapRunner:
-    def __init__(self, api_url="http://127.0.0.1:8080", api_key=None, timeout=10, poll_interval=1, session=None):
+    def __init__(self, api_url="http://127.0.0.1:8080", api_key=None, context_name=None, timeout=10, poll_interval=1, session=None):
         self.api_url = validate_api_url(api_url)
+        self.context_name = context_name or os.getenv("ZAP_CONTEXT_NAME", "").strip()
         self.api_key = api_key if api_key is not None else os.getenv("ZAP_API_KEY", "")
         self.timeout = max(1.0, min(float(timeout), 30.0))
         self.poll_interval = max(0.1, min(float(poll_interval), 5.0))
@@ -87,6 +88,8 @@ class ZapRunner:
     def run(self, target, *, max_seconds=300, spider=True, passive_wait=True, active=False,
             confirm_authorized=False, confirm_active=False):
         target_origin = origin(target)
+        if not self.context_name:
+            raise ValueError("Set ZAP_CONTEXT_NAME or pass --context-name for a reviewed ZAP context.")
         if not confirm_authorized:
             raise PermissionError("Requires --confirm-authorized.")
         if active and not confirm_active:
@@ -107,7 +110,7 @@ class ZapRunner:
             ],
         }
         if spider:
-            payload = self._get("spider", "action", "scan", {"url": target.rstrip("/") + "/", "recurse": "true"})
+            payload = self._get("spider", "action", "scan", {"url": target.rstrip("/") + "/", "recurse": "true", "contextName": self.context_name, "subtreeOnly": "true"})
             scan_id = str(payload.get("scan", ""))
             if not scan_id:
                 raise ZapError("ZAP did not return a spider scan ID.")
@@ -165,6 +168,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Bounded OWASP ZAP integration for authorized assessments")
     parser.add_argument("--target", required=True)
     parser.add_argument("--zap-api", default=os.getenv("ZAP_API_URL", "http://127.0.0.1:8080"))
+    parser.add_argument("--context-name", default=os.getenv("ZAP_CONTEXT_NAME", ""), help="Reviewed ZAP context name; required for scope control")
     parser.add_argument("--output", default="reports/zap_report.json")
     parser.add_argument("--max-seconds", type=int, default=300)
     parser.add_argument("--no-spider", action="store_true")
@@ -174,7 +178,7 @@ def main(argv=None):
     parser.add_argument("--confirm-active-zap", action="store_true")
     args = parser.parse_args(argv)
     try:
-        runner = ZapRunner(api_url=args.zap_api)
+        runner = ZapRunner(api_url=args.zap_api, context_name=args.context_name)
         report = runner.run(args.target, max_seconds=args.max_seconds, spider=not args.no_spider,
             passive_wait=not args.no_passive_wait, active=args.active,
             confirm_authorized=args.confirm_authorized, confirm_active=args.confirm_active_zap)
