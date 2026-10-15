@@ -402,7 +402,10 @@ def run():
     if not _run_lock.acquire(blocking=False):
         return jsonify({"error": "assessment_already_running"}), 409
 
-    body = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        _run_lock.release()
+        return jsonify({"error": "invalid_request", "message": "Request body must be a JSON object."}), 400
     try:
         target = _validate_target_url(body.get("target") or DEFAULT_TARGET)
     except ValueError as exc:
@@ -716,7 +719,7 @@ async function startRun() {
           "Accept": "application/json",
           "Cache-Control": "no-cache"
         },
-        body: JSON.stringify({ target: target, authorized: true, profile: el("profile").value }),
+        body: JSON.stringify({ target: preflight.target || target, authorized: true, profile: el("profile").value }),
         signal: controller.signal
       });
     } finally {
