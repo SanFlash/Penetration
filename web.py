@@ -741,9 +741,14 @@ async function startRun() {
     autoDownloadPending = true;
     autoDownloadStarted = false;
     const selectedProfile = el("profile").value;
+    const selectedLabel = (PROFILE_DESCRIPTIONS[selectedProfile] || selectedProfile).split(".")[0];
     showState("RUNNING", "QUEUED", selectedProfile === "core"
       ? "Core security assessment accepted. The HTML/JSON report and evidence ZIP will be ready when checks finish."
-      : "Full pentest accepted. The complete report ZIP will download automatically when it is ready.");
+      : selectedProfile === "zap"
+        ? "OWASP ZAP baseline accepted. The run requires a reachable, correctly scoped ZAP API; inspect phase status before interpreting results."
+        : selectedProfile === "pentest"
+          ? "Full Pentest accepted. The built-in multi-engine pipeline is running; external ZAP remains a separate profile."
+          : selectedLabel + " assessment accepted. Only the selected profile's mapped phases run; review the phase ledger for skipped or incomplete coverage.");
     setButton(true, "ASSESSMENT RUNNING");
   } catch (error) {
     const message = error && error.name === "AbortError"
