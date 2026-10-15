@@ -23,16 +23,23 @@ class ZapRunnerSafetyTests(unittest.TestCase):
         self.assertTrue(_same_origin("https://example.com", "https://example.com/path"))
         self.assertFalse(_same_origin("https://example.com", "https://example.com.attacker.test/"))
 
-    def test_authorization_gate_blocks_before_api_request(self):
+    def test_context_is_required_before_api_request(self):
         session = Mock()
         runner = ZapRunner(session=session)
+        with self.assertRaises(ValueError):
+            runner.run("https://example.com", confirm_authorized=True)
+        session.get.assert_not_called()
+
+    def test_authorization_gate_blocks_before_api_request(self):
+        session = Mock()
+        runner = ZapRunner(session=session, context_name="Authorized staging")
         with self.assertRaises(PermissionError):
             runner.run("https://example.com")
         session.get.assert_not_called()
 
     def test_active_scan_requires_second_confirmation(self):
         session = Mock()
-        runner = ZapRunner(session=session)
+        runner = ZapRunner(session=session, context_name="Authorized staging")
         with self.assertRaises(PermissionError):
             runner.run("https://example.com", confirm_authorized=True, active=True)
         session.get.assert_not_called()
@@ -43,7 +50,7 @@ class ZapRunnerSafetyTests(unittest.TestCase):
         response.json.side_effect = ValueError("invalid json")
         session = Mock()
         session.get.return_value = response
-        runner = ZapRunner(session=session)
+        runner = ZapRunner(session=session, context_name="Authorized staging")
         with self.assertRaises(ZapError):
             runner._get("spider", "action", "scan")
 
