@@ -504,8 +504,10 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         statuses = [str(phase.get("status", "pending")).lower() for phase in present]
         if not present or not statuses:
             status = "not_run"
-        elif any(value in {"failed", "timed_out"} for value in statuses):
+        elif any(value in {"failed", "timed_out", "error", "blocked"} for value in statuses):
             status = "failed_or_timed_out"
+        elif all(value == "not_run" for value in statuses):
+            status = "not_run"
         elif any(value in {"partial", "skipped"} for value in statuses) or len(present) < len(phase_names):
             status = "partial"
         elif all(value == "completed" for value in statuses):
@@ -659,7 +661,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
             "areas_partial": sum(1 for row in coverage_matrix if row["status"] == "partial"),
             "areas_failed_or_timed_out": sum(1 for row in coverage_matrix if row["status"] == "failed_or_timed_out"),
             "areas_not_run": sum(1 for row in coverage_matrix if row["status"] == "not_run"),
-            "checks_recorded": sum(row.get("checks") or 0 for row in coverage_matrix),
+            "checks_recorded": sum(info.get("checks") or 0 for info in phase_status.values() if isinstance(info, dict) and isinstance(info.get("checks"), (int, float))),
             "findings_by_category": dict(categories),
             "screenshots_attached_to_findings": sum(1 for finding in findings_sorted if finding.get("evidence_status") == "attached"),
             "findings_without_screenshot": sum(1 for finding in findings_sorted if finding.get("evidence_status") != "attached"),
