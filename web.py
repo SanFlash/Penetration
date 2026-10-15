@@ -632,7 +632,7 @@ const PROFILE_DESCRIPTIONS = {
   api: "Discovers API routes and available API specifications. Role-based authorization checks require supplied test accounts and expected permissions.",
   disclosure: "Checks common exposed configuration, diagnostic, API-documentation and verbose-error paths.",
   crawler: "Builds a same-origin route/JavaScript/API candidate inventory; discovered state-changing methods are inventoried, not submitted.",
-  zap: "Requires SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY and SENTINEL_ZAP_CONTEXT plus a reviewed exact-target ZAP context. Runs the passive baseline only; active scanning is disabled. Environment values alone do not prove that the API or scope is valid."
+  zap: "Requires SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY and SENTINEL_ZAP_CONTEXT plus a reviewed exact-target ZAP context. Runs the passive baseline only; active scanning is disabled. Environment values alone do not prove that the API or scope is valid.",
   core: "Runs the quick, bounded Core Security subset and evidence bundle."
 };
 function updateProfileDescription() {
