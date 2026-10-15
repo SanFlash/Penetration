@@ -15,8 +15,8 @@ from typing import Any
 
 
 _IMAGE_SIGNATURES = {
-    ".png": (b"\\x89PNG\\r\\n\\x1a\\n",),
-    ".jpg": (b"\\xff\\xd8\\xff",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8\xff",),
     ".jpeg": (b"\\xff\\xd8\\xff",),
     ".webp": (b"RIFF",),
 }
@@ -222,5 +222,5 @@ def write_evidence_manifest(
 
     report = validate_evidence(findings, evidence_root, exclude_paths=[output])
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
+    output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return report
