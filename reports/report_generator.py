@@ -485,7 +485,8 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
     # phases passed. Statuses are sourced from the orchestrator's phase ledger.
     phase_status = meta.get("phase_status") or {}
     phase_groups = {
-        "UI & Responsive": ["ui_responsive", "accessibility"],
+        "UI & Responsive": ["ui_responsive"],
+        "Accessibility": ["accessibility"],
         "Functional": ["functional_testing"],
         "Security Controls": ["security_headers", "active_security"],
         "Deep Security": ["deep_security", "comprehensive_security", "api_surface"],
