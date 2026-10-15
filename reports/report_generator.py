@@ -671,7 +671,8 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "phase_execution_log": [
             {"phase": name, "status": str(info.get("status", "not_run")).lower(),
              "duration_seconds": info.get("duration_seconds"), "checks": info.get("checks"),
-             "findings": info.get("findings"), "error": info.get("error"), "note": info.get("note")}
+             "findings": info.get("findings"), "summary": info.get("summary"),
+             "stop_reason": info.get("stop_reason"), "error": info.get("error"), "note": info.get("note")}
             for name, info in phase_status.items() if isinstance(info, dict)
         ],
         "owasp_coverage": owasp_coverage,
@@ -1020,7 +1021,14 @@ def _render_html(report: dict) -> str:
             extra = ""
             if phase.get("error"):
                 extra = " — " + html.escape(str(phase["error"])[:300])
-            details.append(f"<div><b>{phase_name}</b>: <span class='{coverage_status_class.get(str(phase.get('status','not_run')).lower(), 'warn')}'>{phase_status_text}</span>{extra}</div>")
+            phase_checks = phase.get("checks")
+            phase_findings = phase.get("findings")
+            counts = ""
+            if phase_checks is not None:
+                counts += f" · checks: {html.escape(str(phase_checks))}"
+            if phase_findings is not None:
+                counts += f" · findings: {html.escape(str(phase_findings))}"
+            details.append(f"<div><b>{phase_name}</b>: <span class='{coverage_status_class.get(str(phase.get('status','not_run')).lower(), 'warn')}'>{phase_status_text}</span>{counts}{extra}</div>")
         coverage_matrix_html.append(
             "<tr><td>" + html.escape(str(row.get("area", ""))) + "</td>"
             + "<td class='" + coverage_status_class.get(str(row.get("status", "not_run")), "warn") + "'>"
@@ -1249,7 +1257,7 @@ function evidenceAnchor(path, alt){
 const phaseStatus=(meta&&meta.phase_status)||{};
 const phaseEntries=Object.keys(phaseStatus);
 document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
- ? '<div class="summary-strip"><div class="summary-item"><b>'+phaseEntries.length+'</b><span>Recorded phases</span></div><div class="summary-item"><b>'+phaseEntries.filter(function(k){return String((phaseStatus[k]||{}).status).toLowerCase()==="completed"}).length+'</b><span>Completed phases</span></div><div class="summary-item"><b>'+phaseEntries.filter(function(k){return ["partial","failed","timed_out","error","blocked"].includes(String((phaseStatus[k]||{}).status).toLowerCase())}).length+'</b><span>Partial / failed phases</span></div><div class="summary-item"><b>'+phaseEntries.reduce(function(sum,k){return sum+((typeof (phaseStatus[k]||{}).checks==="number")?(phaseStatus[k]||{}).checks:0)},0)+'</b><span>Recorded checks</span></div></div><div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Checks</th><th>Findings</th><th>Notes / error</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=["failed","timed_out","partial","error","blocked"].includes(String(p.status||"").toLowerCase());return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds??"-")+' s</td><td>'+esc(p.checks??"not recorded")+'</td><td>'+esc(p.findings??"not tagged")+'</td><td>'+esc(p.error||p.note||"No error recorded")+'</td></tr>'}).join("")+'</tbody></table></div>'
+ ? '<div class="summary-strip"><div class="summary-item"><b>'+phaseEntries.length+'</b><span>Recorded phases</span></div><div class="summary-item"><b>'+phaseEntries.filter(function(k){return String((phaseStatus[k]||{}).status).toLowerCase()==="completed"}).length+'</b><span>Completed phases</span></div><div class="summary-item"><b>'+phaseEntries.filter(function(k){return ["partial","failed","timed_out","error","blocked"].includes(String((phaseStatus[k]||{}).status).toLowerCase())}).length+'</b><span>Partial / failed phases</span></div><div class="summary-item"><b>'+phaseEntries.reduce(function(sum,k){return sum+((typeof (phaseStatus[k]||{}).checks==="number")?(phaseStatus[k]||{}).checks:0)},0)+'</b><span>Recorded checks</span></div></div><div class="matrix"><table><thead><tr><th>Assessment area</th><th>Status</th><th>Duration</th><th>Checks</th><th>Findings</th><th>Notes / error</th></tr></thead><tbody>'+phaseEntries.map(function(k){const p=phaseStatus[k]||{};const failed=["failed","timed_out","partial","error","blocked"].includes(String(p.status||"").toLowerCase());return '<tr><td>'+esc(k.replace(/_/g," "))+'</td><td class="'+(failed?"fail":"ok")+'">'+esc(p.status||"unknown")+'</td><td>'+esc(p.duration_seconds??"-")+' s</td><td>'+esc(p.checks??"not recorded")+'</td><td>'+esc(p.findings??"not tagged")+'</td><td>'+esc(p.error||p.stop_reason||(p.summary?JSON.stringify(p.summary):p.note||"No error recorded"))+'</td></tr>'}).join("")+'</tbody></table></div>'
  : '<div class="empty">Assessment phase status will appear as the report is updated.</div>';
 
 const cat=document.getElementById("cat");
