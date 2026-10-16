@@ -653,7 +653,7 @@ function updateScopePreview() {
   try {
     const parsed = new URL(raw);
     if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("Use a plain HTTP(S) URL without credentials, query, or fragment.");
-    preview.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>URL format looks valid</strong><br>' + coverageEscape(parsed.origin + parsed.pathname.replace(/\\/$/, "")) + '<br>Syntax preview only — authorization and server-side scope are checked separately.</span>';
+    preview.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>URL format looks valid</strong><br>' + coverageEscape(parsed.origin + (parsed.pathname.endsWith("/") ? parsed.pathname.slice(0, -1) : parsed.pathname)) + '<br>Syntax preview only — authorization and server-side scope are checked separately.</span>';
   } catch (error) {
     preview.classList.add("invalid");
     preview.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>Check target URL</strong><br>' + coverageEscape(error.message || "Enter a complete HTTP(S) URL.") + '</span>';
