@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """CLI for safe-lab and authorized website assessment profiles."""
 import argparse
+import json
 import os
 import sys
 import threading
