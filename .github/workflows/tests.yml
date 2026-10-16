@@ -14,6 +14,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js for hosted-console JavaScript checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -26,7 +31,7 @@ jobs:
 
       - name: Compile application and test modules
         run: |
-          python -m compileall -q main.py security.py sentinel_scan.py scanners reports utils tests
+          python -m compileall -q main.py web.py security.py sentinel_scan.py scanners reports utils tests
 
       - name: Test
         run: python -m pytest tests/ -v
