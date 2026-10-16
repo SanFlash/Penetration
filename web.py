@@ -584,6 +584,7 @@ html{scroll-behavior:smooth;scroll-padding-top:20px}body{background:radial-gradi
 <option value="core">Core Security — quick bounded security subset</option>
 </select>
 <div id="profileDescription" class="muted" style="font-size:12px;margin-top:8px">Full Pentest runs every built-in coverage engine and automatically includes the OWASP ZAP passive baseline when configured. If ZAP is unavailable, it is marked not_run. Focused dropdown profiles intentionally run only their mapped test areas. Skipped or incomplete phases are never counted as passes.</div>
+<div id="profileCoveragePreview" class="scope-preview" aria-live="polite"><span class="scope-dot" aria-hidden="true"></span><span><strong>Profile coverage</strong><br>Select a profile to load its mapped engines and prerequisites. No scan is started.</span></div>
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
@@ -657,6 +658,40 @@ function updateScopePreview() {
   } catch (error) {
     preview.classList.add("invalid");
     preview.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>Check target URL</strong><br>' + coverageEscape(error.message || "Enter a complete HTTP(S) URL.") + '</span>';
+  }
+}
+
+async function loadProfileCoveragePreview() {
+  const target = (el("target") && el("target").value || "").trim();
+  const profile = (el("profile") && el("profile").value || "pentest").trim();
+  const panel = el("profileCoveragePreview");
+  if (!panel) return;
+  if (!target) {
+    panel.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>Profile coverage</strong><br>Enter a target URL to load server-defined coverage and integration prerequisites.</span>';
+    return;
+  }
+  panel.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>Loading profile coverage…</strong><br>Checking the selected profile mapping; no scan is started.</span>';
+  try {
+    const response = await fetch("/api/preflight?target=" + encodeURIComponent(target) + "&profile=" + encodeURIComponent(profile), {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: {"Accept": "application/json", "Cache-Control": "no-cache"}
+    });
+    const data = await response.json();
+    if (!response.ok || data.valid !== true) throw new Error(data.message || data.error || ("HTTP " + response.status));
+    const capability = data.profile_capabilities || {};
+    const engines = Array.isArray(capability.engines) ? capability.engines : [];
+    const integrations = Array.isArray(capability.external_integrations) ? capability.external_integrations : [];
+    const zap = data.integrations && data.integrations.zap;
+    const details = engines.length ? engines.join(", ") : "No engine mapping supplied";
+    const extra = integrations.length ? "<br><strong>Integrations:</strong> " + coverageEscape(integrations.join("; ")) : "";
+    const zapNote = profile === "zap" || profile === "pentest"
+      ? "<br><strong>ZAP:</strong> " + coverageEscape(zap && zap.configured ? "configuration variables present; API reachability and context scope still need verification" : "not configured; external ZAP coverage will be marked not_run")
+      : "";
+    panel.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>' + coverageEscape(capability.label || profile) + '</strong><br><strong>Mapped engines:</strong> ' + coverageEscape(details) + extra + zapNote + '<br>This is the server-defined profile map, not a claim that these phases have already passed.</span>';
+  } catch (error) {
+    panel.classList.add("invalid");
+    panel.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>Profile map unavailable</strong><br>' + coverageEscape(error.message || "Preflight could not load.") + '<br>You can still submit the assessment to receive the server-side validation result.</span>';
   }
 }
 
@@ -1040,7 +1075,8 @@ document.addEventListener("DOMContentLoaded", function() {
   const targetInput = el("target");
   if (targetInput) { targetInput.addEventListener("input", updateScopePreview); updateScopePreview(); }
   const profileSelect = el("profile");
-  if (profileSelect) profileSelect.addEventListener("change", updateProfileDescription);
+  if (profileSelect) { profileSelect.addEventListener("change", updateProfileDescription); profileSelect.addEventListener("change", loadProfileCoveragePreview); }
+  if (targetInput) targetInput.addEventListener("change", loadProfileCoveragePreview);
   updateProfileDescription();
   const button = el("startBtn");
   if (button) {
