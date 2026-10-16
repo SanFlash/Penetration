@@ -655,7 +655,7 @@ function updateProfileDescription() {
   if (profile && button && !button.disabled) button.textContent = labels[profile.value] || "START ASSESSMENT";
 }
 
-async async function startRun() {
+async function startRun() {
   const btn = el("startBtn");
   const targetInput = el("target");
   const authInput = el("authorized");
