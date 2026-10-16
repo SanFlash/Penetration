@@ -918,7 +918,7 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         json.dump(report, handle, indent=2, ensure_ascii=False)
     try:
         with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for candidate in (bundle_readme_path, html_path, portable_html_path, pdf_path, xlsx_path, sarif_path, json_path, manifest_path, integrity_manifest_path):
+            for candidate in (bundle_readme_path, html_path, portable_html_path, pdf_path, xlsx_path, sarif_path, json_path, manifest_path, integrity_manifest_path, dossier_path):
                 if candidate and os.path.isfile(candidate):
                     archive.write(candidate, os.path.basename(candidate))
             bundled_evidence = os.path.join(out_dir, "evidence")
