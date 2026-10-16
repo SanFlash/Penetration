@@ -9,6 +9,13 @@ import pytest
 import web
 
 
+def test_start_handler_is_declared_async_exactly_once():
+    source = web._HTML
+    assert "async function startRun() {" in source
+    assert "async async function startRun() {" not in source
+    assert "function startRun() {" not in source
+
+
 def test_hosted_console_has_inline_script_blocks():
     blocks = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script\s*>", web._HTML, re.IGNORECASE | re.DOTALL)
     assert blocks, "Hosted console HTML contains no inline JavaScript to validate."
