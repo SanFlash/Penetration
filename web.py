@@ -30,7 +30,7 @@ ALLOWED_PROFILES = {
     "input", "disclosure", "crawler", "api", "zap",
 }
 PROFILE_CAPABILITIES = {
-    "pentest": {"label": "Full Pentest", "engines": ["recon", "ui_responsive", "accessibility", "functional_testing", "security_headers", "active_security", "deep_security", "api_surface", "route_discovery", "input_validation", "input_stress", "information_disclosure", "attack_surface", "security_evidence"], "external_integrations": ["zap_optional"]},
+    "pentest": {"label": "Full Pentest — all built-in coverage + configured ZAP", "engines": ["recon", "ui_responsive", "accessibility", "functional_testing", "security_headers", "active_security", "deep_security", "api_surface", "route_discovery", "input_validation", "input_stress", "information_disclosure", "attack_surface", "security_evidence"], "external_integrations": ["OWASP ZAP passive baseline when configured; otherwise explicitly not_run"]},
     "security": {"label": "Security & OWASP", "engines": ["deep_security", "api_surface"], "external_integrations": []},
     "uiux": {"label": "UI/UX, Responsive & Accessibility", "engines": ["ui_responsive", "accessibility"], "external_integrations": []},
     "functional": {"label": "Functional & Navigation", "engines": ["route_discovery", "functional_testing"], "external_integrations": []},
@@ -568,7 +568,7 @@ hr{border-top-color:#27364d!important}
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
 <label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
 <label for="profile">Assessment profile</label><select id="profile">
-<option value="pentest">Full Pentest — all built-in coverage engines</option>
+<option value="pentest">Full Pentest — all built-in coverage + configured ZAP</option>
 <option value="security">Security & OWASP — passive and bounded active security checks</option>
 <option value="uiux">UI/UX, Responsive & Accessibility — browser checks and screenshots</option>
 <option value="functional">Functional & Navigation — read-only links and page smoke checks</option>
@@ -579,7 +579,7 @@ hr{border-top-color:#27364d!important}
 <option value="zap">OWASP ZAP Baseline — requires configured external ZAP API</option>
 <option value="core">Core Security — quick bounded security subset</option>
 </select>
-<div id="profileDescription" class="muted" style="font-size:12px;margin-top:8px">Full Pentest runs the built-in UI, functional, security, input, API/route, information-disclosure, and evidence phases. OWASP ZAP is a separate optional external integration. Every phase is recorded in the report; skipped or incomplete phases are never counted as passes.</div>
+<div id="profileDescription" class="muted" style="font-size:12px;margin-top:8px">Full Pentest runs every built-in coverage engine and automatically includes the OWASP ZAP passive baseline when configured. If ZAP is unavailable, it is marked not_run. Focused dropdown profiles intentionally run only their mapped test areas. Skipped or incomplete phases are never counted as passes.</div>
 <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);margin-top:14px"><input id="authorized" type="checkbox" style="width:auto;margin-top:2px"> <span>I confirm I own this website or have explicit permission to perform security testing against it.</span></label>
 <button id="startBtn" type="button">START PENTEST</button>
 <div class="metrics" style="margin-top:14px"><div class="metric"><b id="pages">0</b><span>pages</span></div><div class="metric"><b id="checks">0</b><span>checks</span></div><div class="metric"><b id="findings">0</b><span>findings</span></div><div class="metric"><b id="errors">0</b><span>errors</span></div></div>
@@ -624,7 +624,7 @@ function setButton(running, label) {
 }
 
 const PROFILE_DESCRIPTIONS = {
-  pentest: "Runs the broadest built-in pipeline: reconnaissance, browser UI/responsive/accessibility, read-only navigation, information disclosure, security headers, bounded active/deep security, API/route discovery, input validation/stress, attack-surface correlation and evidence. External ZAP is a separate profile; its results are not automatically merged into this report.",
+  pentest: "Runs all built-in coverage engines: reconnaissance, UI/responsive/accessibility, functional/navigation, security headers, bounded active/deep security, API/route discovery, input validation/stress, information disclosure, attack-surface correlation and evidence. When the external ZAP API, key and reviewed context are configured, its passive-baseline alerts are merged into this report; otherwise ZAP is explicitly marked not_run.",
   security: "Runs deep security checks plus passive API-surface discovery. Browser UI/responsive and functional navigation phases are not included in this focused profile.",
   uiux: "Runs Chromium UI/responsive checks and automated accessibility heuristics on discovered pages. Manual keyboard, screen-reader and assistive-technology review is still required.",
   functional: "Runs read-only page and navigation smoke checks. It does not submit forms or validate business transactions.",
