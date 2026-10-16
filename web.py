@@ -559,14 +559,18 @@ hr{border-top-color:#27364d!important}
 .coverage-detail{padding:0 0 14px 0;font-size:12px;color:#b6c5d8}.coverage-detail p{margin:7px 0}.coverage-detail ul{margin:6px 0;padding-left:20px}.phase-pill{display:inline-block;border:1px solid #34435a;border-radius:6px;padding:4px 7px;margin:3px 4px 3px 0;font:10px Consolas,monospace;overflow-wrap:anywhere}
 .coverage-empty{padding:16px;border:1px dashed #34435a;border-radius:10px;color:var(--muted)}
 @media(max-width:900px){.coverage-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.coverage-filters{grid-template-columns:1fr}.coverage-report .coverage-heading{flex-direction:column}.coverage-item summary{grid-template-columns:1fr auto}.coverage-code{grid-column:1/-1}.coverage-name{min-width:0}.coverage-status{grid-column:2;grid-row:2}}
+
+/* Sentinel Console v3 — task-first responsive dashboard */
+:root{--surface:#111b2d;--surface-2:#0c1525;--line:#2a3b55;--muted:#9aacc4;--green:#55e6ad;--blue:#82b2ff;--red:#ff7b91;--yellow:#ffd278}
+html{scroll-behavior:smooth;scroll-padding-top:20px}body{background:radial-gradient(ellipse at 12% -10%,#16374a 0,transparent 42%),#0a1020}.wrap{max-width:1540px;padding:24px clamp(14px,2.5vw,36px)}.top{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding-bottom:16px;margin-bottom:18px}.brand{flex:1;min-width:230px}.top-nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.top-nav a{color:#b9cbe0;text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px}.top-nav a:hover,.top-nav a:focus-visible{color:var(--green);border-color:#3c806d;outline:none}.badge{min-width:78px;text-align:center;text-transform:uppercase;letter-spacing:.08em}.grid{grid-template-columns:minmax(0,1.05fr) minmax(320px,.95fr);align-items:stretch;gap:16px}.grid>.hero{order:2;min-height:250px;align-self:stretch}.grid>aside{order:1;min-width:0}.hero{background:radial-gradient(ellipse at 50% 42%,#173849 0,#111b2d 64%)}.ring{width:170px;height:170px}.stage{font-size:clamp(17px,2vw,23px)}.detail{max-width:420px;margin-inline:auto}.pad{padding:clamp(16px,2vw,24px)}.metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.metric{min-width:0}.metric b{overflow-wrap:anywhere}.scope-preview{display:flex;gap:9px;align-items:flex-start;margin-top:8px;padding:10px 11px;border:1px solid #2a3b55;border-radius:9px;background:#0b1423;color:#9aacc4;font-size:12px;overflow-wrap:anywhere}.scope-preview strong{color:#dce8f7;font-weight:650}.scope-preview .scope-dot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:#55e6ad;margin-top:5px}.scope-preview.invalid .scope-dot{background:#ff7b91}.section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.section-nav a{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:9px;padding:8px 11px;color:#c5d5e8;text-decoration:none;font-size:12px;background:#0d1728}.section-nav a:hover{border-color:#3c806d;color:var(--green)}.panel{min-width:0}.evidence,.coverage-report,.logs-panel{margin-top:16px!important}.coverage{margin-top:16px}.coverage .cov{min-width:0}.links a{transition:border-color .15s,background .15s}.links a:hover{border-color:#3b7d6b;background:#122a2a}.links a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}button:disabled{opacity:.62;cursor:wait;transform:none}.logs{white-space:pre-wrap;overflow-wrap:anywhere}.evidencebox{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));max-height:640px}.e-card img{height:180px}.coverage-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.coverage-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(220px,1.5fr)}#coverageSections{min-width:0}.coverage-item summary{grid-template-columns:minmax(80px,120px) minmax(0,1fr) auto}.coverage-name{overflow-wrap:anywhere}.metric span{letter-spacing:.08em}.runtime-note{margin-top:10px;padding:10px 12px;border-left:3px solid var(--blue);background:#0b1728;color:#a9bdd5;font-size:12px;border-radius:0 8px 8px 0}@media(max-width:900px){.wrap{padding:14px}.grid{grid-template-columns:minmax(0,1fr)}.grid>aside{order:1}.grid>.hero{order:2;min-height:220px}.ring{width:145px;height:145px}.top{align-items:flex-start}.top-nav{width:100%}.coverage-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.coverage-filters{grid-template-columns:minmax(0,1fr)}.evidencebox{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}}@media(max-width:520px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.top-nav a{flex:1;text-align:center;justify-content:center}.coverage-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.coverage-item summary{grid-template-columns:minmax(0,1fr) auto}.coverage-code{grid-column:1/-1}.coverage-status{grid-column:2;grid-row:2}.evidencebox{grid-template-columns:1fr}}
 </style></head>
 <body><main class="wrap">
-<header class="top"><div class="brand">SENTINEL // HOSTED PENTEST CONSOLE</div><div id="status" class="badge">IDLE</div></header>
-<div class="grid">
-<section class="panel hero"><div class="ring"></div><div class="core"></div><div class="center"><div class="stage" id="stage">READY</div><div class="detail" id="detail">Start an authorized assessment.</div></div></section>
-<aside class="panel pad"><h3>Start Assessment</h3>
+<header class="top"><div class="brand">SENTINEL // HOSTED PENTEST CONSOLE</div><nav class="top-nav" aria-label="Console sections"><a href="#assessment">Assessment</a><a href="#coverageReport">Coverage matrix</a><a href="#evidencePanel">Evidence</a><a href="#executionLog">Execution log</a></nav><div id="status" class="badge" role="status" aria-live="polite">IDLE</div></header>
+<div class="grid" id="assessment">
+<section class="panel hero" aria-label="Assessment progress"><div class="ring"></div><div class="core"></div><div class="center"><div class="stage" id="stage">READY</div><div class="detail" id="detail">Start an authorized assessment.</div></div></section>
+<aside class="panel pad" aria-labelledby="assessmentTitle"><h3 id="assessmentTitle">Assessment workspace</h3>
 <div class="muted">Step 1 — enter the web URL. Nothing is scanned until you submit it.</div>
-<label>Web URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://example.com" autocomplete="url" inputmode="url">
+<label for="target">Authorized target URL</label><input id="target" value="__DEFAULT_TARGET__" placeholder="https://staging.example.com" autocomplete="url" inputmode="url" aria-describedby="scopePreview"><div id="scopePreview" class="scope-preview" role="status"><span class="scope-dot" aria-hidden="true"></span><span><strong>Scope preview</strong><br>Enter a target URL. This preview does not send requests or validate ownership.</span></div>
 <label for="profile">Assessment profile</label><select id="profile">
 <option value="pentest">Full Pentest — all built-in coverage + configured ZAP</option>
 <option value="security">Security & OWASP — passive and bounded active security checks</option>
@@ -586,7 +590,7 @@ hr{border-top-color:#27364d!important}
 <div style="margin-top:18px"><div id="pct">0%</div><div class="bar"><div id="fill" class="fill"></div></div></div>
 <div class="links"><a id="reportLink" href="/reports/report.html" target="_blank">Open live HTML report</a><div id="completionDownloads" style="display:none;border:1px solid var(--green);border-radius:10px;padding:12px;background:#06150f"><strong style="color:var(--green)">ASSESSMENT COMPLETE — REPORTS READY</strong><p class="muted" style="margin:6px 0 10px">The final report bundle includes the reports, findings, manifest and captured evidence files.</p><a id="downloadBundle" href="/reports/sentinel_full_report_bundle.zip" download="sentinel_full_report_bundle.zip" style="display:block;text-align:center;background:var(--green);color:#03110b;font-weight:900">⬇ DOWNLOAD COMPLETE REPORT + EVIDENCE (ZIP)</a></div><a id="portableLink" href="/reports/report_portable.html" target="_blank">Portable report</a><a id="findingsJsonLink" href="/reports/findings.json" target="_blank">Findings JSON</a><a id="manifestLink" href="/reports/evidence_manifest.json" target="_blank">Evidence manifest</a><a id="sarifLink" href="/reports/sentinel.sarif" target="_blank">SARIF for CI tools</a><a id="pdfLink" href="/reports/report.pdf" target="_blank">PDF report</a><a id="xlsxLink" href="/reports/penetration_report.xlsx" target="_blank">XLSX report</a></div><div id="reportNotice" class="muted" style="margin-top:10px">The download button appears only after the assessment reaches its final status. Reports are not downloaded during a running assessment.</div>
 </aside></div>
-<section class="panel evidence"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
+<section class="panel evidence" id="evidencePanel"><div class="pad"><h3 style="margin:0">Live Evidence Stream</h3><div class="muted">Focused security evidence appears here during the browser evidence phase.</div></div><div id="evidence" class="evidencebox"><div class="muted pad">Waiting for captured evidence...</div></div></section>
 <section class="panel coverage-report" id="coverageReport" style="margin-top:14px">
 <div class="pad">
   <div class="coverage-heading"><div><h2 style="margin:0 0 5px">Section-by-Section Coverage</h2><div class="muted">Each category shows mapped phases, execution status, limitations, and manual-review requirements. Completed engines are not a security certification.</div></div><button id="refreshCoverage" type="button" style="width:auto;min-width:130px;margin:0">REFRESH COVERAGE</button></div>
@@ -603,7 +607,7 @@ hr{border-top-color:#27364d!important}
 <section class="coverage">
 <div class="cov"><b>UI / Responsive</b><span id="cov-ui">PENDING</span></div><div class="cov"><b>Functional</b><span id="cov-functional">PENDING</span></div><div class="cov"><b>Security</b><span id="cov-security">PENDING</span></div><div class="cov"><b>Penetration</b><span id="cov-penetration">PENDING</span></div><div class="cov"><b>Info Leak</b><span id="cov-info">PENDING</span></div><div class="cov"><b>Evidence</b><span id="cov-evidence">PENDING</span></div>
 </section>
-<section class="panel" style="margin-top:14px"><div class="pad"><h3>Live execution log</h3></div><div id="logs" class="logs"></div></section>
+<section class="panel logs-panel" id="executionLog"><div class="pad"><h3>Live execution log</h3><div class="muted">Connection and scanner events. Errors are preserved for troubleshooting.</div></div><div id="logs" class="logs" role="log" aria-live="polite"></div></section>
 </main>
 <script>
 const el = (id) => document.getElementById(id);
@@ -635,6 +639,27 @@ const PROFILE_DESCRIPTIONS = {
   zap: "Requires SENTINEL_ZAP_API_URL, SENTINEL_ZAP_API_KEY and SENTINEL_ZAP_CONTEXT plus a reviewed exact-target ZAP context. Runs the passive baseline only; active scanning is disabled. Environment values alone do not prove that the API or scope is valid.",
   core: "Runs the quick, bounded Core Security subset and evidence bundle."
 };
+function updateScopePreview() {
+  const input = el("target");
+  const preview = el("scopePreview");
+  if (!input || !preview) return;
+  const raw = (input.value || "").trim();
+  preview.classList.remove("invalid");
+  if (!raw) {
+    preview.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>Target required</strong><br>Enter an authorized HTTP or HTTPS URL. No request is sent by this preview.</span>';
+    preview.classList.add("invalid");
+    return;
+  }
+  try {
+    const parsed = new URL(raw);
+    if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("Use a plain HTTP(S) URL without credentials, query, or fragment.");
+    preview.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>URL format looks valid</strong><br>' + coverageEscape(parsed.origin + parsed.pathname.replace(/\\/$/, "")) + '<br>Syntax preview only — authorization and server-side scope are checked separately.</span>';
+  } catch (error) {
+    preview.classList.add("invalid");
+    preview.innerHTML = '<span class="scope-dot" aria-hidden="true"></span><span><strong>Check target URL</strong><br>' + coverageEscape(error.message || "Enter a complete HTTP(S) URL.") + '</span>';
+  }
+}
+
 function updateProfileDescription() {
   const profile = el("profile");
   const note = el("profileDescription");
@@ -1012,6 +1037,8 @@ async function poll() {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
+  const targetInput = el("target");
+  if (targetInput) { targetInput.addEventListener("input", updateScopePreview); updateScopePreview(); }
   const profileSelect = el("profile");
   if (profileSelect) profileSelect.addEventListener("change", updateProfileDescription);
   updateProfileDescription();
