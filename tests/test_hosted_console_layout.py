@@ -32,6 +32,16 @@ def test_start_handler_is_valid_async_and_error_path_reenables_button():
     assert "setButton(false)" in script
 
 
+def test_profile_coverage_preview_uses_server_preflight_without_starting_scan():
+    html = web._HTML
+    assert 'id="profileCoveragePreview"' in html
+    assert "async function loadProfileCoveragePreview()" in html
+    assert 'fetch("/api/preflight?target="' in html
+    assert "data.profile_capabilities" in html
+    assert "This is the server-defined profile map, not a claim that these phases have already passed." in html
+    assert 'profileSelect.addEventListener("change", loadProfileCoveragePreview)' in html
+
+
 def test_full_coverage_and_focused_profiles_remain_available():
     expected = {"pentest", "security", "uiux", "functional", "input", "api", "disclosure", "crawler", "zap", "core"}
     assert expected.issubset(set(web.ALLOWED_PROFILES))
