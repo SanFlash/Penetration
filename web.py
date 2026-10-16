@@ -1078,12 +1078,13 @@ document.addEventListener("DOMContentLoaded", function() {
   if (profileSelect) { profileSelect.addEventListener("change", updateProfileDescription); profileSelect.addEventListener("change", loadProfileCoveragePreview); }
   if (targetInput) targetInput.addEventListener("change", loadProfileCoveragePreview);
   updateProfileDescription();
+  updateProfileDescription();
+  loadProfileCoveragePreview();
   const button = el("startBtn");
   if (button) {
     button.addEventListener("click", startRun);
   }
 
-  const targetInput = el("target");
   if (targetInput) {
     targetInput.addEventListener("keydown", function(event) {
       if (event.key === "Enter") {
