@@ -13,9 +13,9 @@ def test_start_handler_is_declared_async_exactly_once():
     source = web._HTML
     assert "async function startRun() {" in source
     assert "async async function startRun() {" not in source
-    declarations = re.findall(r"\\bfunction\\s+startRun\\s*\\(", source)
+    declarations = re.findall(r"\bfunction\s+startRun\s*\(", source)
     assert len(declarations) == 1
-    assert re.search(r"\\basync\\s+function\\s+startRun\\s*\\(", source)
+    assert re.search(r"\basync\s+function\s+startRun\s*\(", source)
 
 
 def test_hosted_console_has_inline_script_blocks():
