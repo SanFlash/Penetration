@@ -1078,7 +1078,6 @@ document.addEventListener("DOMContentLoaded", function() {
   if (profileSelect) { profileSelect.addEventListener("change", updateProfileDescription); profileSelect.addEventListener("change", loadProfileCoveragePreview); }
   if (targetInput) targetInput.addEventListener("change", loadProfileCoveragePreview);
   updateProfileDescription();
-  updateProfileDescription();
   loadProfileCoveragePreview();
   const button = el("startBtn");
   if (button) {
