@@ -15,6 +15,7 @@ from reports.xlsx_exporter import generate_xlsx
 from scanners.coverage_registry import build_coverage_registry
 from scanners.evidence_integrity import validate_evidence
 from reports.sarif_exporter import write_sarif
+from reports.coverage_evidence import build_coverage_evidence_dossiers
 
 
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
@@ -778,6 +779,34 @@ def generate(target: str, findings: list, evidence_dir: str, out_dir: str = "rep
         "remediation": remediation,
         "metadata": meta,
     }
+
+    # Produce one auditable dossier per standard/category. Dossiers inherit actual
+    # phase status and evidence references; they do not imply unexecuted coverage.
+    coverage_dossier_sources = (
+        report.get("framework_coverage", [])
+        + report.get("owasp_coverage", [])
+        + report.get("owasp_top10_2025_coverage", [])
+    )
+    report["coverage_evidence_dossiers"] = build_coverage_evidence_dossiers(
+        coverage_dossier_sources,
+        findings_sorted,
+        report.get("phase_execution_log", []),
+    )
+    report["coverage_evidence_summary"] = {
+        "areas": len(report["coverage_evidence_dossiers"]),
+        "areas_with_findings": sum(1 for area in report["coverage_evidence_dossiers"] if area["finding_counts"]["total"]),
+        "areas_with_artifacts": sum(1 for area in report["coverage_evidence_dossiers"] if area["evidence_count"]),
+        "areas_manual_review": sum(1 for area in report["coverage_evidence_dossiers"] if area["status"] == "manual_review"),
+        "areas_not_run": sum(1 for area in report["coverage_evidence_dossiers"] if area["status"] == "not_run"),
+        "findings_linked": sum(area["finding_counts"]["total"] for area in report["coverage_evidence_dossiers"]),
+        "artifacts_linked": sum(area["evidence_count"] for area in report["coverage_evidence_dossiers"]),
+    }
+    dossier_path = os.path.join(out_dir, "coverage_evidence_dossiers.json")
+    with open(dossier_path, "w", encoding="utf-8") as handle:
+        json.dump({"target": target, "generated_at": report["generated_at"],
+                    "summary": report["coverage_evidence_summary"],
+                    "coverage_evidence_dossiers": report["coverage_evidence_dossiers"]},
+                   handle, indent=2, ensure_ascii=False)
 
     json_path = os.path.join(out_dir, "findings.json")
     with open(json_path, "w", encoding="utf-8") as handle:
