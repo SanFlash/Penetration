@@ -280,10 +280,10 @@ def _annotate_evidence_image(path: str, finding: dict, url: str, status=None,
     from textwrap import wrap
 
     def clean(value, limit=700):
-        text = str(value or "").replace("\\r", " ").replace("\\n", " ").strip()
+        text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
         text = re.sub(
-            r"(?i)\\b(authorization|cookie|set-cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\\b\\s*[:=]\\s*[^\\s,;]+",
-            r"\\1=<redacted>", text,
+            r"(?i)\b(authorization|cookie|set-cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\b\s*[:=]\s*[^\s,;]+",
+            r"\1=<redacted>", text,
         )
         return text[:limit] or "Not recorded"
 
