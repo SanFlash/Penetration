@@ -784,15 +784,28 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
             + ui_result.get("findings", [])
         )
         def _evidence_progress(done, total, finding_id, url, status, item=None):
-            if item and item.get("screenshot"):
+            if item and (item.get("screenshot") or item.get("full_page_screenshot")):
+                primary = item.get("screenshot")
+                full_page = item.get("full_page_screenshot")
                 live_evidence.append({
                     "finding_id": finding_id,
+                    "title": next((str(f.get("title")) for f in evidence_findings if evidence_finding_key(f) == str(finding_id)), ""),
                     "url": url,
                     "status": item.get("status"),
                     "error": item.get("error"),
+                    "full_page_capture_error": (item.get("capture") or {}).get("full_page_capture_error"),
                     "capture_mode": (item.get("capture") or {}).get("mode"),
-                    "screenshot": item.get("screenshot"),
-                    "artifact_url": "/reports/evidence/" + os.path.basename(str(item.get("screenshot"))),
+                    "capture_scope": (item.get("capture") or {}).get("capture_scope"),
+                    "diagnostic_artifact": bool((item.get("capture") or {}).get("diagnostic_artifact")),
+                    "screenshot": primary,
+                    "artifact_url": "/reports/evidence/" + os.path.basename(str(primary)) if primary else "",
+                    "full_page_screenshot": full_page,
+                    "full_page_artifact_url": "/reports/evidence/" + os.path.basename(str(full_page)) if full_page else "",
+                    "evidence_artifacts": [
+                        {"kind": artifact.get("kind"), "url": "/reports/evidence/" + os.path.basename(str(artifact.get("path")))}
+                        for artifact in (item.get("evidence_artifacts") or [])
+                        if artifact.get("path")
+                    ],
                     "captured_at": datetime.now().isoformat(timespec="seconds"),
                 })
                 live_evidence[:] = live_evidence[-40:]
