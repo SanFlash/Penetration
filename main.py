@@ -807,15 +807,21 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                     "artifact_url": "/reports/evidence/" + os.path.basename(str(primary)) if primary else "",
                     "full_page_screenshot": full_page,
                     "full_page_artifact_url": "/reports/evidence/" + os.path.basename(str(full_page)) if full_page else "",
+                    "diagnostic_artifact_url": (
+                        "/reports/evidence/" + os.path.basename(str((item.get("capture") or {}).get("diagnostic_screenshot")))
+                        if (item.get("capture") or {}).get("diagnostic_screenshot") else ""
+                    ),
                     "evidence_artifacts": [
                         {"kind": artifact.get("kind"), "url": "/reports/evidence/" + os.path.basename(str(artifact.get("path")))}
                         for artifact in (item.get("evidence_artifacts") or [])
                         if artifact.get("path")
-                    ],
+                    ] + ([
+                        {"kind": "diagnostic", "url": "/reports/evidence/" + os.path.basename(str((item.get("capture") or {}).get("diagnostic_screenshot")))}
+                    ] if (item.get("capture") or {}).get("diagnostic_screenshot") else []),
                     "captured_at": datetime.now().isoformat(timespec="seconds"),
                 })
-                live_evidence[:] = live_evidence[-40:]
-                state.update(live_evidence=live_evidence[-40:])
+                live_evidence[:] = live_evidence
+                state.update(live_evidence=live_evidence[-40:], evidence_archive=live_evidence)
             state.update(
                 stage="SECURITY EVIDENCE",
                 detail=f"Evidence {done}/{total}: {finding_id} — {status} — {url}",
