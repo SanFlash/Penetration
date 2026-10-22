@@ -590,7 +590,13 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         path = os.path.join(EVIDENCE_DIR, f"security_unlocated_{index:03d}_{_safe_filename(target)}_diagnostic.png")
         diagnostic = _write_diagnostic_evidence_card(path, finding, target, None, reason, reason)
         item = {
-            "finding_id": finding_id, "url": target, "status": None,
+            "finding_id": finding_id,
+            "title": finding.get("title"),
+            "severity": finding.get("severity"),
+            "evidence_summary": finding.get("plain_language_summary") or finding.get("description") or finding.get("evidence") or finding.get("detail"),
+            "impact": finding.get("impact"),
+            "remediation": finding.get("remediation") or finding.get("recommended_action"),
+            "url": target, "status": None,
             "screenshot": path if os.path.isfile(path) else None,
             "capture": {
                 "mode": "diagnostic-evidence-card-unlocated",
@@ -607,6 +613,8 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         if item["screenshot"]:
             finding["screenshot"] = item["screenshot"]
             finding["evidence_capture"] = item
+        if progress_callback:
+            notify(index, len(unlocated), finding_id, target, "diagnostic-only", item)
 
     if not candidates:
         with open(os.path.join(EVIDENCE_DIR, "security_browser_evidence.json"), "w", encoding="utf-8") as f:
