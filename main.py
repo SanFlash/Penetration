@@ -820,7 +820,6 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                     ] if (item.get("capture") or {}).get("diagnostic_screenshot") else []),
                     "captured_at": datetime.now().isoformat(timespec="seconds"),
                 })
-                live_evidence[:] = live_evidence
                 state.update(live_evidence=live_evidence[-40:], evidence_archive=live_evidence)
             state.update(
                 stage="SECURITY EVIDENCE",
