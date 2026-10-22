@@ -674,6 +674,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             error_type = None
             focus = None
             capture = {}
+            full_page_annotation = None
             try:
                 response = page.goto(url, wait_until="domcontentloaded", timeout=navigation_timeout_ms)
                 status = response.status if response else None
@@ -706,7 +707,6 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                         full_page_annotation = _annotate_evidence_image(
                             full_page_screenshot, finding, url, status, focus, full_page=True
                         )
-                        capture["full_page_annotation"] = full_page_annotation
                 except Exception as full_page_exc:
                     full_page_screenshot = None
                     capture["full_page_capture_error"] = f"{type(full_page_exc).__name__}: {full_page_exc}"
@@ -776,6 +776,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 "impact": finding.get("impact"),
                 "remediation": finding.get("remediation") or finding.get("recommended_action"),
                 "primary_annotation": primary_annotation,
+                "full_page_annotation": full_page_annotation,
                 "url": url,
                 "status": status,
                 "screenshot": screenshot if os.path.isfile(screenshot or "") else None,
