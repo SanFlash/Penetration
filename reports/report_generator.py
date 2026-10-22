@@ -1289,6 +1289,14 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 }
 @media(max-width:950px){.grid{grid-template-columns:1fr}.gallery{grid-template-columns:repeat(2,1fr)}.riskgrid{grid-template-columns:repeat(2,1fr)}.kpis,.summary-strip{grid-template-columns:repeat(2,1fr)}.shell{padding:12px}}
 @media(max-width:560px){.gallery{grid-template-columns:1fr}.hero{padding:18px}.kpis,.summary-strip{grid-template-columns:1fr 1fr}}
+
+/* Sentinel workspace layout overrides: desktop rail, tablet compact rail, mobile horizontal tabs. */
+.nav a[aria-current="page"],.shell:has(#overview:target) .nav a[href="#overview"],.shell:has(#findings:target) .nav a[href="#findings"],.shell:has(#coverage:target) .nav a[href="#coverage"],.shell:has(#evidence:target) .nav a[href="#evidence"],.shell:has(#remediation:target) .nav a[href="#remediation"],.shell:has(#execution:target) .nav a[href="#execution"]{background:#12302f;border-color:#286b5e;color:#dffcf2}
+.shell:has(#overview:target) .nav a[href="#overview"]:before,.shell:has(#findings:target) .nav a[href="#findings"]:before,.shell:has(#coverage:target) .nav a[href="#coverage"]:before,.shell:has(#evidence:target) .nav a[href="#evidence"]:before,.shell:has(#remediation:target) .nav a[href="#remediation"]:before,.shell:has(#execution:target) .nav a[href="#execution"]:before{background:var(--accent);box-shadow:0 0 10px #48e6b077}
+@media(max-width:950px){.shell{grid-template-columns:176px minmax(0,1fr);gap:0 12px;padding:12px}.nav{top:12px}.gallery{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.shell{display:flex;flex-direction:column;gap:12px;padding:10px}.hero{width:100%;padding:clamp(16px,4vw,24px)}.nav{position:sticky;top:0;width:100%;display:flex;flex-direction:row;overflow-x:auto;gap:5px;margin:0;padding:7px;border-radius:13px;white-space:nowrap}.nav:before{display:none}.nav a{flex:0 0 auto;min-height:38px;padding:8px 10px}.nav a:before{display:none}.tab{width:100%;min-width:0}.panel{padding:14px}.grid{grid-template-columns:minmax(0,1fr)}.matrix{max-width:100%}.matrix table{min-width:650px}.meta{gap:7px}.chip{font-size:12px}}
+@media(max-width:420px){.shell{padding:7px}.hero{border-radius:15px}.hero h1{font-size:27px}.nav a{font-size:12px;padding:7px 9px}.panel{border-radius:12px}.gallery,.riskgrid{grid-template-columns:minmax(0,1fr)}.kpis,.summary-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
