@@ -10,6 +10,9 @@ ALLOWED_HOSTS = [
     "localhost:3000",
     "amwebtech.com",
     "www.amwebtech.com",
+    # Exact Vercel preview host shown in the Sentinel assessment report.
+    # Keep this explicit; do not replace with a wildcard domain allowlist.
+    "amwebtech-experience-ten.vercel.app",
 ]
 
 DEFAULT_TARGET = "http://127.0.0.1:5000"
