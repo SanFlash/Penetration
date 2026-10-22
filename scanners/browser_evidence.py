@@ -814,13 +814,15 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         url = finding.get("evidence_url") or finding.get("url")
         finding_id = str(finding.get("id") or finding.get("title") or "security")
         item = by_key.get((finding_id, url))
-        if item and item.get("screenshot"):
-            finding["screenshot"] = item["screenshot"]
+        if item and (item.get("screenshot") or item.get("full_page_screenshot")):
             finding["evidence_capture"] = item
             finding["evidence_focus"] = item.get("capture", {})
             finding.setdefault("screenshots", [])
-            if item["screenshot"] not in finding["screenshots"]:
-                finding["screenshots"].append(item["screenshot"])
+            primary_path = item.get("screenshot")
+            if primary_path and os.path.isfile(primary_path):
+                finding["screenshot"] = primary_path
+                if primary_path not in finding["screenshots"]:
+                    finding["screenshots"].append(primary_path)
             full_page_path = item.get("full_page_screenshot")
             if full_page_path and os.path.isfile(full_page_path):
                 finding["full_page_screenshot"] = full_page_path
