@@ -778,7 +778,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             # cards already contain these fields, so re-annotating them is intentionally skipped.
             primary_annotation = None
             if screenshot and os.path.isfile(screenshot) and not (capture.get("diagnostic_artifact") or (capture.get("diagnostic_fallback") or {}).get("diagnostic_artifact")):
-                primary_annotation = _annotate_evidence_image(screenshot, finding, url, status, focus, full_page=False)
+                primary_annotation = _annotate_evidence_image(screenshot, finding, url, status, None, full_page=False)
             item = {
                 "finding_id": finding_id,
                 "title": finding.get("title"),
