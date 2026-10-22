@@ -277,7 +277,7 @@ def _collect_gallery(evidence_dir: str, out_dir: str, findings: list[dict]) -> l
                 gallery.append({
                     "name": name,
                     "path": rel,
-                    "kind": ("blocked" if "target_overview" in name.lower() and "verification" in name.lower() else ("failure" if "failure" in name.lower() else "evidence")),
+                    "kind": ("overview" if "target_overview" in name.lower() else ("failure" if "failure" in name.lower() else "evidence")),
                     "size": os.path.getsize(path),
                 })
 
