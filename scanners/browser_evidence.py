@@ -565,6 +565,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             console_errors = []
             page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
             screenshot = None
+            full_page_screenshot = None
             status = None
             error = None
             error_type = None
@@ -573,6 +574,20 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             try:
                 response = page.goto(url, wait_until="domcontentloaded", timeout=navigation_timeout_ms)
                 status = response.status if response else None
+                # Keep a complete document-height screenshot for context alongside the focused proof.
+                # This is a companion artifact: never overwrite the focused/diagnostic screenshot.
+                try:
+                    page.wait_for_timeout(250)
+                    full_page_screenshot = os.path.join(
+                        EVIDENCE_DIR,
+                        f"security_{index:03d}_{_safe_filename(url)}_full-page.png",
+                    )
+                    page.screenshot(path=full_page_screenshot, full_page=True, animations="disabled")
+                    if not os.path.isfile(full_page_screenshot):
+                        full_page_screenshot = None
+                except Exception as full_page_exc:
+                    full_page_screenshot = None
+                    capture["full_page_capture_error"] = f"{type(full_page_exc).__name__}: {full_page_exc}"
                 focus = _find_focus(page, finding)
                 if focus:
                     focus["finding_id"] = finding_id
@@ -634,6 +649,14 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                 "url": url,
                 "status": status,
                 "screenshot": screenshot if os.path.isfile(screenshot or "") else None,
+                "full_page_screenshot": full_page_screenshot if os.path.isfile(full_page_screenshot or "") else None,
+                "evidence_artifacts": [
+                    {"kind": "focused_or_diagnostic", "path": screenshot}
+                    for _ in [0] if screenshot and os.path.isfile(screenshot)
+                ] + [
+                    {"kind": "full_page", "path": full_page_screenshot}
+                    for _ in [0] if full_page_screenshot and os.path.isfile(full_page_screenshot)
+                ],
                 "capture": capture,
                 "console_errors": console_errors[:20],
                 "error": error,
@@ -664,6 +687,12 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             finding.setdefault("screenshots", [])
             if item["screenshot"] not in finding["screenshots"]:
                 finding["screenshots"].append(item["screenshot"])
+            full_page_path = item.get("full_page_screenshot")
+            if full_page_path and os.path.isfile(full_page_path):
+                finding["full_page_screenshot"] = full_page_path
+                if full_page_path not in finding["screenshots"]:
+                    finding["screenshots"].append(full_page_path)
+            finding["evidence_artifacts"] = item.get("evidence_artifacts", [])
             # When the page itself could not isolate a DOM node, attach the
             # generated diagnostic card alongside the context viewport so the
             # report still shows the issue-specific markup at the finding.
