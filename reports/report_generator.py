@@ -1297,7 +1297,7 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 @media(max-width:700px){.shell{display:flex;flex-direction:column;gap:12px;padding:10px}.hero{width:100%;padding:clamp(16px,4vw,24px)}.nav{position:sticky;top:0;width:100%;display:flex;flex-direction:row;overflow-x:auto;gap:5px;margin:0;padding:7px;border-radius:13px;white-space:nowrap}.nav:before{display:none}.nav a{flex:0 0 auto;min-height:38px;padding:8px 10px}.nav a:before{display:none}.tab{width:100%;min-width:0}.panel{padding:14px}.grid{grid-template-columns:minmax(0,1fr)}.matrix{max-width:100%}.matrix table{min-width:650px}.meta{gap:7px}.chip{font-size:12px}}
 @media(max-width:420px){.shell{padding:7px}.hero{border-radius:15px}.hero h1{font-size:27px}.nav a{font-size:12px;padding:7px 9px}.panel{border-radius:12px}.gallery,.riskgrid{grid-template-columns:minmax(0,1fr)}.kpis,.summary-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
-</style>
+.filter-reset{border:1px solid var(--line);background:#101e30;color:#c4d4e5;border-radius:9px;padding:9px 12px;font:inherit;font-weight:700;cursor:pointer}.filter-reset:hover,.filter-reset:focus-visible{background:#17372f;border-color:#286b5e;color:#e0fff5;outline:2px solid #48e6b033;outline-offset:2px}.filter-status{font-size:12px;color:var(--muted);margin:0 0 12px}.controls input:focus-visible,.controls select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}</style>
 </head>
 <body>
 <div class="shell">
@@ -1350,7 +1350,8 @@ footer{color:#62788f;text-align:center;padding:22px;font-size:12px}
 
 <section id="findings" class="tab">
 <div class="panel"><div class="section-title">Findings explorer</div>
-<div class="controls"><input id="search" placeholder="Search title, URL, category, evidence..."><select id="sev"><option value="">All severities</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option><option>Info</option></select><select id="cat"><option value="">All categories</option></select></div>
+<div class="controls"><input id="search" aria-label="Search findings" placeholder="Search title, URL, category, evidence..."><select id="sev" aria-label="Filter by severity"><option value="">All severities</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option><option>Info</option></select><select id="cat" aria-label="Filter by category"><option value="">All categories</option></select><button type="button" id="clearFilters" class="filter-reset">Clear filters</button></div>
+<div class="filter-status" id="findingCount" role="status" aria-live="polite"></div>
 <div id="list">__FINDINGS_HTML__</div></div>
 </section>
 
@@ -1424,9 +1425,11 @@ document.getElementById("assessmentHealth").innerHTML=phaseEntries.length
 const cat=document.getElementById("cat");
 Object.keys(__CATEGORY_JSON__).sort().forEach(function(c){const o=document.createElement("option");o.value=c;o.textContent=c;cat.appendChild(o)});
 function renderFindings(){
- const q=document.getElementById("search").value.toLowerCase(), s=document.getElementById("sev").value, c=cat.value, list=document.getElementById("list");
+ const q=document.getElementById("search").value.trim().toLowerCase(), s=document.getElementById("sev").value, c=cat.value, list=document.getElementById("list");
  const filtered=findings.filter(function(f){const hay=JSON.stringify(f).toLowerCase();return (!q||hay.includes(q))&&(!s||f.severity===s)&&(!c||f.category===c)});
- if(!filtered.length){list.innerHTML='<div class="empty">No matching findings.</div>';return}
+ const count=document.getElementById("findingCount");
+ if(count) count.textContent="Showing "+filtered.length+" of "+findings.length+" findings";
+ if(!filtered.length){list.innerHTML='<div class="empty">No findings match these filters. Try changing your search or clear the filters.</div>';return}
  list.innerHTML=filtered.map(function(f){
   const color=colors[f.severity]||colors.Info;
   const shots=f.screenshots_relative||[];
@@ -1435,7 +1438,9 @@ function renderFindings(){
  }).join("");
 }
 ["search","sev"].forEach(function(id){document.getElementById(id).addEventListener("input",renderFindings)});
-cat.addEventListener("change",renderFindings);renderFindings();
+cat.addEventListener("change",renderFindings);
+document.getElementById("clearFilters").addEventListener("click",function(){document.getElementById("search").value="";document.getElementById("sev").value="";cat.value="";renderFindings();document.getElementById("search").focus()});
+renderFindings();
 
 const rows=coverage.results||[];
 document.getElementById("matrix").innerHTML=rows.length?'<table><thead><tr><th>Browser</th><th>Viewport</th><th>URL</th><th>Status</th><th>Load</th><th>Console</th><th>Network</th><th>Overflow</th><th>Evidence</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td>'+esc(r.browser)+'</td><td>'+esc(r.viewport)+'</td><td>'+esc(r.url)+'</td><td class="'+((r.status||0)>=400?"fail":"ok")+'">'+esc(r.status||"-")+'</td><td>'+esc(r.load_ms||0)+' ms</td><td>'+r.console_errors.length+'</td><td>'+r.request_failures.length+'</td><td>'+((r.horizontal_overflow)?"YES":"NO")+'</td><td>'+(r.screenshot_relative?evidenceAnchor(r.screenshot_relative,"Chrome evidence"):"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No Chrome coverage metadata recorded.</div>';
