@@ -274,6 +274,109 @@ def _write_diagnostic_evidence_card(
         }
 
 
+def _annotate_evidence_image(path: str, finding: dict, url: str, status=None,
+                            focus: dict | None = None, full_page: bool = False) -> dict:
+    """Embed issue-specific explanation and a visible highlight into a screenshot artifact."""
+    from textwrap import wrap
+
+    def clean(value, limit=700):
+        text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+        text = re.sub(
+            r"(?i)\b(authorization|cookie|set-cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)\b\s*[:=]\s*[^\s,;]+",
+            r"\1=<redacted>", text,
+        )
+        return text[:limit] or "Not recorded"
+
+    if not path or not os.path.isfile(path):
+        return {"annotated": False, "annotation_error": "Screenshot artifact is missing."}
+    try:
+        original = Image.open(path).convert("RGB")
+        width, height = original.size
+        issue_id = clean(finding.get("id") or finding.get("finding_id") or "SENTINEL-FINDING", 70)
+        title = clean(finding.get("title") or "Assessment observation", 160)
+        severity = clean(finding.get("severity") or "Info", 30).upper()
+        summary = clean(finding.get("plain_language_summary") or finding.get("description") or finding.get("detail") or finding.get("evidence"), 600)
+        impact = clean(finding.get("impact") or "Validate the security and business impact in the authorized test environment.", 420)
+        fix = clean(finding.get("remediation") or finding.get("recommended_action") or "Review the affected component and rerun the relevant check after remediation.", 420)
+        observed = clean(finding.get("evidence") or finding.get("detail") or "No additional observed response detail was recorded.", 500)
+        severity_color = {
+            "CRITICAL": (255, 48, 92), "HIGH": (255, 120, 60),
+            "MEDIUM": (255, 190, 55), "LOW": (56, 205, 145),
+        }.get(severity, (100, 170, 255))
+
+        def get_font(size, bold=False):
+            candidates = (
+                ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"]
+                if bold else
+                ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:/Windows/Fonts/arial.ttf"]
+            )
+            for candidate in candidates:
+                try:
+                    return ImageFont.truetype(candidate, size)
+                except Exception:
+                    pass
+            return ImageFont.load_default()
+
+        # Use a compact but readable report header; keep original screenshot pixels intact below it.
+        font_title, font_body, font_small = get_font(23, True), get_font(16), get_font(13)
+        header_h = 240
+        canvas = Image.new("RGB", (width, height + header_h), "#07101b")
+        draw = ImageDraw.Draw(canvas)
+        draw.rectangle((0, 0, width, header_h), fill="#07101b")
+        draw.rectangle((0, 0, 12, header_h), fill=severity_color)
+        draw.text((30, 18), f"SENTINEL EVIDENCE  |  {issue_id}  |  {severity}", fill=severity_color, font=get_font(18, True))
+        draw.text((30, 48), title[:180], fill="#f1f6fc", font=font_title)
+        draw.text((30, 83), f"URL: {clean(url, 500)}", fill="#9db2c9", font=font_small)
+        draw.text((30, 105), f"HTTP status: {status if status is not None else 'not recorded'}  |  Capture: {'FULL PAGE' if full_page else 'FOCUSED / VIEWPORT'}", fill="#9db2c9", font=font_small)
+        sections = [
+            ("WHAT WAS OBSERVED", summary if summary != "Not recorded" else observed),
+            ("WHY IT MATTERS", impact),
+            ("RECOMMENDED FIX", fix),
+        ]
+        y = 130
+        for label, value in sections:
+            draw.text((30, y), label, fill="#38e8a0", font=get_font(12, True))
+            y += 17
+            lines = wrap(value, width=max(40, min(145, (width - 60) // 9)))[:2]
+            for line in lines:
+                draw.text((30, y), line, fill="#dce8f5", font=font_small)
+                y += 16
+            y += 3
+            if y > header_h - 18:
+                break
+        canvas.paste(original, (0, header_h))
+
+        # A focused DOM match is highlighted in the full-page image using document coordinates.
+        if focus and focus.get("width") and focus.get("height"):
+            try:
+                scale_x = width / max(float(focus.get("document_width") or width), 1)
+                scale_y = height / max(float(focus.get("document_height") or height), 1)
+                x1 = int(max(0, float(focus.get("x", 0)) * scale_x))
+                y1 = int(max(0, float(focus.get("document_y", focus.get("y", 0))) * scale_y)) + header_h
+                x2 = int(min(width - 1, (float(focus.get("x", 0)) + float(focus.get("width", 0))) * scale_x))
+                y2 = int(min(height - 1, (float(focus.get("document_y", focus.get("y", 0))) + float(focus.get("height", 0))) * scale_y)) + header_h
+                if x2 > x1 and y2 > y1:
+                    draw.rectangle((x1, y1, x2, y2), outline=(255, 23, 68), width=max(3, min(8, width // 250)))
+                    label = f"ISSUE HIGHLIGHT: {issue_id}"
+                    label_font = get_font(16, True)
+                    bbox = draw.textbbox((0, 0), label, font=label_font)
+                    label_w, label_h = bbox[2] + 16, bbox[3] + 12
+                    label_y = max(header_h, y1 - label_h)
+                    draw.rectangle((x1, label_y, min(width - 1, x1 + label_w), label_y + label_h), fill=(255, 23, 68))
+                    draw.text((x1 + 8, label_y + 5), label, fill="white", font=label_font)
+            except Exception:
+                pass
+        canvas.save(path, format="PNG", optimize=True)
+        return {
+            "annotated": True, "annotation_version": 1,
+            "issue_id": issue_id, "capture_type": "full-page" if full_page else "focused-or-viewport",
+            "image_width": canvas.width, "image_height": canvas.height,
+            "highlighted": bool(focus and focus.get("width") and focus.get("height")),
+        }
+    except Exception as exc:
+        return {"annotated": False, "annotation_error": f"{type(exc).__name__}: {exc}"}
+
+
 def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
     """Capture ONLY the DOM element that contains the detected error.
 
@@ -412,7 +515,7 @@ def evidence_finding_key(finding: dict) -> str:
     return f"{title}@{url}"
 
 
-def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30) -> list[tuple[str, str, dict]]:
+def _evidence_candidates(target: str, findings: list[dict], max_items: int | None = None) -> list[tuple[str, str, dict]]:
     """Select distinct findings, not just distinct URLs, for individual evidence capture."""
     candidates = []
     seen = set()
@@ -444,7 +547,7 @@ def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30)
 
     # Round-robin across categories: every discovered coverage area gets a
     # chance to attach concrete evidence, including Low and Info observations.
-    limit = max(1, int(max_items))
+    limit = max(1, len(findings) if max_items is None else int(max_items))
     while queues and len(candidates) < limit:
         for category in list(queues):
             queue = queues[category]
@@ -456,7 +559,7 @@ def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30)
 
 
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
-                              slow_mo: int = 0, max_items: int = 30,
+                              slow_mo: int = 0, max_items: int | None = None,
                               progress_callback=None, max_seconds: int = 120,
                               navigation_timeout_ms: int = 12000) -> list[dict]:
     """Capture focused visual evidence for active findings using Chromium and GET-only URLs."""
@@ -487,7 +590,13 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         path = os.path.join(EVIDENCE_DIR, f"security_unlocated_{index:03d}_{_safe_filename(target)}_diagnostic.png")
         diagnostic = _write_diagnostic_evidence_card(path, finding, target, None, reason, reason)
         item = {
-            "finding_id": finding_id, "url": target, "status": None,
+            "finding_id": finding_id,
+            "title": finding.get("title"),
+            "severity": finding.get("severity"),
+            "evidence_summary": finding.get("plain_language_summary") or finding.get("description") or finding.get("evidence") or finding.get("detail"),
+            "impact": finding.get("impact"),
+            "remediation": finding.get("remediation") or finding.get("recommended_action"),
+            "url": target, "status": None,
             "screenshot": path if os.path.isfile(path) else None,
             "capture": {
                 "mode": "diagnostic-evidence-card-unlocated",
@@ -504,6 +613,8 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         if item["screenshot"]:
             finding["screenshot"] = item["screenshot"]
             finding["evidence_capture"] = item
+        if progress_callback:
+            notify(index, len(unlocated), finding_id, target, "diagnostic-only", item)
 
     if not candidates:
         with open(os.path.join(EVIDENCE_DIR, "security_browser_evidence.json"), "w", encoding="utf-8") as f:
@@ -571,11 +682,27 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             error_type = None
             focus = None
             capture = {}
+            full_page_annotation = None
+            full_page_capture_error = None
             try:
                 response = page.goto(url, wait_until="domcontentloaded", timeout=navigation_timeout_ms)
                 status = response.status if response else None
-                # Keep a complete document-height screenshot for context alongside the focused proof.
-                # This is a companion artifact: never overwrite the focused/diagnostic screenshot.
+                focus = _find_focus(page, finding)
+                if focus:
+                    focus["finding_id"] = finding_id
+                    try:
+                        metrics = page.evaluate("""() => ({
+                            scrollY: window.scrollY || 0,
+                            documentWidth: Math.max(document.documentElement.scrollWidth, document.documentElement.clientWidth),
+                            documentHeight: Math.max(document.documentElement.scrollHeight, document.documentElement.clientHeight)
+                        })""")
+                        focus["document_y"] = float(focus.get("y", 0)) + float(metrics.get("scrollY", 0))
+                        focus["document_width"] = metrics.get("documentWidth")
+                        focus["document_height"] = metrics.get("documentHeight")
+                    except Exception:
+                        pass
+                # Capture the whole document after locating the issue so a coordinate highlight can be aligned.
+                # Keep this companion separate from the focused proof artifact.
                 try:
                     page.wait_for_timeout(250)
                     full_page_screenshot = os.path.join(
@@ -585,17 +712,20 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                     page.screenshot(path=full_page_screenshot, full_page=True, animations="disabled")
                     if not os.path.isfile(full_page_screenshot):
                         full_page_screenshot = None
+                    elif full_page_screenshot:
+                        full_page_annotation = _annotate_evidence_image(
+                            full_page_screenshot, finding, url, status, focus, full_page=True
+                        )
                 except Exception as full_page_exc:
                     full_page_screenshot = None
-                    capture["full_page_capture_error"] = f"{type(full_page_exc).__name__}: {full_page_exc}"
-                focus = _find_focus(page, finding)
-                if focus:
-                    focus["finding_id"] = finding_id
+                    full_page_capture_error = f"{type(full_page_exc).__name__}: {full_page_exc}"
                 screenshot = os.path.join(
                     EVIDENCE_DIR,
                     f"security_{index:03d}_{_safe_filename(url)}_focused.png",
                 )
                 capture = _focused_screenshot(page, screenshot, focus)
+                if full_page_capture_error:
+                    capture["full_page_capture_error"] = full_page_capture_error
                 if capture.get("mode") == "focused-element-capture-failed":
                     error = capture.get("error") or capture.get("focus_reason")
                     error_type = "FocusedElementCaptureError"
@@ -644,8 +774,20 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             finally:
                 page.close()
 
+            # Add issue-specific explanation to the focused/viewport image too. Generated diagnostic
+            # cards already contain these fields, so re-annotating them is intentionally skipped.
+            primary_annotation = None
+            if screenshot and os.path.isfile(screenshot) and not (capture.get("diagnostic_artifact") or (capture.get("diagnostic_fallback") or {}).get("diagnostic_artifact")):
+                primary_annotation = _annotate_evidence_image(screenshot, finding, url, status, None, full_page=False)
             item = {
                 "finding_id": finding_id,
+                "title": finding.get("title"),
+                "severity": finding.get("severity"),
+                "evidence_summary": finding.get("plain_language_summary") or finding.get("description") or finding.get("evidence") or finding.get("detail"),
+                "impact": finding.get("impact"),
+                "remediation": finding.get("remediation") or finding.get("recommended_action"),
+                "primary_annotation": primary_annotation,
+                "full_page_annotation": full_page_annotation,
                 "url": url,
                 "status": status,
                 "screenshot": screenshot if os.path.isfile(screenshot or "") else None,
@@ -680,13 +822,15 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
         url = finding.get("evidence_url") or finding.get("url")
         finding_id = str(finding.get("id") or finding.get("title") or "security")
         item = by_key.get((finding_id, url))
-        if item and item.get("screenshot"):
-            finding["screenshot"] = item["screenshot"]
+        if item and (item.get("screenshot") or item.get("full_page_screenshot")):
             finding["evidence_capture"] = item
             finding["evidence_focus"] = item.get("capture", {})
             finding.setdefault("screenshots", [])
-            if item["screenshot"] not in finding["screenshots"]:
-                finding["screenshots"].append(item["screenshot"])
+            primary_path = item.get("screenshot")
+            if primary_path and os.path.isfile(primary_path):
+                finding["screenshot"] = primary_path
+                if primary_path not in finding["screenshots"]:
+                    finding["screenshots"].append(primary_path)
             full_page_path = item.get("full_page_screenshot")
             if full_page_path and os.path.isfile(full_page_path):
                 finding["full_page_screenshot"] = full_page_path
