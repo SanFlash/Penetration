@@ -277,7 +277,7 @@ def _collect_gallery(evidence_dir: str, out_dir: str, findings: list[dict]) -> l
                 gallery.append({
                     "name": name,
                     "path": rel,
-                    "kind": "failure" if "failure" in name.lower() else "evidence",
+                    "kind": ("overview" if "target_overview" in name.lower() else ("failure" if "failure" in name.lower() else "evidence")),
                     "size": os.path.getsize(path),
                 })
 
@@ -1205,11 +1205,22 @@ def _render_html(report: dict) -> str:
     overview = report.get("metadata", {}).get("target_overview") or {}
     overview_src = _report_artifact_url(overview.get("screenshot_relative"))
     if overview_src:
+        overview_blocked = bool(overview.get("blocked_by_verification"))
+        overview_badge = "BLOCKED BY VERIFICATION" if overview_blocked else "TARGET OVERVIEW"
+        overview_notice = (
+            '<div class="empty" role="status" style="border-color:#ff3864;color:#ffd7df;margin:10px 0">'
+            '<b>Target page could not be inspected.</b> The server returned a bot-protection/verification interstitial, not the actual homepage. '
+            'Sentinel has not bypassed this control. Browser-based visual and functional coverage for this target is incomplete. '
+            'Use an authorized staging environment or request an approved assessment allowlist.</div>'
+            if overview_blocked else ''
+        )
         target_overview_html = (
-            '<div class="shot"><span class="tag">TARGET OVERVIEW</span>'
-            '<a href="%s" target="_blank" rel="noopener noreferrer"><img src="%s" alt="Target website overview" loading="lazy"></a>'
+            '<div class="shot"><span class="tag ' + ('failure' if overview_blocked else '') + '">' + overview_badge + '</span>'
+            + overview_notice
+            + '<a href="%s" target="_blank" rel="noopener noreferrer"><img src="%s" alt="%s" loading="lazy"></a>'
             '<div class="caption"><a href="%s" target="_blank" rel="noopener noreferrer">Open target website</a><br>%s · HTTP %s</div></div>'
             % (html.escape(overview_src, quote=True), html.escape(overview_src, quote=True),
+               "Verification interstitial (not the target homepage)" if overview_blocked else "Target website overview",
                html.escape(str(overview.get("target") or target), quote=True),
                html.escape(str(overview.get("title") or "")),
                html.escape(str(overview.get("status") or "-")))
@@ -1421,8 +1432,11 @@ cat.addEventListener("change",renderFindings);renderFindings();
 const rows=coverage.results||[];
 document.getElementById("matrix").innerHTML=rows.length?'<table><thead><tr><th>Browser</th><th>Viewport</th><th>URL</th><th>Status</th><th>Load</th><th>Console</th><th>Network</th><th>Overflow</th><th>Evidence</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td>'+esc(r.browser)+'</td><td>'+esc(r.viewport)+'</td><td>'+esc(r.url)+'</td><td class="'+((r.status||0)>=400?"fail":"ok")+'">'+esc(r.status||"-")+'</td><td>'+esc(r.load_ms||0)+' ms</td><td>'+r.console_errors.length+'</td><td>'+r.request_failures.length+'</td><td>'+((r.horizontal_overflow)?"YES":"NO")+'</td><td>'+(r.screenshot_relative?evidenceAnchor(r.screenshot_relative,"Chrome evidence"):"-")+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty">No Chrome coverage metadata recorded.</div>';
 
+const overviewBlocked=!!targetOverview.blocked_by_verification;
 document.getElementById("targetOverview").innerHTML=targetOverview.screenshot_relative
- ? '<div class="shot"><span class="tag">TARGET OVERVIEW</span>'+evidenceAnchor(targetOverview.screenshot_relative,"Target website overview")+'<div class="caption"><a href="'+esc(targetOverview.target||"")+'" target="_blank" rel="noopener">Open target website</a><br>'+esc(targetOverview.title||"")+' · HTTP '+esc(targetOverview.status||"-")+'</div></div>'
+ ? '<div class="shot"><span class="tag '+(overviewBlocked?'failure':'')+'">'+(overviewBlocked?'BLOCKED BY VERIFICATION':'TARGET OVERVIEW')+'</span>'
+   +(overviewBlocked?'<div class="empty" role="status" style="border-color:#ff3864;color:#ffd7df;margin:10px 0"><b>Target page could not be inspected.</b> The server returned a bot-protection/verification interstitial, not the actual homepage. Sentinel has not bypassed this control. Browser-based visual and functional coverage is incomplete. Use an authorized staging environment or request an approved assessment allowlist.</div>':'')
+   +evidenceAnchor(targetOverview.screenshot_relative,overviewBlocked?'Verification interstitial (not the target homepage)':'Target website overview')+'<div class="caption"><a href="'+esc(targetOverview.target||"")+'" target="_blank" rel="noopener">Open target website</a><br>'+esc(targetOverview.title||"")+' · HTTP '+esc(targetOverview.status||"-")+'</div></div>'
  : '<div class="empty">Target overview could not be captured: '+esc(targetOverview.error||"unknown error")+'</div>';
 
 document.getElementById("gallery").innerHTML=gallery.length?gallery.map(function(g){return '<article class="shot '+(g.kind==="failure"?"failure":"")+'"><span class="tag '+(g.kind==="failure"?"failure":"")+'">'+esc(g.kind.toUpperCase())+'</span>'+evidenceAnchor(g.path,g.name)+'<div class="caption">'+esc(g.name)+'<br>'+esc(Math.round((g.size||0)/1024))+' KB</div></article>'}).join(""):'<div class="empty">No screenshots were generated.</div>';
