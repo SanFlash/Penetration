@@ -789,7 +789,13 @@ def run_pentest_profile(target: str, headed: bool = False, slow_mo: int = 0, das
                 full_page = item.get("full_page_screenshot")
                 live_evidence.append({
                     "finding_id": finding_id,
-                    "title": next((str(f.get("title")) for f in evidence_findings if evidence_finding_key(f) == str(finding_id)), ""),
+                    "title": item.get("title") or next((str(f.get("title")) for f in evidence_findings if evidence_finding_key(f) == str(finding_id)), ""),
+                    "severity": item.get("severity") or next((f.get("severity") for f in evidence_findings if evidence_finding_key(f) == str(finding_id)), "Info"),
+                    "evidence_summary": item.get("evidence_summary") or next((f.get("plain_language_summary") or f.get("description") or f.get("evidence") or f.get("detail") for f in evidence_findings if evidence_finding_key(f) == str(finding_id)), ""),
+                    "impact": item.get("impact") or next((f.get("impact") for f in evidence_findings if evidence_finding_key(f) == str(finding_id)), ""),
+                    "remediation": item.get("remediation") or next((f.get("remediation") or f.get("recommended_action") for f in evidence_findings if evidence_finding_key(f) == str(finding_id)), ""),
+                    "primary_annotation": item.get("primary_annotation"),
+                    "full_page_annotation": item.get("full_page_annotation"),
                     "url": url,
                     "status": item.get("status"),
                     "error": item.get("error"),
