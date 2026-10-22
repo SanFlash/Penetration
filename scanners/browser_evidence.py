@@ -468,8 +468,72 @@ def _focused_screenshot(page, path: str, focus: dict | None) -> dict:
 
 
 
+def _detect_verification_interstitial(page) -> dict | None:
+    """Identify common bot-protection/verification interstitials without attempting to bypass them."""
+    try:
+        details = page.evaluate("""() => ({
+            title: document.title || "",
+            text: (document.body && document.body.innerText || "").slice(0, 12000),
+            url: location.href,
+            html: (document.documentElement && document.documentElement.innerHTML || "").slice(0, 20000)
+        })""")
+    except Exception:
+        return None
+    title = str(details.get("title") or "")
+    body = str(details.get("text") or "")
+    html = str(details.get("html") or "")
+    combined = (title + "\\n" + body + "\\n" + html).lower()
+    signals = (
+        "please wait while your request is being verified",
+        "verify you are human",
+        "checking your browser",
+        "performing security verification",
+        "just a moment",
+        "cf-chl-",
+        "challenge-platform",
+        "attention required! | cloudflare",
+    )
+    matched = [signal for signal in signals if signal in combined]
+    if not matched:
+        return None
+    provider = "Cloudflare or upstream bot protection" if any(
+        token in combined for token in ("cloudflare", "cf-chl-", "challenge-platform")
+    ) else "upstream bot protection"
+    return {
+        "detected": True,
+        "provider": provider,
+        "title": title[:250],
+        "url": str(details.get("url") or ""),
+        "signals": matched[:5],
+        "message": "The target returned a verification interstitial. Sentinel did not bypass it; page-level visual and functional results may be incomplete.",
+    }
+
+
+def _annotate_interstitial(path: str, detection: dict) -> None:
+    """Make a blocked overview unmistakable instead of presenting it as the target homepage."""
+    if not path or not os.path.isfile(path):
+        return
+    image = Image.open(path).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    banner_h = min(112, max(76, image.height // 8))
+    draw.rectangle((0, 0, image.width, banner_h), fill=(64, 18, 24))
+    draw.rectangle((0, 0, 10, banner_h), fill=(255, 55, 80))
+    lines = [
+        "SENTINEL: VERIFICATION INTERSTITIAL DETECTED",
+        str(detection.get("provider") or "Bot protection"),
+        "Assessment is blocked at this page; this is NOT the target homepage.",
+        "Use an authorized test/staging environment or allowlist the assessment runner.",
+    ]
+    y = 10
+    for line in lines:
+        draw.text((22, y), line[:180], fill=(255, 235, 238), font=font)
+        y += 18
+    image.save(path, format="PNG", optimize=True)
+
+
 def capture_target_overview(target: str, headed: bool = False, slow_mo: int = 0) -> dict:
-    """Capture one Chromium viewport of the authorized target homepage for report context."""
+    """Capture the target homepage, clearly marking verification interstitials as blocked."""
     assert_in_scope(target)
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
     path = os.path.join(EVIDENCE_DIR, f"target_overview_{_safe_filename(target)}.png")
@@ -481,12 +545,17 @@ def capture_target_overview(target: str, headed: bool = False, slow_mo: int = 0)
         status = None
         title = ""
         error = None
+        interstitial = None
         try:
             response = page.goto(target, wait_until="domcontentloaded", timeout=30000)
             status = response.status if response else None
-            page.wait_for_timeout(750)
+            page.wait_for_timeout(1500)
             title = page.title()
+            interstitial = _detect_verification_interstitial(page)
             page.screenshot(path=path, full_page=False, animations="disabled")
+            if interstitial:
+                _annotate_interstitial(path, interstitial)
+                error = interstitial["message"]
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         finally:
@@ -500,7 +569,9 @@ def capture_target_overview(target: str, headed: bool = False, slow_mo: int = 0)
         "status": status,
         "title": title,
         "screenshot": path if os.path.isfile(path) else None,
-        "capture_scope": "target-viewport-overview",
+        "capture_scope": "verification-interstitial" if interstitial else "target-viewport-overview",
+        "blocked_by_verification": bool(interstitial),
+        "verification_details": interstitial,
         "error": error,
     }
 
