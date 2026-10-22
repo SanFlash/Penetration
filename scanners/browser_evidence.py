@@ -515,7 +515,7 @@ def evidence_finding_key(finding: dict) -> str:
     return f"{title}@{url}"
 
 
-def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30) -> list[tuple[str, str, dict]]:
+def _evidence_candidates(target: str, findings: list[dict], max_items: int | None = None) -> list[tuple[str, str, dict]]:
     """Select distinct findings, not just distinct URLs, for individual evidence capture."""
     candidates = []
     seen = set()
@@ -547,7 +547,7 @@ def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30)
 
     # Round-robin across categories: every discovered coverage area gets a
     # chance to attach concrete evidence, including Low and Info observations.
-    limit = max(1, int(max_items))
+    limit = max(1, len(findings) if max_items is None else int(max_items))
     while queues and len(candidates) < limit:
         for category in list(queues):
             queue = queues[category]
@@ -559,7 +559,7 @@ def _evidence_candidates(target: str, findings: list[dict], max_items: int = 30)
 
 
 def capture_security_evidence(target: str, findings: list[dict], headed: bool = False,
-                              slow_mo: int = 0, max_items: int = 30,
+                              slow_mo: int = 0, max_items: int | None = None,
                               progress_callback=None, max_seconds: int = 120,
                               navigation_timeout_ms: int = 12000) -> list[dict]:
     """Capture focused visual evidence for active findings using Chromium and GET-only URLs."""
@@ -675,6 +675,7 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
             focus = None
             capture = {}
             full_page_annotation = None
+            full_page_capture_error = None
             try:
                 response = page.goto(url, wait_until="domcontentloaded", timeout=navigation_timeout_ms)
                 status = response.status if response else None
@@ -709,12 +710,14 @@ def capture_security_evidence(target: str, findings: list[dict], headed: bool = 
                         )
                 except Exception as full_page_exc:
                     full_page_screenshot = None
-                    capture["full_page_capture_error"] = f"{type(full_page_exc).__name__}: {full_page_exc}"
+                    full_page_capture_error = f"{type(full_page_exc).__name__}: {full_page_exc}"
                 screenshot = os.path.join(
                     EVIDENCE_DIR,
                     f"security_{index:03d}_{_safe_filename(url)}_focused.png",
                 )
                 capture = _focused_screenshot(page, screenshot, focus)
+                if full_page_capture_error:
+                    capture["full_page_capture_error"] = full_page_capture_error
                 if capture.get("mode") == "focused-element-capture-failed":
                     error = capture.get("error") or capture.get("focus_reason")
                     error_type = "FocusedElementCaptureError"
